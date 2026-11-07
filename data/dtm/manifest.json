@@ -3,52 +3,52 @@
     {
       "filename": "dtm_sainte_lucie_laurentides.tif",
       "path": "/home/alf/Code/dsh-sandbox/workspace/LuxTerra/data/dtm/dtm_sainte_lucie_laurentides.tif",
-      "crs": "EPSG:32618",
-      "width": 2599,
-      "height": 2693,
+      "crs": "EPSG:3979",
+      "width": 3386,
+      "height": 3411,
       "resolution": [
         1.0,
         1.0
       ],
       "bounds_native": [
-        560880.1457223514,
-        5108126.904217103,
-        563479.1457223514,
-        5110819.904217103
+        1596554.5509836068,
+        -58261.356513985666,
+        1599940.5509836068,
+        -54850.356513985666
       ],
       "bounds_wgs84": [
-        -74.21199997135824,
-        46.12376516828802,
-        -74.17800281006295,
-        46.14823705993621
+        -74.22249367925778,
+        46.116807282320146,
+        -74.16748103138242,
+        46.155190649863954
       ],
-      "nodata": -9999.0,
-      "filesize_bytes": 28522708
+      "nodata": -32767.0,
+      "filesize_bytes": 45145442
     },
     {
       "filename": "dtm_montreal_edouard_montpetit.tif",
       "path": "/home/alf/Code/dsh-sandbox/workspace/LuxTerra/data/dtm/dtm_montreal_edouard_montpetit.tif",
-      "crs": "EPSG:32618",
-      "width": 2614,
-      "height": 2490,
+      "crs": "EPSG:3979",
+      "width": 3365,
+      "height": 3233,
       "resolution": [
         1.0,
         1.0
       ],
       "bounds_native": [
-        606658.0262394525,
-        5038513.7053059125,
-        609272.0262394525,
-        5041003.7053059125
+        1662754.4342455198,
+        -110799.0791097844,
+        1666119.4342455198,
+        -107566.0791097844
       ],
       "bounds_wgs84": [
-        -73.6350000362065,
-        45.49159388775457,
-        -73.60100126400484,
-        45.514404943684944
+        -73.64473554940076,
+        45.48455086359844,
+        -73.59124770727217,
+        45.5214444765832
       ],
-      "nodata": -9999.0,
-      "filesize_bytes": 22520998
+      "nodata": -32767.0,
+      "filesize_bytes": 44813590
     }
   ]
 }

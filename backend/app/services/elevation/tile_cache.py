@@ -1,5 +1,6 @@
 """
 Tile cache manager for local DTM GeoTIFF storage and verification.
+Supports downloading full GeoTIFFs or extracting windowed sub-regions from Cloud-Optimized GeoTIFFs (COGs).
 """
 
 import os
@@ -9,6 +10,10 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 import requests
 import rasterio
+from rasterio.windows import from_bounds
+from shapely.geometry import box
+
+from .geo_utils import transform_geometry
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +79,55 @@ class TileCacheManager:
         self.update_manifest()
         return final_path
 
+    def extract_cog_window(
+        self,
+        cog_url: str,
+        wgs84_bbox: List[float],
+        filename: str
+    ) -> Path:
+        """
+        Extracts a localized sub-region directly from a remote Cloud-Optimized GeoTIFF (COG)
+        via GDAL virtual filesystem (/vsicurl/) without downloading the entire massive tile.
+        """
+        final_path = self.cache_dir / filename
+        if self.is_tile_cached(filename):
+            logger.info(f"Tile {filename} already exists in cache. Skipping COG extraction.")
+            return final_path
+
+        min_lon, min_lat, max_lon, max_lat = wgs84_bbox
+        vsi_url = f"/vsicurl/{cog_url}" if not cog_url.startswith("/vsi") else cog_url
+        
+        logger.info(f"Streaming windowed extraction from COG: {cog_url} for bbox {wgs84_bbox}...")
+        with rasterio.open(vsi_url) as src:
+            src_crs_str = src.crs.to_string() if hasattr(src.crs, 'to_string') else str(src.crs)
+            patch_wgs84 = box(min_lon, min_lat, max_lon, max_lat)
+            patch_native = transform_geometry(patch_wgs84, "EPSG:4326", src_crs_str)
+            
+            window = from_bounds(*patch_native.bounds, src.transform)
+            data = src.read(1, window=window)
+            window_transform = rasterio.windows.transform(window, src.transform)
+            
+            temp_path = self.cache_dir / f"{filename}.tmp"
+            with rasterio.open(
+                temp_path,
+                'w',
+                driver='GTiff',
+                height=data.shape[0],
+                width=data.shape[1],
+                count=1,
+                dtype=data.dtype,
+                crs=src.crs,
+                transform=window_transform,
+                nodata=src.nodata if src.nodata is not None else -9999.0,
+                compress='lzw'
+            ) as dst:
+                dst.write(data, 1)
+
+        temp_path.replace(final_path)
+        logger.info(f"Extracted and saved local COG tile: {final_path} ({data.shape[1]}x{data.shape[0]})")
+        self.update_manifest()
+        return final_path
+
     def update_manifest(self) -> Dict[str, Any]:
         """
         Scans all GeoTIFF files in the cache directory and updates manifest.json with spatial metadata.
@@ -82,19 +136,14 @@ class TileCacheManager:
         for tif_file in self.cache_dir.glob("*.tif"):
             try:
                 with rasterio.open(tif_file) as src:
-                    # Convert bounds to WGS84 for manifest indexing
-                    import pyproj
-                    from shapely.geometry import box
-                    from shapely.ops import transform
-                    
-                    transformer = pyproj.Transformer.from_crs(src.crs, "EPSG:4326", always_xy=True).transform
-                    geom_wgs84 = transform(transformer, box(*src.bounds))
+                    src_crs_str = src.crs.to_string() if hasattr(src.crs, 'to_string') else str(src.crs)
+                    geom_wgs84 = transform_geometry(box(*src.bounds), src_crs_str, "EPSG:4326")
                     min_lon, min_lat, max_lon, max_lat = geom_wgs84.bounds
 
                     tile_info = {
                         "filename": tif_file.name,
                         "path": str(tif_file),
-                        "crs": str(src.crs),
+                        "crs": src_crs_str,
                         "width": src.width,
                         "height": src.height,
                         "resolution": list(src.res),
