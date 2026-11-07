@@ -1,0 +1,228 @@
+"""
+Simulation Orchestrator Service.
+Coordinates elevation extraction, solar geometry, batch GPU ray-marching,
+PV yield conversion, and daily integration.
+"""
+
+from typing import Optional
+from datetime import datetime, date, time
+import zoneinfo
+import numpy as np
+import pandas as pd
+
+from ..schemas.simulate import (
+    SimulateRequest,
+    SimulateResponse,
+    SimulateMetadata,
+    DailySummary,
+    TimestepMetric
+)
+from ..schemas.domain import PVConfig, DeploymentMode
+from ..interfaces.elevation_source import ElevationProvider
+from ..interfaces.solar_engine import SolarEngine
+from ..interfaces.occlusion_engine import OcclusionEngine
+from ..interfaces.pv_model import PVSystemModel
+from .serializer import encode_masks_batch
+
+TZ_QUEBEC = zoneinfo.ZoneInfo("America/Toronto")
+
+
+class SimulationOrchestrator:
+    """
+    Coordinates end-to-end full-day simulation.
+    """
+
+    def __init__(
+        self,
+        elevation_provider: ElevationProvider,
+        solar_engine: SolarEngine,
+        occlusion_engine: OcclusionEngine,
+        pv_model: PVSystemModel
+    ):
+        self.elevation_provider = elevation_provider
+        self.solar_engine = solar_engine
+        self.occlusion_engine = occlusion_engine
+        self.pv_model = pv_model
+
+    def run_simulation(self, request: SimulateRequest) -> SimulateResponse:
+        """
+        Executes a 24-hour simulation for the requested bounding box and date.
+        """
+        # 1. Extract elevation window
+        bbox = request.bbox
+        elev_data = self.elevation_provider.get_elevation_window(
+            min_lon=bbox.min_lon,
+            min_lat=bbox.min_lat,
+            max_lon=bbox.max_lon,
+            max_lat=bbox.max_lat,
+            buffer_meters=request.buffer_meters,
+            target_resolution_m=request.resolution_m
+        )
+
+        elevation_grid = elev_data["buffered_elevation"]
+        patch_slice_y = elev_data["patch_slice_y"]
+        patch_slice_x = elev_data["patch_slice_x"]
+        median_elev = elev_data["median_elevation_m"]
+        geo_info = elev_data["geo_info"]
+
+        patch_h = patch_slice_y.stop - patch_slice_y.start
+        patch_w = patch_slice_x.stop - patch_slice_x.start
+        cell_area_m2 = request.resolution_m * request.resolution_m
+
+        # 2. Build 24-hour timestep intervals
+        sim_date = date.fromisoformat(request.date)
+        step_min = request.time_step_minutes
+        
+        start_dt = datetime.combine(sim_date, time(0, 0), tzinfo=TZ_QUEBEC)
+        # 24 hours of intervals
+        periods = int(24 * 60 / step_min)
+        timestamps = pd.date_range(start_dt, periods=periods, freq=f"{step_min}min")
+
+        center_lon = (bbox.min_lon + bbox.max_lon) / 2.0
+        center_lat = (bbox.min_lat + bbox.max_lat) / 2.0
+
+        # 3. Calculate solar positions and identify daylight frames
+        all_angles = []
+        daylight_indices = []
+        daylight_angle_pairs = []
+
+        for idx, ts in enumerate(timestamps):
+            py_dt = ts.to_pydatetime()
+            angles = self.solar_engine.calculate_solar_angles(py_dt, center_lat, center_lon)
+            all_angles.append(angles)
+            if angles.elevation_deg > 0.0:
+                daylight_indices.append(idx)
+                daylight_angle_pairs.append((angles.azimuth_deg, angles.elevation_deg))
+
+        # 4. Batch compute occlusion masks for daytime frames
+        if daylight_angle_pairs:
+            daylight_masks = self.occlusion_engine.compute_shadow_masks_batch(
+                elevation_grid=elevation_grid,
+                patch_slice_y=patch_slice_y,
+                patch_slice_x=patch_slice_x,
+                sun_angles=daylight_angle_pairs,
+                resolution_m=request.resolution_m,
+                max_search_radius_m=request.buffer_meters
+            )
+        else:
+            daylight_masks = []
+
+        # 5. PV System Configuration
+        pv_cfg = PVConfig(
+            deployment_mode=request.deployment_mode,
+            module_efficiency=request.module_efficiency if request.module_efficiency is not None else 0.20,
+            system_derate=request.system_derate if request.system_derate is not None else 0.80,
+            gcr=request.gcr
+        )
+
+        # 6. Compute power for all timesteps
+        timeseries_metrics = []
+        daylight_counter = 0
+
+        total_daily_kwh = 0.0
+        peak_power_kw = 0.0
+        peak_time = None
+        sunrise_time = None
+        sunset_time = None
+        shaded_pct_list = []
+
+        for idx, ts in enumerate(timestamps):
+            py_dt = ts.to_pydatetime()
+            ts_str = py_dt.isoformat()
+            angles = all_angles[idx]
+
+            if idx in daylight_indices:
+                if sunrise_time is None:
+                    sunrise_time = ts_str
+                sunset_time = ts_str
+
+                mask = daylight_masks[daylight_counter]
+                irradiance = self.solar_engine.calculate_irradiance(
+                    py_dt, center_lat, center_lon, angles, altitude_m=median_elev
+                )
+
+                power_kw, percent_shaded = self.pv_model.calculate_power_kw(
+                    shadow_mask=mask,
+                    irradiance=irradiance,
+                    cell_area_m2=cell_area_m2,
+                    config=pv_cfg
+                )
+
+                shaded_pct_list.append(percent_shaded)
+
+                if power_kw > peak_power_kw:
+                    peak_power_kw = power_kw
+                    peak_time = ts_str
+
+                # Numerical integration (trapezoidal / Riemann step)
+                total_daily_kwh += power_kw * (step_min / 60.0)
+
+                timeseries_metrics.append(
+                    TimestepMetric(
+                        timestamp=ts_str,
+                        solar_azimuth_deg=round(angles.azimuth_deg, 2),
+                        solar_elevation_deg=round(angles.elevation_deg, 2),
+                        power_kw=power_kw,
+                        percent_shaded=percent_shaded,
+                        is_daylight=True,
+                        mask_index=daylight_counter
+                    )
+                )
+                daylight_counter += 1
+            else:
+                # Nighttime frame
+                timeseries_metrics.append(
+                    TimestepMetric(
+                        timestamp=ts_str,
+                        solar_azimuth_deg=round(angles.azimuth_deg, 2),
+                        solar_elevation_deg=round(angles.elevation_deg, 2),
+                        power_kw=0.0,
+                        percent_shaded=100.0,
+                        is_daylight=False,
+                        mask_index=None
+                    )
+                )
+
+        # 7. Encode daytime masks
+        encoded_masks = encode_masks_batch(daylight_masks)
+
+        # 8. Daily Summary
+        daylight_hours = round(len(daylight_indices) * (step_min / 60.0), 2)
+        avg_shaded = round(float(np.mean(shaded_pct_list)), 2) if shaded_pct_list else 0.0
+
+        daily_summary = DailySummary(
+            total_daily_kwh=round(total_daily_kwh, 2),
+            peak_power_kw=round(peak_power_kw, 2),
+            peak_time=peak_time,
+            sunrise_time=sunrise_time,
+            sunset_time=sunset_time,
+            daylight_hours=daylight_hours,
+            avg_shaded_pct=avg_shaded
+        )
+
+        metadata = SimulateMetadata(
+            patch_width_m=round(geo_info["patch_width_m"], 2),
+            patch_height_m=round(geo_info["patch_height_m"], 2),
+            patch_area_m2=round(geo_info["patch_area_m2"], 2),
+            grid_rows=patch_h,
+            grid_cols=patch_w,
+            median_elevation_m=round(median_elev, 2),
+            crs=elev_data["crs"],
+            tile_source=elev_data["tile_source"],
+            date=request.date,
+            time_step_minutes=step_min,
+            buffer_meters=request.buffer_meters,
+            resolution_m=request.resolution_m,
+            deployment_mode=pv_cfg.deployment_mode.value,
+            effective_gcr=pv_cfg.effective_gcr,
+            module_efficiency=pv_cfg.module_efficiency,
+            system_derate=pv_cfg.system_derate
+        )
+
+        return SimulateResponse(
+            metadata=metadata,
+            daily_summary=daily_summary,
+            timeseries=timeseries_metrics,
+            mask_encoding="bitmask_base64",
+            masks=encoded_masks
+        )
