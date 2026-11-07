@@ -11,9 +11,9 @@ from ..schemas.elevation import (
     ElevationManifestResponse,
     ElevationTileInfo
 )
+from ..constants import TEST_LOCATION_PRESETS
 from ..services.elevation.tile_cache import TileCacheManager
 from ..dependencies import get_tile_cache_manager
-from scripts.fetch_test_dtm import PRESETS
 
 router = APIRouter(prefix="/api/elevation", tags=["Elevation"])
 
@@ -30,13 +30,8 @@ def get_locations(cache_manager: TileCacheManager = Depends(get_tile_cache_manag
     """
     locations: List[LocationPreset] = []
     
-    for key, p in PRESETS.items():
+    for key, p in TEST_LOCATION_PRESETS.items():
         is_cached = cache_manager.is_tile_cached(p["filename"])
-        desc = (
-            "Flank of Mount Royal with steep urban terrain gradient."
-            if key == "montreal" else
-            "Laurentian mountain ridge and valley topography with pronounced geological shadows."
-        )
         locations.append(
             LocationPreset(
                 id=key,
@@ -46,7 +41,7 @@ def get_locations(cache_manager: TileCacheManager = Depends(get_tile_cache_manag
                 bbox=p["bbox"],
                 utm_crs=p["utm_crs"],
                 elevation_base_m=p["elevation_base"],
-                description=desc,
+                description=p.get("description", ""),
                 is_cached=is_cached
             )
         )

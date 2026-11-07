@@ -58,3 +58,13 @@ def test_serializer_batch():
     for original, enc in zip(masks, encoded_list):
         decoded = decode_mask_bitmask(enc, shape)
         assert np.array_equal(original, decoded)
+
+
+def test_serializer_empty_and_zero_shape():
+    empty_mask = np.zeros((0, 0), dtype=np.uint8)
+    encoded = encode_mask_bitmask(empty_mask)
+    assert encoded == ""
+
+    decoded = decode_mask_bitmask("", (0, 0))
+    assert decoded.shape == (0, 0)
+    assert decoded.dtype == np.uint8

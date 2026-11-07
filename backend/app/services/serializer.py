@@ -13,6 +13,8 @@ def encode_mask_bitmask(mask: np.ndarray) -> str:
     Bit-packs a 2D uint8 binary mask (1 = unshaded, 0 = shaded) and returns a Base64 string.
     A 100,000-pixel patch compresses from 100 KB to ~12.5 KB.
     """
+    if mask.size == 0:
+        return ""
     # Ensure boolean/binary uint8
     binary_arr = (mask > 0).astype(np.uint8).ravel()
     packed = np.packbits(binary_arr)
@@ -23,11 +25,14 @@ def decode_mask_bitmask(encoded: str, shape: Tuple[int, int]) -> np.ndarray:
     """
     Decodes a Base64 bit-packed string back into a 2D uint8 numpy array of shape (H, W).
     """
+    total_pixels = shape[0] * shape[1]
+    if total_pixels == 0 or not encoded:
+        return np.zeros(shape, dtype=np.uint8)
+
     raw_bytes = base64.b64decode(encoded)
     packed = np.frombuffer(raw_bytes, dtype=np.uint8)
     unpacked = np.unpackbits(packed)
     
-    total_pixels = shape[0] * shape[1]
     # Trim any padding bits from the byte boundary
     trimmed = unpacked[:total_pixels]
     return trimmed.reshape(shape)

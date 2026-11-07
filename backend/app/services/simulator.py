@@ -18,13 +18,14 @@ from ..schemas.simulate import (
     TimestepMetric
 )
 from ..schemas.domain import PVConfig, DeploymentMode
+from ..constants import DEFAULT_TIMEZONE
 from ..interfaces.elevation_source import ElevationProvider
 from ..interfaces.solar_engine import SolarEngine
 from ..interfaces.occlusion_engine import OcclusionEngine
 from ..interfaces.pv_model import PVSystemModel
 from .serializer import encode_masks_batch
 
-TZ_QUEBEC = zoneinfo.ZoneInfo("America/Toronto")
+TZ_QUEBEC = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
 
 
 class SimulationOrchestrator:
@@ -112,19 +113,20 @@ class SimulationOrchestrator:
             daylight_masks = []
             daylight_irradiance = []
 
-        # 5. PV System Configuration
-        pv_cfg = PVConfig(
-            deployment_mode=request.deployment_mode,
-            module_efficiency=request.module_efficiency if request.module_efficiency is not None else 0.20,
-            system_derate=request.system_derate if request.system_derate is not None else 0.80,
-            gcr=request.gcr
-        )
+        # 5. PV System Configuration (incorporating overrides without duplicating schema defaults)
+        pv_kwargs = {"deployment_mode": request.deployment_mode}
+        if request.module_efficiency is not None:
+            pv_kwargs["module_efficiency"] = request.module_efficiency
+        if request.system_derate is not None:
+            pv_kwargs["system_derate"] = request.system_derate
+        if request.gcr is not None:
+            pv_kwargs["gcr"] = request.gcr
+        pv_cfg = PVConfig(**pv_kwargs)
 
         # 6. Compute power for all timesteps
         timeseries_metrics = []
         daylight_counter = 0
 
-        total_daily_kwh = 0.0
         peak_power_kw = 0.0
         peak_time = None
         sunrise_time = None
@@ -157,9 +159,6 @@ class SimulationOrchestrator:
                     peak_power_kw = power_kw
                     peak_time = ts_str
 
-                # Numerical integration (trapezoidal / Riemann step)
-                total_daily_kwh += power_kw * (step_min / 60.0)
-
                 timeseries_metrics.append(
                     TimestepMetric(
                         timestamp=ts_str,
@@ -185,6 +184,10 @@ class SimulationOrchestrator:
                         mask_index=None
                     )
                 )
+
+        # Numerical integration using trapezoidal rule over 24h curve
+        power_values = [m.power_kw for m in timeseries_metrics]
+        total_daily_kwh = float(np.trapezoid(power_values, dx=step_min / 60.0))
 
         # 7. Encode daytime masks
         encoded_masks = encode_masks_batch(daylight_masks)
