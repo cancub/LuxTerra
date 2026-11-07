@@ -2,10 +2,30 @@
 Geospatial transformation and geodesic buffering utilities for LuxTerra.
 """
 
-from typing import Tuple, Dict, Any
+from functools import lru_cache
+from typing import Tuple, Dict, Any, Optional
 import pyproj
+import shapely
 from shapely.geometry import box, Polygon
-from shapely.ops import transform
+
+
+@lru_cache(maxsize=32)
+def get_transformer(from_crs: str, to_crs: str) -> pyproj.Transformer:
+    """
+    Cached factory for pyproj.Transformer instances to avoid repeated initialization overhead.
+    """
+    return pyproj.Transformer.from_crs(from_crs, to_crs, always_xy=True)
+
+
+def transform_geometry(geom: shapely.Geometry, from_crs: str, to_crs: str) -> shapely.Geometry:
+    """
+    Transforms a Shapely geometry between coordinate reference systems.
+    Uses shapely.transform with interleaved=False as recommended for pyproj.Transformer.
+    """
+    if from_crs == to_crs:
+        return geom
+    transformer = get_transformer(from_crs, to_crs)
+    return shapely.transform(geom, transformer.transform, interleaved=False)
 
 
 def get_utm_crs_for_lon_lat(lon: float, lat: float) -> str:
@@ -18,20 +38,54 @@ def get_utm_crs_for_lon_lat(lon: float, lat: float) -> str:
     return f"EPSG:{epsg}"
 
 
+def normalize_bbox(min_lon: float, min_lat: float, max_lon: float, max_lat: float) -> Tuple[float, float, float, float]:
+    """
+    Ensures min <= max for bounding box coordinates, gracefully handling reversed drag inputs.
+    """
+    norm_min_lon = min(min_lon, max_lon)
+    norm_max_lon = max(min_lon, max_lon)
+    norm_min_lat = min(min_lat, max_lat)
+    norm_max_lat = max(min_lat, max_lat)
+    return norm_min_lon, norm_min_lat, norm_max_lon, norm_max_lat
+
+
 def calculate_bbox_area_meters(min_lon: float, min_lat: float, max_lon: float, max_lat: float) -> float:
     """
     Calculate the accurate surface area of a WGS84 bounding box in square meters.
-    Uses equal-area / local UTM projection to avoid high-latitude distortion.
+    Uses local UTM projection to avoid high-latitude distortion.
     """
+    min_lon, min_lat, max_lon, max_lat = normalize_bbox(min_lon, min_lat, max_lon, max_lat)
     center_lon = (min_lon + max_lon) / 2.0
     center_lat = (min_lat + max_lat) / 2.0
     utm_crs = get_utm_crs_for_lon_lat(center_lon, center_lat)
     
-    project = pyproj.Transformer.from_crs("EPSG:4326", utm_crs, always_xy=True).transform
     geom_wgs84 = box(min_lon, min_lat, max_lon, max_lat)
-    geom_metric = transform(project, geom_wgs84)
+    geom_metric = transform_geometry(geom_wgs84, "EPSG:4326", utm_crs)
     
     return float(geom_metric.area)
+
+
+def validate_patch_area(
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+    max_area_m2: float = 100000.0
+) -> Tuple[bool, float, str]:
+    """
+    Validates whether a bounding box falls within the allowed maximum surface area (default 100,000 m²).
+    Returns (is_valid, computed_area_m2, message).
+    """
+    area_m2 = calculate_bbox_area_meters(min_lon, min_lat, max_lon, max_lat)
+    if area_m2 <= 0.0:
+        return False, 0.0, "Bounding box area must be greater than zero."
+    if area_m2 > max_area_m2:
+        return (
+            False,
+            area_m2,
+            f"Selected area ({area_m2:,.1f} m²) exceeds the maximum allowable limit of {max_area_m2:,.0f} m²."
+        )
+    return True, area_m2, "Area is valid."
 
 
 def buffer_bounding_box_meters(
@@ -40,29 +94,21 @@ def buffer_bounding_box_meters(
     max_lon: float,
     max_lat: float,
     buffer_meters: float = 500.0,
-    target_crs: str = None
+    target_crs: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Buffers a WGS84 bounding box outward by `buffer_meters` in metric planar coordinates.
-    Returns:
-      - target_crs: The metric CRS used (e.g. UTM Zone 18N or provided CRS)
-      - patch_bounds_metric: (min_x, min_y, max_x, max_y)
-      - buffered_bounds_metric: (min_x, min_y, max_x, max_y)
-      - patch_area_m2: Surface area of the target patch
-      - patch_bounds_wgs84: (min_lon, min_lat, max_lon, max_lat)
-      - buffered_bounds_wgs84: (min_lon, min_lat, max_lon, max_lat)
+    Returns metric and geographic bounds, dimensions, and area.
     """
+    min_lon, min_lat, max_lon, max_lat = normalize_bbox(min_lon, min_lat, max_lon, max_lat)
     center_lon = (min_lon + max_lon) / 2.0
     center_lat = (min_lat + max_lat) / 2.0
     
     if target_crs is None:
         target_crs = get_utm_crs_for_lon_lat(center_lon, center_lat)
         
-    to_metric = pyproj.Transformer.from_crs("EPSG:4326", target_crs, always_xy=True).transform
-    to_wgs84 = pyproj.Transformer.from_crs(target_crs, "EPSG:4326", always_xy=True).transform
-    
     patch_wgs84 = box(min_lon, min_lat, max_lon, max_lat)
-    patch_metric = transform(to_metric, patch_wgs84)
+    patch_metric = transform_geometry(patch_wgs84, "EPSG:4326", target_crs)
     
     min_x, min_y, max_x, max_y = patch_metric.bounds
     patch_area = float(patch_metric.area)
@@ -74,7 +120,7 @@ def buffer_bounding_box_meters(
     buff_max_y = max_y + buffer_meters
     
     buffered_metric_box = box(buff_min_x, buff_min_y, buff_max_x, buff_max_y)
-    buffered_wgs84 = transform(to_wgs84, buffered_metric_box)
+    buffered_wgs84 = transform_geometry(buffered_metric_box, target_crs, "EPSG:4326")
     b_min_lon, b_min_lat, b_max_lon, b_max_lat = buffered_wgs84.bounds
     
     return {
