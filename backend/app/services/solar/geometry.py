@@ -49,7 +49,7 @@ def compute_solar_angles(
             solar_zenith=zenith,
             solar_azimuth=azimuth
         )
-        incident_angle = float(aoi_val.iloc[0])
+        incident_angle = float(aoi_val.iloc[0]) if hasattr(aoi_val, 'iloc') else float(aoi_val)
     else:
         incident_angle = 90.0
 
