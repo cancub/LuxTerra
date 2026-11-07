@@ -30,9 +30,11 @@ class SolarEngine(ABC):
         timestamp: datetime,
         latitude: float,
         longitude: float,
-        angles: SolarAngles
+        angles: SolarAngles,
+        altitude_m: float = 0.0
     ) -> IrradianceComponents:
         """
         Calculates direct normal, diffuse horizontal, and plane-of-array irradiance components.
+        Accepts terrain altitude (meters) to accurately calibrate atmospheric attenuation.
         """
         pass
