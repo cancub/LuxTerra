@@ -44,7 +44,9 @@ def verify_environment():
         print(f"GDAL Version: {rasterio.__gdal_version__}")
         
         # Test in-memory GeoTIFF creation & read
+        from rasterio.transform import from_origin
         data = np.ones((10, 10), dtype=np.float32)
+        transform = from_origin(0, 10, 1, 1)
         with MemoryFile() as memfile:
             with memfile.open(
                 driver='GTiff',
@@ -52,7 +54,8 @@ def verify_environment():
                 width=10,
                 count=1,
                 dtype=data.dtype,
-                crs='+proj=latlong'
+                crs='EPSG:4326',
+                transform=transform
             ) as dataset:
                 dataset.write(data, 1)
             
