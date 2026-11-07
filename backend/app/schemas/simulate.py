@@ -40,6 +40,7 @@ class SimulateMetadata(BaseModel):
     patch_width_m: float
     patch_height_m: float
     patch_area_m2: float
+    patch_bounds_wgs84: List[float] = Field(..., description="[min_lon, min_lat, max_lon, max_lat] for map canvas projection")
     grid_rows: int
     grid_cols: int
     median_elevation_m: float

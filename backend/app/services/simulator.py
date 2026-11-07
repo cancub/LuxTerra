@@ -1,10 +1,10 @@
 """
 Simulation Orchestrator Service.
-Coordinates elevation extraction, solar geometry, batch GPU ray-marching,
+Coordinates elevation extraction, vectorized solar geometry, batch GPU ray-marching,
 PV yield conversion, and daily integration.
 """
 
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime, date, time
 import zoneinfo
 import numpy as np
@@ -29,7 +29,7 @@ TZ_QUEBEC = zoneinfo.ZoneInfo("America/Toronto")
 
 class SimulationOrchestrator:
     """
-    Coordinates end-to-end full-day simulation.
+    Coordinates end-to-end full-day simulation with vectorized solar operations and batch GPU ray-marching.
     """
 
     def __init__(
@@ -69,32 +69,31 @@ class SimulationOrchestrator:
         patch_w = patch_slice_x.stop - patch_slice_x.start
         cell_area_m2 = request.resolution_m * request.resolution_m
 
-        # 2. Build 24-hour timestep intervals
+        # 2. Build 24-hour timestep intervals (robust against DST transitions)
         sim_date = date.fromisoformat(request.date)
         step_min = request.time_step_minutes
         
         start_dt = datetime.combine(sim_date, time(0, 0), tzinfo=TZ_QUEBEC)
-        # 24 hours of intervals
-        periods = int(24 * 60 / step_min)
-        timestamps = pd.date_range(start_dt, periods=periods, freq=f"{step_min}min")
+        end_dt = datetime.combine(sim_date, time(23, 59, 59), tzinfo=TZ_QUEBEC)
+        timestamps = pd.date_range(start=start_dt, end=end_dt, freq=f"{step_min}min")
 
         center_lon = (bbox.min_lon + bbox.max_lon) / 2.0
         center_lat = (bbox.min_lat + bbox.max_lat) / 2.0
 
-        # 3. Calculate solar positions and identify daylight frames
-        all_angles = []
+        # 3. Vectorized calculation of all solar positions
+        all_angles = self.solar_engine.calculate_solar_angles_series(timestamps, center_lat, center_lon)
+
         daylight_indices = []
         daylight_angle_pairs = []
+        daylight_angles = []
 
-        for idx, ts in enumerate(timestamps):
-            py_dt = ts.to_pydatetime()
-            angles = self.solar_engine.calculate_solar_angles(py_dt, center_lat, center_lon)
-            all_angles.append(angles)
+        for idx, angles in enumerate(all_angles):
             if angles.elevation_deg > 0.0:
                 daylight_indices.append(idx)
                 daylight_angle_pairs.append((angles.azimuth_deg, angles.elevation_deg))
+                daylight_angles.append(angles)
 
-        # 4. Batch compute occlusion masks for daytime frames
+        # 4. Batch compute occlusion masks for daytime frames (single VRAM upload)
         if daylight_angle_pairs:
             daylight_masks = self.occlusion_engine.compute_shadow_masks_batch(
                 elevation_grid=elevation_grid,
@@ -104,8 +103,14 @@ class SimulationOrchestrator:
                 resolution_m=request.resolution_m,
                 max_search_radius_m=request.buffer_meters
             )
+            # Vectorized calculation of clear-sky irradiance for all daytime frames
+            daylight_times = timestamps[daylight_indices]
+            daylight_irradiance = self.solar_engine.calculate_irradiance_series(
+                daylight_times, center_lat, center_lon, daylight_angles, altitude_m=median_elev
+            )
         else:
             daylight_masks = []
+            daylight_irradiance = []
 
         # 5. PV System Configuration
         pv_cfg = PVConfig(
@@ -137,9 +142,7 @@ class SimulationOrchestrator:
                 sunset_time = ts_str
 
                 mask = daylight_masks[daylight_counter]
-                irradiance = self.solar_engine.calculate_irradiance(
-                    py_dt, center_lat, center_lon, angles, altitude_m=median_elev
-                )
+                irradiance = daylight_irradiance[daylight_counter]
 
                 power_kw, percent_shaded = self.pv_model.calculate_power_kw(
                     shadow_mask=mask,
@@ -204,6 +207,7 @@ class SimulationOrchestrator:
             patch_width_m=round(geo_info["patch_width_m"], 2),
             patch_height_m=round(geo_info["patch_height_m"], 2),
             patch_area_m2=round(geo_info["patch_area_m2"], 2),
+            patch_bounds_wgs84=list(geo_info["patch_bounds_wgs84"]),
             grid_rows=patch_h,
             grid_cols=patch_w,
             median_elevation_m=round(median_elev, 2),

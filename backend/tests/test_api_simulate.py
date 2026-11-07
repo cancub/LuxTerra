@@ -87,6 +87,11 @@ async def test_simulate_montreal_full_day():
         assert meta["date"] == "2026-06-21"
         assert meta["time_step_minutes"] == 15
         assert meta["deployment_mode"] == "rooftop"
+        assert "patch_bounds_wgs84" in meta
+        assert len(meta["patch_bounds_wgs84"]) == 4
+        # Bounds should approximate requested bbox
+        assert pytest.approx(meta["patch_bounds_wgs84"][0], abs=0.001) == -73.619
+        assert pytest.approx(meta["patch_bounds_wgs84"][1], abs=0.001) == 45.502
 
         # 2. Daily summary checks
         summary = data["daily_summary"]
@@ -184,3 +189,29 @@ async def test_simulate_missing_coverage_returns_404():
         response = await client.post("/api/simulate", json=payload)
         assert response.status_code == 404
         assert "No local elevation raster covers" in response.text
+
+
+@pytest.mark.asyncio
+async def test_simulate_dst_transition_date():
+    """
+    Test simulation on Daylight Saving Time transition date (Nov 1, 2026 - Fall back).
+    Ensures date range generation handles 25-hour day smoothly without exceptions.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        payload = {
+            "bbox": {
+                "min_lon": -73.619,
+                "min_lat": 45.502,
+                "max_lon": -73.617,
+                "max_lat": 45.504
+            },
+            "date": "2026-11-01",
+            "time_step_minutes": 30
+        }
+        response = await client.post("/api/simulate", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["daily_summary"]["total_daily_kwh"] > 0.0
+        assert len(data["timeseries"]) > 40
+
