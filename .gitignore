@@ -48,7 +48,8 @@ data/dtm/tmp/
 
 # IDE & OS
 .vscode/
-.idea/
+.idea/**
+!.idea/plan*.md
 *.swp
 *.swo
 *~
