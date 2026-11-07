@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import AppConfig, get_config
 from .services.occlusion.factory import is_gpu_available
 from .routers.simulate import router as simulate_router
+from .routers.elevation import router as elevation_router
 
 cfg = get_config()
 
@@ -26,6 +27,7 @@ app.add_middleware(
 )
 
 app.include_router(simulate_router)
+app.include_router(elevation_router)
 
 
 @app.get("/api/health", tags=["System"])
