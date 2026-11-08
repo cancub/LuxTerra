@@ -109,7 +109,7 @@ def buffer_bounding_box_meters(
     min_lat: float,
     max_lon: float,
     max_lat: float,
-    buffer_meters: float = 500.0,
+    buffer_meters: float = 1000.0,
     target_crs: Optional[str] = None
 ) -> Dict[str, Any]:
     """

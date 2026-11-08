@@ -20,7 +20,7 @@ class ElevationProvider(ABC):
         min_lat: float,
         max_lon: float,
         max_lat: float,
-        buffer_meters: float = 500.0,
+        buffer_meters: float = 1000.0,
         target_resolution_m: float = 1.0
     ) -> Dict[str, Any]:
         """

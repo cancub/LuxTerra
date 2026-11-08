@@ -26,7 +26,7 @@ class SimulateRequest(BaseModel):
     module_efficiency: Optional[float] = Field(default=None, ge=0.05, le=0.40, description="Solar module efficiency override (e.g. 0.20)")
     system_derate: Optional[float] = Field(default=None, ge=0.40, le=1.00, description="System performance ratio derate override (e.g. 0.80)")
     gcr: Optional[float] = Field(default=None, ge=0.10, le=1.00, description="Ground Coverage Ratio override (0.1 to 1.0)")
-    buffer_meters: float = Field(default=500.0, ge=100.0, le=2000.0, description="Outward shadow search perimeter buffer")
+    buffer_meters: float = Field(default=1000.0, ge=100.0, le=2000.0, description="Outward shadow search perimeter buffer")
     resolution_m: float = Field(default=1.0, ge=0.5, le=10.0, description="Simulation grid resolution in meters")
     include_tree_canopy: bool = Field(default=True, description="Enable vegetative tree canopy and structure ray-marching")
     canopy_mode: str = Field(default="seasonal", description="Canopy phenology mode: 'seasonal', 'leaf_on', 'leaf_off', 'bare_terrain'")

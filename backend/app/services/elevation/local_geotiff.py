@@ -136,7 +136,7 @@ class LocalGeoTIFFProvider(ElevationProvider):
         min_lat: float,
         max_lon: float,
         max_lat: float,
-        buffer_meters: float = 500.0
+        buffer_meters: float = 1000.0
     ) -> Tuple[Optional[Path], Optional[Path]]:
         """
         Dynamically discovers and acquires a 1m LiDAR DTM and paired DSM raster from official NRCan STAC & S3 COG catalog
@@ -207,7 +207,7 @@ class LocalGeoTIFFProvider(ElevationProvider):
         min_lat: float,
         max_lon: float,
         max_lat: float,
-        buffer_meters: float = 500.0
+        buffer_meters: float = 1000.0
     ) -> Optional[Path]:
         """
         Dynamically discovers and acquires a 1m LiDAR DTM raster from official NRCan STAC & S3 COG catalog.
@@ -221,7 +221,7 @@ class LocalGeoTIFFProvider(ElevationProvider):
         min_lat: float,
         max_lon: float,
         max_lat: float,
-        buffer_meters: float = 500.0,
+        buffer_meters: float = 1000.0,
         target_resolution_m: float = 1.0
     ) -> Dict[str, Any]:
         """

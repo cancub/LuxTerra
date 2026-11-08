@@ -48,7 +48,7 @@ def calculate_ray_step(
     solar_azimuth_deg: float,
     solar_elevation_deg: float,
     resolution_m: float = 1.0,
-    max_search_radius_m: float = 500.0
+    max_search_radius_m: float = 1000.0
 ) -> RayStepParameters:
     """
     Calculates 2D stepping parameters along the solar azimuth vector towards the sun.

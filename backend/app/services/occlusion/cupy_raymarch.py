@@ -51,7 +51,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
         solar_azimuth_deg: float,
         solar_elevation_deg: float,
         resolution_m: float = 1.0,
-        max_search_radius_m: float = 500.0
+        max_search_radius_m: float = 1000.0
     ) -> np.ndarray:
         """
         Computes binary shadow mask for a single sun position.
@@ -104,7 +104,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
         patch_slice_x: slice,
         sun_angles: List[Tuple[float, float]],
         resolution_m: float = 1.0,
-        max_search_radius_m: float = 500.0
+        max_search_radius_m: float = 1000.0
     ) -> List[np.ndarray]:
         """
         Batch-computes shadow masks across multiple sun angles.
@@ -164,7 +164,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
         solar_azimuth_deg: float,
         solar_elevation_deg: float,
         resolution_m: float = 1.0,
-        max_search_radius_m: float = 500.0,
+        max_search_radius_m: float = 1000.0,
         is_rooftop: bool = True,
         ground_stand_height_m: float = 1.5,
         include_tree_canopy: bool = True
@@ -231,7 +231,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
         patch_slice_x: slice,
         sun_angles: List[Tuple[float, float]],
         resolution_m: float = 1.0,
-        max_search_radius_m: float = 500.0,
+        max_search_radius_m: float = 1000.0,
         is_rooftop: bool = True,
         ground_stand_height_m: float = 1.5,
         include_tree_canopy: bool = True

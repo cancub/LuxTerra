@@ -16,7 +16,7 @@ class AppConfig(BaseModel):
     
     # Geographic and DTM limits
     max_patch_area_m2: float = 100000.0
-    default_buffer_meters: float = 500.0
+    default_buffer_meters: float = 1000.0
     default_resolution_m: float = 1.0
     default_time_step_minutes: int = 1
     
