@@ -313,3 +313,164 @@ input:focus, select:focus {
   background: rgba(255, 255, 255, 0.2);
   border-radius: 3px;
 }
+
+/* Timeline Range Scrubber Slider (No left-side fill, smooth glowing thumb) */
+.timeline-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent !important;
+  width: 100%;
+  height: 16px;
+  cursor: pointer;
+  outline: none;
+  margin: 0;
+  padding: 0;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.timeline-slider::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: transparent !important;
+  border: none;
+}
+
+.timeline-slider::-moz-range-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: transparent !important;
+  border: none;
+}
+
+.timeline-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #f59e0b;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.85), 0 2px 4px rgba(0, 0, 0, 0.5);
+  cursor: grab;
+  margin-top: -5px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
+}
+
+.timeline-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.22);
+  box-shadow: 0 0 14px rgba(245, 158, 11, 1), 0 2px 6px rgba(0, 0, 0, 0.6);
+  background: #fbbf24;
+}
+
+.timeline-slider::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.3);
+}
+
+.timeline-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #f59e0b;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.85), 0 2px 4px rgba(0, 0, 0, 0.5);
+  cursor: grab;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
+}
+
+.timeline-slider::-moz-range-thumb:hover {
+  transform: scale(1.22);
+  background: #fbbf24;
+}
+
+/* Sleek Date Picker & Astronomical Presets */
+.sleek-date-picker {
+  background: rgba(15, 23, 42, 0.75) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 6px;
+  padding: 4px 8px !important;
+  font-size: 0.82rem !important;
+  color: var(--text-primary) !important;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sleek-date-picker:hover, .sleek-date-picker:focus {
+  border-color: var(--accent-sun) !important;
+  box-shadow: 0 0 8px var(--accent-sun-glow) !important;
+}
+
+.sleek-date-picker::-webkit-calendar-picker-indicator {
+  filter: invert(0.85);
+  cursor: pointer;
+}
+
+.sleek-presets-select {
+  background: rgba(30, 41, 59, 0.95) !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  color: #f8fafc !important;
+  font-size: 0.78rem !important;
+  font-weight: 500;
+  padding: 4px 8px !important;
+  border-radius: 6px !important;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.sleek-presets-select:hover, .sleek-presets-select:focus {
+  border-color: var(--accent-solar) !important;
+  background: rgba(51, 65, 85, 0.95) !important;
+  box-shadow: 0 0 8px var(--accent-solar-glow) !important;
+}
+
+.sleek-presets-select option {
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+/* Bookmark Buttons High Contrast */
+.bookmark-btn {
+  background: rgba(30, 41, 59, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  color: #f8fafc !important;
+  font-weight: 600 !important;
+  transition: all 0.15s ease;
+}
+
+.bookmark-btn:hover {
+  background: rgba(51, 65, 85, 0.95) !important;
+  border-color: rgba(255, 255, 255, 0.4) !important;
+  color: #ffffff !important;
+}
+
+.bookmark-btn.active {
+  background: #2563eb !important;
+  border-color: #60a5fa !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(37, 99, 235, 0.5) !important;
+}
+
+/* Central Simulation Computing Loading Pill */
+.sim-loading-pill {
+  position: absolute;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 18px;
+  border-radius: 20px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid var(--accent-solar);
+  box-shadow: 0 0 24px var(--accent-solar-glow);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  pointer-events: none;
+  animation: slideDown 0.2s ease-out;
+}

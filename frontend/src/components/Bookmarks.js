@@ -14,7 +14,7 @@ export const PRESET_LOCATIONS = [
     zoom: 16.2,
     pitch: 52,
     bearing: -35,
-    sampleBbox: [-73.621, 45.501, -73.615, 45.505]
+    sampleBbox: [-73.619, 45.504, -73.616, 45.506]
   },
   {
     id: 'sainte-lucie',
@@ -24,7 +24,7 @@ export const PRESET_LOCATIONS = [
     zoom: 15.5,
     pitch: 56,
     bearing: 40,
-    sampleBbox: [-74.198, 46.133, -74.192, 46.139]
+    sampleBbox: [-74.197, 46.134, -74.194, 46.136]
   }
 ];
 

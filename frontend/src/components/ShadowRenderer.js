@@ -3,7 +3,7 @@
  * Manages an offscreen canvas for decoding and rendering GPU shadow masks.
  */
 
-import { decodeBitmaskToImageData } from '../utils/maskDecoder.js';
+import { decodeBitmaskToImageData, SHADOW_PIXEL_WORD } from '../utils/maskDecoder.js';
 
 export class ShadowRenderer {
   constructor() {
@@ -34,6 +34,31 @@ export class ShadowRenderer {
     const imgData = decodeBitmaskToImageData(base64Str, rows, cols, this.ctx);
     this.ctx.putImageData(imgData, 0, 0);
     this.currentMaskBase64 = base64Str;
+
+    return this.canvas;
+  }
+
+  /**
+   * Fills the canvas with 100% full shadow (used during nighttime / sun below horizon).
+   */
+  renderFullShade(rows, cols) {
+    if (rows <= 0 || cols <= 0) {
+      this.clear();
+      return this.canvas;
+    }
+
+    if (this.canvas.width !== cols || this.canvas.height !== rows) {
+      this.canvas.width = cols;
+      this.canvas.height = rows;
+      this.rows = rows;
+      this.cols = cols;
+    }
+
+    const imgData = this.ctx.createImageData(cols, rows);
+    const data32 = new Uint32Array(imgData.data.buffer);
+    data32.fill(SHADOW_PIXEL_WORD);
+    this.ctx.putImageData(imgData, 0, 0);
+    this.currentMaskBase64 = '__FULL_SHADE__';
 
     return this.canvas;
   }

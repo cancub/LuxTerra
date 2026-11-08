@@ -15,7 +15,13 @@ export async function runSimulation(requestPayload) {
     let errorDetail = `Simulation request failed with HTTP ${response.status}`;
     try {
       const err = await response.json();
-      errorDetail = err.detail || errorDetail;
+      if (Array.isArray(err.detail)) {
+        errorDetail = err.detail.map(d => d.msg || JSON.stringify(d)).join('; ');
+      } else if (typeof err.detail === 'object' && err.detail !== null) {
+        errorDetail = err.detail.message || JSON.stringify(err.detail);
+      } else if (err.detail) {
+        errorDetail = String(err.detail);
+      }
     } catch (_) {}
     throw new Error(errorDetail);
   }

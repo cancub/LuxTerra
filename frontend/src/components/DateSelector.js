@@ -20,15 +20,15 @@ export class DateSelector {
     this.wrapper.style.gap = '8px';
 
     this.wrapper.innerHTML = `
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-sun);">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-sun); flex-shrink: 0;">
         <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
         <line x1="16" y1="2" x2="16" y2="6"></line>
         <line x1="8" y1="2" x2="8" y2="6"></line>
         <line x1="3" y1="10" x2="21" y2="10"></line>
       </svg>
-      <input type="date" class="date-input" value="${this.currentDate}" style="background: transparent; border: none; font-size: 0.85rem; font-family: var(--font-mono); color: var(--text-primary); cursor: pointer;" />
-      <select class="solstice-dropdown" style="background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border-card); font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; color: var(--text-secondary); cursor: pointer;">
-        <option value="">Presets...</option>
+      <input type="date" class="date-input sleek-date-picker" value="${this.currentDate}" title="Select Simulation Date" />
+      <select class="solstice-dropdown sleek-presets-select" title="Astronomical Presets">
+        <option value="" disabled selected>Presets...</option>
         <option value="2026-06-21">Summer Solstice (Jun 21)</option>
         <option value="2026-09-22">Fall Equinox (Sep 22)</option>
         <option value="2026-12-21">Winter Solstice (Dec 21)</option>

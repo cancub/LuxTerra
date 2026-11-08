@@ -34,18 +34,18 @@ export class TimeScrubber {
           <span style="margin: 0 4px;">·</span>
           <span>El: <strong class="el-val" style="color: var(--text-primary);">65.0°</strong></span>
         </div>
-        <div class="sun-times" style="font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 10px;">
-          <span>🌅 <span class="sunrise-val">--:--</span></span>
-          <span>🌇 <span class="sunset-val">--:--</span></span>
+        <div class="sun-times" style="font-size: 0.78rem; font-weight: 500; color: var(--text-secondary); display: flex; gap: 12px;">
+          <span>🌅 <strong class="sunrise-val" style="color: var(--text-primary);">--:--</strong></span>
+          <span>🌇 <strong class="sunset-val" style="color: var(--text-primary);">--:--</strong></span>
         </div>
       </div>
 
-      <div class="slider-container" style="position: relative; width: 100%; display: flex; align-items: center;">
-        <div class="daylight-range-bar" style="position: absolute; height: 6px; border-radius: 3px; background: rgba(245, 158, 11, 0.35); pointer-events: none; left: 22%; right: 22%; z-index: 1;"></div>
-        <input type="range" class="timeline-slider" min="0" max="287" value="144" style="width: 100%; height: 6px; z-index: 2; cursor: pointer; accent-color: var(--accent-sun);" />
+      <div class="slider-container" style="position: relative; width: 100%; height: 16px; display: flex; align-items: center;">
+        <div class="sky-gradient-track" style="position: absolute; left: 0; right: 0; height: 8px; border-radius: 4px; background: linear-gradient(to right, #090e17 0%, #1e1b4b 20%, #d97706 28%, #38bdf8 50%, #d97706 72%, #1e1b4b 80%, #090e17 100%); pointer-events: none; z-index: 1; box-shadow: inset 0 1px 2px rgba(0,0,0,0.5);"></div>
+        <input type="range" class="timeline-slider" min="0" max="287" value="144" style="width: 100%; height: 16px; z-index: 2; cursor: pointer;" />
       </div>
 
-      <div class="timeline-ticks" style="display: flex; justify-content: space-between; font-size: 0.68rem; font-family: var(--font-mono); color: var(--text-muted);">
+      <div class="timeline-ticks" style="display: flex; justify-content: space-between; font-size: 0.72rem; font-family: var(--font-mono); color: var(--text-secondary); font-weight: 500;">
         <span>00:00</span>
         <span>04:00</span>
         <span>08:00</span>
@@ -63,7 +63,7 @@ export class TimeScrubber {
     this.sunriseVal = this.element.querySelector('.sunrise-val');
     this.sunsetVal = this.element.querySelector('.sunset-val');
     this.slider = this.element.querySelector('.timeline-slider');
-    this.daylightBar = this.element.querySelector('.daylight-range-bar');
+    this.skyTrack = this.element.querySelector('.sky-gradient-track');
 
     this.slider.addEventListener('input', (e) => {
       this.currentIndex = parseInt(e.target.value, 10);
@@ -95,7 +95,7 @@ export class TimeScrubber {
 
     this.slider.max = this.timeseries.length - 1;
     
-    // Position sunrise/sunset markers
+    // Position sunrise/sunset markers and compute soft sky gradient
     if (this.dailySummary && this.dailySummary.sunrise_time && this.dailySummary.sunset_time) {
       const sunriseDt = new Date(this.dailySummary.sunrise_time);
       const sunsetDt = new Date(this.dailySummary.sunset_time);
@@ -106,11 +106,29 @@ export class TimeScrubber {
       const lastDt = new Date(this.timeseries[this.timeseries.length - 1].timestamp);
       const totalSpan = lastDt.getTime() - firstDt.getTime();
 
-      if (totalSpan > 0) {
+      if (totalSpan > 0 && this.skyTrack) {
         const sunrisePct = Math.max(0, Math.min(100, ((sunriseDt.getTime() - firstDt.getTime()) / totalSpan) * 100));
         const sunsetPct = Math.max(0, Math.min(100, ((sunsetDt.getTime() - firstDt.getTime()) / totalSpan) * 100));
-        this.daylightBar.style.left = `${sunrisePct}%`;
-        this.daylightBar.style.width = `${sunsetPct - sunrisePct}%`;
+        
+        const dawnStart = Math.max(0, (sunrisePct - 7)).toFixed(1);
+        const dawnPeak = sunrisePct.toFixed(1);
+        const morningSky = Math.min(100, (sunrisePct + 6)).toFixed(1);
+        const noonPct = ((sunrisePct + sunsetPct) / 2).toFixed(1);
+        const afternoonSky = Math.max(0, (sunsetPct - 6)).toFixed(1);
+        const duskPeak = sunsetPct.toFixed(1);
+        const duskEnd = Math.min(100, (sunsetPct + 7)).toFixed(1);
+
+        this.skyTrack.style.background = `linear-gradient(to right,
+          #070b13 0%,
+          #070b13 ${dawnStart}%,
+          #b45309 ${dawnPeak}%,
+          #0284c7 ${morningSky}%,
+          #38bdf8 ${noonPct}%,
+          #0284c7 ${afternoonSky}%,
+          #b45309 ${duskPeak}%,
+          #070b13 ${duskEnd}%,
+          #070b13 100%
+        )`;
       }
     }
 

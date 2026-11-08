@@ -95,10 +95,15 @@ if (appContainer) {
     }
     solarDashboard.updateTelemetry(metric, index);
 
-    if (currentSimulationData && currentSimulationData.masks && metric.mask_index !== null) {
-      const maskStr = currentSimulationData.masks[metric.mask_index];
+    if (currentSimulationData) {
       const meta = currentSimulationData.metadata;
-      shadowCanvasLayer.renderFrame(maskStr, meta.grid_rows, meta.grid_cols);
+      if (metric.is_daylight && metric.mask_index !== null && currentSimulationData.masks) {
+        const maskStr = currentSimulationData.masks[metric.mask_index];
+        shadowCanvasLayer.renderFrame(maskStr, meta.grid_rows, meta.grid_cols);
+      } else {
+        // Nighttime or sun below horizon: 100% full shade across the entire selected rectangle
+        shadowCanvasLayer.renderFullShade(meta.grid_rows, meta.grid_cols);
+      }
     } else {
       shadowCanvasLayer.clear();
     }
@@ -124,6 +129,10 @@ if (appContainer) {
 
   function showToast(message, type = 'warning', durationMs = 5000) {
     if (!toastContainer) return;
+    const msgStr = (typeof message === 'object' && message !== null)
+      ? (message.message || JSON.stringify(message))
+      : String(message);
+
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
     toast.innerHTML = `
@@ -132,7 +141,7 @@ if (appContainer) {
         <line x1="12" y1="8" x2="12" y2="12"></line>
         <line x1="12" y1="16" x2="12.01" y2="16"></line>
       </svg>
-      <span>${message}</span>
+      <span>${msgStr}</span>
     `;
     toastContainer.appendChild(toast);
     setTimeout(() => {
@@ -149,6 +158,17 @@ if (appContainer) {
 
     if (statusPill) {
       statusPill.innerHTML = `<span class="spinner" style="display: inline-block; vertical-align: middle; margin-right: 4px;"></span> Ray-marching...`;
+    }
+
+    let loadingPill = document.getElementById('sim-loading-pill');
+    if (!loadingPill) {
+      loadingPill = document.createElement('div');
+      loadingPill.id = 'sim-loading-pill';
+      loadingPill.className = 'sim-loading-pill';
+      loadingPill.innerHTML = `<span class="spinner"></span> <span>Calculating GPU Terrain Shadows & Solar Power...</span>`;
+      document.body.appendChild(loadingPill);
+    } else {
+      loadingPill.style.display = 'flex';
     }
 
     try {
@@ -183,6 +203,9 @@ if (appContainer) {
       console.warn('Simulation execution error:', err);
       showToast(err.message, 'warning');
     } finally {
+      if (loadingPill) {
+        loadingPill.remove();
+      }
       if (statusPill) {
         statusPill.textContent = 'QC Solar 1m';
       }

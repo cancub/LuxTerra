@@ -42,6 +42,7 @@ export class PlaybackEngine {
       <div class="speed-toggle-group" style="display: inline-flex; gap: 3px;">
         <button class="btn btn-sm speed-btn ${this.speedPreset === 5 ? 'active' : ''}" data-speed="5">5 min/s</button>
         <button class="btn btn-sm speed-btn ${this.speedPreset === 15 ? 'active' : ''}" data-speed="15">15 min/s</button>
+        <button class="btn btn-sm speed-btn ${this.speedPreset === 30 ? 'active' : ''}" data-speed="30">30 min/s</button>
       </div>
     `;
 

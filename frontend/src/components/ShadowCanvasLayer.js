@@ -90,6 +90,24 @@ export class ShadowCanvasLayer {
     this.map.triggerRepaint();
   }
 
+  /**
+   * Renders 100% full shadow across the entire patch (used for nighttime).
+   */
+  renderFullShade(rows, cols) {
+    if (rows <= 0 || cols <= 0) {
+      this.clear();
+      return;
+    }
+
+    this.shadowRenderer.renderFullShade(rows, cols);
+
+    const source = this.map.getSource(this.sourceId);
+    if (source && typeof source.play === 'function') {
+      source.play();
+    }
+    this.map.triggerRepaint();
+  }
+
   clear() {
     this.shadowRenderer.clear();
     const source = this.map.getSource(this.sourceId);

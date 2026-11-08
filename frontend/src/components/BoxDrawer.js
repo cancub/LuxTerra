@@ -202,11 +202,16 @@ export class BoxDrawer {
   }
 
   setBox(bbox) {
-    this.currentBbox = bbox;
-    const dims = computeBboxDimensions(...bbox);
-    this.updateBox(bbox, dims.areaM2 > MAX_PATCH_AREA_M2);
+    let targetBbox = bbox;
+    let dims = computeBboxDimensions(...bbox);
+    if (dims.areaM2 > MAX_PATCH_AREA_M2) {
+      targetBbox = clampBboxToMaxArea(bbox, MAX_PATCH_AREA_M2);
+      dims = computeBboxDimensions(...targetBbox);
+    }
+    this.currentBbox = targetBbox;
+    this.updateBox(targetBbox, false);
     this.onSelectionComplete({
-      bbox: bbox,
+      bbox: targetBbox,
       dimensions: dims
     });
   }
