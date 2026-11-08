@@ -175,7 +175,7 @@ body, html {
   align-items: center;
   gap: 8px;
   width: 100%;
-  max-width: 520px;
+  max-width: 570px;
 }
 
 @media (max-width: 860px) {
@@ -187,7 +187,10 @@ body, html {
   }
   .energy-metrics-mount {
     width: 100%;
-    max-width: 520px;
+    max-width: 570px;
+  }
+  .timeline-cluster {
+    max-width: 570px;
   }
 }
 
@@ -392,9 +395,11 @@ body, html {
 .timeline-controls-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 8px;
   width: 100%;
+  max-width: 570px;
+  box-sizing: border-box;
   pointer-events: none;
 }
 
@@ -402,7 +407,22 @@ body, html {
   pointer-events: auto;
 }
 
+#date-selector-mount {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+#playback-controls-mount {
+  display: flex;
+  flex-shrink: 0;
+}
+
 #timeline-scrubber-mount {
+  width: 100%;
+  max-width: 570px;
+  display: flex;
+  justify-content: center;
   pointer-events: none;
 }
 
@@ -624,7 +644,10 @@ input:focus, select:focus {
   color: #f8fafc !important;
   font-size: 0.78rem !important;
   font-weight: 500;
-  padding: 4px 8px !important;
+  height: 28px !important;
+  line-height: 26px !important;
+  box-sizing: border-box !important;
+  padding: 0 8px !important;
   border-radius: 6px !important;
   cursor: pointer;
   transition: border-color 0.15s ease, background-color 0.15s ease;

@@ -27,38 +27,44 @@ export class DateSelector {
     this.wrapper.style.position = 'relative';
     this.wrapper.style.display = 'inline-flex';
     this.wrapper.style.alignItems = 'center';
-    this.wrapper.style.padding = '3px 8px';
+    this.wrapper.style.justifyContent = 'space-between';
+    this.wrapper.style.height = '38px';
+    this.wrapper.style.width = '100%';
+    this.wrapper.style.boxSizing = 'border-box';
+    this.wrapper.style.padding = '0 8px';
     this.wrapper.style.gap = '6px';
     this.wrapper.style.userSelect = 'none';
 
     this.wrapper.innerHTML = `
-      <!-- Prev Day Button -->
-      <button class="btn btn-sm date-step-btn prev-day-btn" title="Previous Day" style="padding: 4px 6px; border-radius: 4px;">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <polyline points="15 18 9 12 15 6"></polyline>
-        </svg>
-      </button>
+      <div style="display: inline-flex; align-items: center; gap: 6px;">
+        <!-- Prev Day Button -->
+        <button class="btn btn-sm date-step-btn prev-day-btn" title="Previous Day" style="height: 28px; padding: 0 6px; border-radius: 4px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
 
-      <!-- Date Display Trigger -->
-      <button class="btn btn-sm date-display-btn" title="Click to open calendar" style="display: flex; align-items: center; gap: 7px; padding: 4px 10px; font-family: var(--font-mono); font-size: 0.82rem; font-weight: 600; background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.2);">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-sun);">
-          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-          <line x1="16" y1="2" x2="16" y2="6"></line>
-          <line x1="8" y1="2" x2="8" y2="6"></line>
-          <line x1="3" y1="10" x2="21" y2="10"></line>
-        </svg>
-        <span class="formatted-date-label">${this.formatDateDisplay(this.currentDate)}</span>
-      </button>
+        <!-- Date Display Trigger -->
+        <button class="btn btn-sm date-display-btn" title="Click to open calendar" style="height: 28px; box-sizing: border-box; display: inline-flex; align-items: center; gap: 7px; padding: 0 10px; font-family: var(--font-mono); font-size: 0.82rem; font-weight: 600; background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.2);">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-sun);">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+          <span class="formatted-date-label">${this.formatDateDisplay(this.currentDate)}</span>
+        </button>
 
-      <!-- Next Day Button -->
-      <button class="btn btn-sm date-step-btn next-day-btn" title="Next Day" style="padding: 4px 6px; border-radius: 4px;">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <polyline points="9 18 15 12 9 6"></polyline>
-        </svg>
-      </button>
+        <!-- Next Day Button -->
+        <button class="btn btn-sm date-step-btn next-day-btn" title="Next Day" style="height: 28px; padding: 0 6px; border-radius: 4px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+      </div>
 
       <!-- Solstice Presets Dropdown -->
-      <select class="solstice-dropdown sleek-presets-select" title="Astronomical Presets" style="margin-left: 2px;">
+      <select class="solstice-dropdown sleek-presets-select" title="Astronomical Presets" style="height: 28px; box-sizing: border-box; display: inline-flex; align-items: center; margin-left: 2px;">
         <option value="" disabled selected>Solstice & Equinox...</option>
         <option value="2026-06-21">Summer Solstice (Jun 21)</option>
         <option value="2026-09-22">Fall Equinox (Sep 22)</option>

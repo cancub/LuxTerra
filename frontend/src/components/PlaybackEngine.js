@@ -25,11 +25,13 @@ export class PlaybackEngine {
     this.element.className = 'glass-panel playback-controls';
     this.element.style.display = 'inline-flex';
     this.element.style.alignItems = 'center';
-    this.element.style.padding = '3px 8px';
+    this.element.style.height = '38px';
+    this.element.style.boxSizing = 'border-box';
+    this.element.style.padding = '0 8px';
     this.element.style.gap = '6px';
 
     this.element.innerHTML = `
-      <button class="btn btn-sm btn-play" title="Play/Pause Simulation">
+      <button class="btn btn-sm btn-play" title="Play/Pause Simulation" style="height: 28px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px;">
         <svg class="icon-play" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
           <polygon points="5 3 19 12 5 21 5 3"></polygon>
         </svg>
@@ -39,9 +41,9 @@ export class PlaybackEngine {
         </svg>
       </button>
 
-      <div class="speed-toggle-group" style="display: inline-flex; gap: 3px;">
-        <button class="btn btn-sm speed-btn ${this.speedPreset === 15 ? 'active' : ''}" data-speed="15">15 min/s</button>
-        <button class="btn btn-sm speed-btn ${this.speedPreset === 30 ? 'active' : ''}" data-speed="30">30 min/s</button>
+      <div class="speed-toggle-group" style="display: inline-flex; gap: 3px; align-items: center; height: 28px;">
+        <button class="btn btn-sm speed-btn ${this.speedPreset === 15 ? 'active' : ''}" data-speed="15" style="height: 28px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px;">15 min/s</button>
+        <button class="btn btn-sm speed-btn ${this.speedPreset === 30 ? 'active' : ''}" data-speed="30" style="height: 28px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px;">30 min/s</button>
       </div>
     `;
 
