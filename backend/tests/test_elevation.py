@@ -198,3 +198,35 @@ def test_dual_raster_window_extraction_and_chm(tmp_path):
     assert np.all(chm_grid >= 0.0)
     assert np.max(chm_grid) > 10.0 # Tree canopy detected
     assert np.array_equal(result["buffered_elevation"], dtm_grid)
+
+
+def test_preset_tiles_pre_cached_dtm_and_dsm():
+    """
+    Verifies that default preset locations (Montreal & Sainte-Lucie) have co-registered
+    DTM and DSM tiles pre-cached, enabling instant window extraction with tree canopy data.
+    """
+    from backend.app.services.elevation.local_geotiff import LocalGeoTIFFProvider
+    from backend.app.constants import TEST_LOCATION_PRESETS
+
+    provider = LocalGeoTIFFProvider()
+
+    for preset_key in ["montreal", "sainte-lucie"]:
+        cfg = TEST_LOCATION_PRESETS[preset_key]
+        c_lon = cfg["center_lon"]
+        c_lat = cfg["center_lat"]
+        delta = 0.001
+
+        res = provider.get_elevation_window(
+            min_lon=c_lon - delta,
+            min_lat=c_lat - delta,
+            max_lon=c_lon + delta,
+            max_lat=c_lat + delta,
+            buffer_meters=100.0,
+            target_resolution_m=1.0
+        )
+
+        assert res["has_canopy"] is True, f"Preset {preset_key} must have canopy data"
+        assert res["dsm_tile_source"] is not None
+        assert np.all(res["dsm"] >= res["dtm"] - 1e-4)
+        assert np.max(res["chm"]) > 0.0, f"Preset {preset_key} should have elevated structures/trees"
+
