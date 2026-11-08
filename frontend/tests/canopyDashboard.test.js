@@ -29,6 +29,7 @@ if (typeof globalThis.document === 'undefined') {
 
 import { SolarDashboard } from '../src/components/SolarDashboard.js';
 import { SparklineChart } from '../src/components/SparklineChart.js';
+import { PVConfigPanel } from '../src/components/PVConfigPanel.js';
 
 test('canopy physics: direct beam attenuation formula matches winter and summer transmittance', () => {
   const unshadedDirectKw = 80.0;
@@ -116,21 +117,25 @@ test('SolarDashboard: telemetry correctly populates stacked subtraction and 3-pa
   assert.equal(dashboard.subAcPowerVal.textContent, '53.1 kW');
   assert.equal(dashboard.kwGauge.textContent, '53.1 kW');
 
-  // 3-Part shade progress bar (sums strictly to 100%)
-  assert.equal(dashboard.triBarLit.style.width, '7.90%');
-  assert.equal(dashboard.triBarTree.style.width, '92.10%');
-  assert.equal(dashboard.triBarGeo.style.width, '0.00%');
-  const sumDaylight = parseFloat(dashboard.triBarLit.style.width) +
-                      parseFloat(dashboard.triBarTree.style.width) +
-                      parseFloat(dashboard.triBarGeo.style.width);
-  assert.ok(Math.abs(sumDaylight - 100.0) < 0.01);
-
   // Update telemetry for nighttime frame
   dashboard.updateTelemetry(mockSimulationData.timeseries[1], 1);
   assert.equal(dashboard.subAcPowerVal.textContent, '0.0 kW');
-  assert.equal(dashboard.triBarLit.style.width, '0%');
-  assert.equal(dashboard.triBarTree.style.width, '0%');
-  assert.equal(dashboard.triBarGeo.style.width, '100%');
+});
+
+test('PVConfigPanel: collapsible by default and toggles expand/collapse', () => {
+  const container = createMockElement('div');
+  const panel = new PVConfigPanel(container);
+
+  assert.equal(panel.isCollapsed, true);
+  assert.equal(panel.body.style.display, 'none');
+
+  panel.toggleCollapse();
+  assert.equal(panel.isCollapsed, false);
+  assert.equal(panel.body.style.display, 'flex');
+
+  panel.toggleCollapse();
+  assert.equal(panel.isCollapsed, true);
+  assert.equal(panel.body.style.display, 'none');
 });
 
 test('SparklineChart: correctly builds clear-sky potential curve and canopy loss region', () => {

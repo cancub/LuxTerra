@@ -904,25 +904,6 @@ input:focus, select:focus {
   transition: all 0.2s ease;
 }
 
-.shading-tri-bar {
-  display: flex;
-  overflow: hidden;
-}
-
-.tri-bar-lit {
-  height: 100%;
-  background: #facc15;
-  transition: width 0.15s ease;
-}
-
-.tri-bar-tree {
-  height: 100%;
-  background: #22c55e;
-  transition: width 0.15s ease;
-}
-
-.tri-bar-geo {
-  height: 100%;
-  background: #78350f;
-  transition: width 0.15s ease;
+.pv-chevron-icon {
+  transition: transform 0.2s ease;
 }

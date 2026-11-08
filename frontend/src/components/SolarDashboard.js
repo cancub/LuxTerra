@@ -121,30 +121,6 @@ export class SolarDashboard {
           <div class="chart-mount"></div>
         </div>
 
-        <!-- 3-Part Shading Progress Bar (Fully Lit / Tree Shade / Geological Shade) -->
-        <div class="shading-breakdown-container" style="display: flex; flex-direction: column; gap: 5px; margin-top: 1px;">
-          <div class="shading-tri-bar" style="width: 100%; height: 7px; background: rgba(255,255,255,0.06); border-radius: 3.5px; overflow: hidden; display: flex;">
-            <div class="tri-bar-lit" style="height: 100%; width: 100%; background: #facc15; transition: width 0.15s ease;"></div>
-            <div class="tri-bar-tree" style="height: 100%; width: 0%; background: #22c55e; transition: width 0.15s ease;"></div>
-            <div class="tri-bar-geo" style="height: 100%; width: 0%; background: #5c2a08; transition: width 0.15s ease;"></div>
-          </div>
-          <!-- Minimal Legend (No Percentage Numbers) -->
-          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.62rem; font-family: var(--font-mono); color: var(--text-muted); padding: 0 1px;">
-            <span style="display: flex; align-items: center; gap: 4px;">
-              <span style="width: 6px; height: 6px; border-radius: 50%; background: #facc15; display: inline-block;"></span>
-              <span style="color: #facc15; font-weight: 600;">Fully Lit</span>
-            </span>
-            <span style="display: flex; align-items: center; gap: 4px;">
-              <span style="width: 6px; height: 6px; border-radius: 50%; background: #22c55e; display: inline-block;"></span>
-              <span style="color: #22c55e; font-weight: 600;">Tree Shade</span>
-            </span>
-            <span style="display: flex; align-items: center; gap: 4px;">
-              <span style="width: 6px; height: 6px; border-radius: 50%; background: #78350f; display: inline-block;"></span>
-              <span style="color: #a16207; font-weight: 600;">Geological Shade</span>
-            </span>
-          </div>
-        </div>
-
         <!-- Integrated PV System Configuration Mount -->
         <div class="pv-config-internal-mount" style="border-top: 1px solid var(--border-card); padding-top: 10px; margin-top: 2px;"></div>
       </div>
@@ -165,11 +141,6 @@ export class SolarDashboard {
     this.subTreeShadeVal = this.element.querySelector('.sub-treeshade-val');
     this.subAcPowerVal = this.element.querySelector('.sub-acpower-val');
     this.kwGauge = this.subAcPowerVal;
-
-    // 3-Part Shading breakdown elements
-    this.triBarLit = this.element.querySelector('.tri-bar-lit');
-    this.triBarTree = this.element.querySelector('.tri-bar-tree');
-    this.triBarGeo = this.element.querySelector('.tri-bar-geo');
 
     this.pvConfigMount = this.element.querySelector('.pv-config-internal-mount');
     const chartMount = this.element.querySelector('.chart-mount');
@@ -253,22 +224,6 @@ export class SolarDashboard {
     this.subTreeShadeVal.textContent = `${canopyLossKw.toFixed(1)} kW`;
     this.subAcPowerVal.textContent = `${currentKw.toFixed(1)} kW`;
     this.headerPowerBadge.textContent = `${currentKw.toFixed(1)} kW`;
-
-    // 3-Part Shading breakdown bar: Fully Lit (cold yellow), Tree Shade (leafy green), Geological Shade (dark brown)
-    // Strictly sums to 100% at all points in time without showing numerical percentages
-    if (!metric.is_daylight) {
-      this.triBarLit.style.width = '0%';
-      this.triBarTree.style.width = '0%';
-      this.triBarGeo.style.width = '100%';
-    } else {
-      const geo = Math.max(0, Math.min(100, metric.percent_shaded || 0.0));
-      const tree = Math.max(0, Math.min(100 - geo, metric.canopy_shaded_pct || 0.0));
-      const lit = Math.max(0, 100.0 - geo - tree);
-
-      this.triBarLit.style.width = `${lit.toFixed(2)}%`;
-      this.triBarTree.style.width = `${tree.toFixed(2)}%`;
-      this.triBarGeo.style.width = `${geo.toFixed(2)}%`;
-    }
 
     this.chart.setPlayhead(stepIndex, this.currentScaleFactor);
   }
