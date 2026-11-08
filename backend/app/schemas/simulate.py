@@ -15,7 +15,7 @@ class SimulateRequest(BaseModel):
     """
     bbox: GeoBoundingBox = Field(..., description="Target patch bounding box in WGS84")
     date: str = Field(..., description="Simulation date in YYYY-MM-DD format (e.g. 2026-06-21)")
-    time_step_minutes: int = Field(default=5, ge=1, le=60, description="Interval in minutes between frames")
+    time_step_minutes: int = Field(default=1, ge=1, le=60, description="Interval in minutes between frames")
     deployment_mode: DeploymentMode = Field(default=DeploymentMode.ROOFTOP, description="rooftop (100% GCR) or ground_mount (45% GCR)")
     module_efficiency: Optional[float] = Field(default=None, ge=0.05, le=0.40, description="Solar module efficiency override (e.g. 0.20)")
     system_derate: Optional[float] = Field(default=None, ge=0.40, le=1.00, description="System performance ratio derate override (e.g. 0.80)")

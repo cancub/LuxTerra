@@ -228,3 +228,28 @@ async def test_simulate_dst_transition_date():
         assert data["daily_summary"]["total_daily_kwh"] > 0.0
         assert len(data["timeseries"]) > 40
 
+
+@pytest.mark.asyncio
+async def test_simulate_one_minute_intervals():
+    """
+    Test simulation with default 1-minute increments (1,440 timesteps over full 24-hour day).
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        payload = {
+            "bbox": {
+                "min_lon": -73.619,
+                "min_lat": 45.502,
+                "max_lon": -73.617,
+                "max_lat": 45.504
+            },
+            "date": "2026-06-21",
+            "time_step_minutes": 1
+        }
+        response = await client.post("/api/simulate", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["metadata"]["time_step_minutes"] == 1
+        assert len(data["timeseries"]) == 1440
+        assert len(data["masks"]) > 900
+

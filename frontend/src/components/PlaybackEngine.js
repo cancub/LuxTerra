@@ -9,9 +9,9 @@ export class PlaybackEngine {
     this.onStep = onStep;
 
     this.isPlaying = false;
-    this.speedPreset = 15; // 5 or 15 min/s
-    this.stepMinutes = 5;
-    this.totalSteps = 288;
+    this.speedPreset = 15; // 5, 15, or 30 min/s
+    this.stepMinutes = 1;
+    this.totalSteps = 1440;
     this.currentStep = 0;
     this.fractionalStep = 0;
     this.lastFrameTime = 0;
@@ -63,9 +63,9 @@ export class PlaybackEngine {
     this.container.appendChild(this.element);
   }
 
-  setSimulationContext(totalSteps, stepMinutes = 5) {
-    this.totalSteps = totalSteps > 0 ? totalSteps : 288;
-    this.stepMinutes = stepMinutes > 0 ? stepMinutes : 5;
+  setSimulationContext(totalSteps, stepMinutes = 1) {
+    this.totalSteps = totalSteps > 0 ? totalSteps : 1440;
+    this.stepMinutes = stepMinutes > 0 ? stepMinutes : 1;
   }
 
   setCurrentStep(stepIndex) {

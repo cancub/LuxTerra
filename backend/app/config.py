@@ -18,7 +18,7 @@ class AppConfig(BaseModel):
     max_patch_area_m2: float = 100000.0
     default_buffer_meters: float = 500.0
     default_resolution_m: float = 1.0
-    default_time_step_minutes: int = 5
+    default_time_step_minutes: int = 1
     
     # PV Conversion defaults
     default_module_efficiency: float = 0.20

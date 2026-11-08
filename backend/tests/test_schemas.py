@@ -47,6 +47,17 @@ def test_geo_bounding_box_area_limit_raises():
 
 
 def test_simulate_request_valid():
+    req_default = SimulateRequest(
+        bbox=GeoBoundingBox(
+            min_lon=-73.618,
+            min_lat=45.503,
+            max_lon=-73.6166,
+            max_lat=45.504
+        ),
+        date="2026-06-21"
+    )
+    assert req_default.time_step_minutes == 1
+
     req = SimulateRequest(
         bbox=GeoBoundingBox(
             min_lon=-73.618,

@@ -178,7 +178,7 @@ if (appContainer) {
           max_lat: currentBbox[3]
         },
         date: date,
-        time_step_minutes: 5,
+        time_step_minutes: 1,
         deployment_mode: pvConfig.deploymentMode,
         module_efficiency: pvConfig.moduleEfficiency,
         system_derate: pvConfig.systemDerate,

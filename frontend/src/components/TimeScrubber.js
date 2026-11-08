@@ -42,7 +42,7 @@ export class TimeScrubber {
 
       <div class="slider-container" style="position: relative; width: 100%; height: 16px; display: flex; align-items: center;">
         <div class="sky-gradient-track" style="position: absolute; left: 0; right: 0; height: 8px; border-radius: 4px; background: linear-gradient(to right, #090e17 0%, #1e1b4b 20%, #d97706 28%, #38bdf8 50%, #d97706 72%, #1e1b4b 80%, #090e17 100%); pointer-events: none; z-index: 1; box-shadow: inset 0 1px 2px rgba(0,0,0,0.5);"></div>
-        <input type="range" class="timeline-slider" min="0" max="287" value="144" style="width: 100%; height: 16px; z-index: 2; cursor: pointer;" />
+        <input type="range" class="timeline-slider" min="0" max="1439" value="720" style="width: 100%; height: 16px; z-index: 2; cursor: pointer;" />
       </div>
 
       <div class="timeline-ticks" style="display: flex; justify-content: space-between; font-size: 0.72rem; font-family: var(--font-mono); color: var(--text-secondary); font-weight: 500;">
