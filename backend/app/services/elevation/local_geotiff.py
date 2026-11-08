@@ -17,6 +17,57 @@ from .geo_utils import buffer_bounding_box_meters, transform_geometry
 
 logger = logging.getLogger(__name__)
 
+# Minimum elevation offset above ground to classify as tree canopy or elevated structure (NRCan standard)
+MIN_CANOPY_HEIGHT_METERS = 1.5
+
+
+def _reproject_raster_to_grid(
+    raster_path: Path,
+    dst_transform: Any,
+    dst_crs: Any,
+    desired_h: int,
+    desired_w: int,
+    floor_grid: Optional[np.ndarray] = None
+) -> Tuple[np.ndarray, bool]:
+    """
+    Reprojects band 1 of a GeoTIFF raster into a target (desired_h, desired_w) metric UTM grid.
+    Handles nodata, NaN, and out-of-bounds elevation clamping.
+    If floor_grid is provided, clamps output values to be >= floor_grid and fills invalid cells from floor_grid.
+    Returns (grid, is_valid).
+    """
+    if not raster_path.exists():
+        if floor_grid is not None:
+            return floor_grid.copy(), False
+        return np.zeros((desired_h, desired_w), dtype=np.float32), False
+
+    with rasterio.open(raster_path) as src:
+        nodata_val = src.nodata if src.nodata is not None else -9999.0
+        grid = np.full((desired_h, desired_w), nodata_val, dtype=np.float32)
+
+        reproject(
+            source=rasterio.band(src, 1),
+            destination=grid,
+            src_transform=src.transform,
+            src_crs=src.crs,
+            dst_transform=dst_transform,
+            dst_crs=dst_crs,
+            resampling=Resampling.bilinear
+        )
+
+        invalid = (grid == nodata_val) | np.isnan(grid) | (grid < -500.0)
+        if np.any(invalid):
+            if floor_grid is not None:
+                grid[invalid] = floor_grid[invalid]
+            else:
+                valid_pixels = grid[~invalid]
+                fallback_elev = float(np.median(valid_pixels)) if valid_pixels.size > 0 else 100.0
+                grid[invalid] = fallback_elev
+
+        if floor_grid is not None:
+            grid = np.maximum(floor_grid, grid)
+
+        return grid, True
+
 
 class LocalGeoTIFFProvider(ElevationProvider):
     """
@@ -37,31 +88,6 @@ class LocalGeoTIFFProvider(ElevationProvider):
                 return candidate
         return Path(tile["path"])
 
-    def find_covering_tile(self, min_lon: float, min_lat: float, max_lon: float, max_lat: float) -> Optional[Path]:
-        """
-        Finds the best local GeoTIFF tile that intersects the requested bounding box.
-        """
-        manifest = self.cache_manager.load_manifest()
-        patch_box = box(min_lon, min_lat, max_lon, max_lat)
-
-        for tile in manifest.get("tiles", []):
-            tile_wgs84 = box(*tile["bounds_wgs84"])
-            if tile_wgs84.intersects(patch_box):
-                tile_path = self._resolve_tile_path(tile)
-                if tile_path.exists():
-                    return tile_path
-
-        # If not found in manifest, scan directory and update manifest
-        manifest = self.cache_manager.update_manifest()
-        for tile in manifest.get("tiles", []):
-            tile_wgs84 = box(*tile["bounds_wgs84"])
-            if tile_wgs84.intersects(patch_box):
-                tile_path = self._resolve_tile_path(tile)
-                if tile_path.exists():
-                    return tile_path
-
-        return None
-
     def find_covering_tile_pair(
         self,
         min_lon: float,
@@ -77,13 +103,25 @@ class LocalGeoTIFFProvider(ElevationProvider):
         if dtm_path and dtm_path.exists():
             return (dtm_path, dsm_path)
 
-        dtm_path = self.find_covering_tile(min_lon, min_lat, max_lon, max_lat)
-        if dtm_path:
-            candidate_dsm = self.cache_manager.dsm_dir / dtm_path.name.replace("dtm", "dsm")
-            dsm_path = candidate_dsm if candidate_dsm.exists() else None
-            return (dtm_path, dsm_path)
+        patch_box = box(min_lon, min_lat, max_lon, max_lat)
+        manifest = self.cache_manager.load_manifest()
+        for tile in manifest.get("tiles", []):
+            tile_wgs84 = box(*tile["bounds_wgs84"])
+            if tile_wgs84.intersects(patch_box):
+                tile_path = self._resolve_tile_path(tile)
+                if tile_path.exists():
+                    candidate_dsm = self.cache_manager.dsm_dir / tile_path.name.replace("dtm", "dsm")
+                    dsm_p = candidate_dsm if candidate_dsm.exists() else None
+                    return (tile_path, dsm_p)
 
         return (None, None)
+
+    def find_covering_tile(self, min_lon: float, min_lat: float, max_lon: float, max_lat: float) -> Optional[Path]:
+        """
+        Finds the best local GeoTIFF tile that intersects the requested bounding box.
+        """
+        dtm_path, _ = self.find_covering_tile_pair(min_lon, min_lat, max_lon, max_lat)
+        return dtm_path
 
     def acquire_covering_tile(
         self,
@@ -181,59 +219,28 @@ class LocalGeoTIFFProvider(ElevationProvider):
             b_min_x, b_min_y, b_max_x, b_max_y, desired_w, desired_h
         )
 
-        with rasterio.open(dtm_path) as src_dtm:
-            nodata_val = src_dtm.nodata if src_dtm.nodata is not None else -9999.0
-            buffered_elevation = np.full((desired_h, desired_w), nodata_val, dtype=np.float32)
+        # 1. Reproject bare-earth DTM
+        buffered_elevation, _ = _reproject_raster_to_grid(
+            dtm_path, dst_transform, target_crs, desired_h, desired_w
+        )
 
-            reproject(
-                source=rasterio.band(src_dtm, 1),
-                destination=buffered_elevation,
-                src_transform=src_dtm.transform,
-                src_crs=src_dtm.crs,
-                dst_transform=dst_transform,
-                dst_crs=target_crs,
-                resampling=Resampling.bilinear
-            )
-
-            # Robust nodata and NaN handling: replace with valid terrain mean or nearest
-            mask_invalid = (
-                (buffered_elevation == nodata_val) |
-                np.isnan(buffered_elevation) |
-                (buffered_elevation < -500.0)
-            )
-            if np.any(mask_invalid):
-                valid_pixels = buffered_elevation[~mask_invalid]
-                fallback_elev = float(np.median(valid_pixels)) if valid_pixels.size > 0 else 100.0
-                buffered_elevation[mask_invalid] = fallback_elev
-
-        # Reproject paired DSM if available, otherwise fallback to bare ground
-        has_canopy = False
+        # 2. Reproject surface DSM (clamped to bare DTM floor)
         buffered_dsm = buffered_elevation.copy()
+        has_canopy = False
         if dsm_path and dsm_path.exists():
             try:
-                with rasterio.open(dsm_path) as src_dsm:
-                    dsm_nodata = src_dsm.nodata if src_dsm.nodata is not None else -9999.0
-                    dsm_raw = np.full((desired_h, desired_w), dsm_nodata, dtype=np.float32)
-                    reproject(
-                        source=rasterio.band(src_dsm, 1),
-                        destination=dsm_raw,
-                        src_transform=src_dsm.transform,
-                        src_crs=src_dsm.crs,
-                        dst_transform=dst_transform,
-                        dst_crs=target_crs,
-                        resampling=Resampling.bilinear
-                    )
-                    # For nodata DSM cells, clamp to bare ground DTM
-                    dsm_invalid = (dsm_raw == dsm_nodata) | np.isnan(dsm_raw) | (dsm_raw < -500.0)
-                    dsm_raw[dsm_invalid] = buffered_elevation[dsm_invalid]
-                    # Physical surface elevation is always at least bare ground
-                    buffered_dsm = np.maximum(buffered_elevation, dsm_raw)
-                    has_canopy = True
+                buffered_dsm, success = _reproject_raster_to_grid(
+                    dsm_path, dst_transform, target_crs, desired_h, desired_w, floor_grid=buffered_elevation
+                )
+                has_canopy = success
             except Exception as e:
                 logger.warning(f"Could not reproject DSM from {dsm_path}: {e}. Falling back to DTM.")
                 buffered_dsm = buffered_elevation.copy()
 
-        buffered_chm = np.maximum(0.0, buffered_dsm - buffered_elevation)
+        # 3. Compute Canopy Height Model (CHM)
+        raw_chm = buffered_dsm - buffered_elevation
+        # Filter low noise below 1.5m as bare ground per plan_canopy.md
+        buffered_chm = np.where(raw_chm >= MIN_CANOPY_HEIGHT_METERS, raw_chm, 0.0).astype(np.float32)
 
         h, w = buffered_elevation.shape
 
