@@ -8,6 +8,7 @@ import { initMap } from './components/MapViewer.js';
 import { LayerToggle } from './components/LayerToggle.js';
 import { Bookmarks } from './components/Bookmarks.js';
 import { Geocoder } from './components/Geocoder.js';
+import { BoxDrawer } from './components/BoxDrawer.js';
 
 const appContainer = document.getElementById('app');
 if (appContainer) {
@@ -42,11 +43,18 @@ if (appContainer) {
   const topCenterControls = document.getElementById('top-center-controls');
   const topRightControls = document.getElementById('top-right-controls');
 
+  const boxDrawer = new BoxDrawer(map, topRightControls, (selection) => {
+    console.log('Selection complete:', selection);
+  });
+
   new Geocoder(map, geocoderMount, (loc) => {
     console.log('Selected geocoder location:', loc.name);
   });
   new Bookmarks(map, topCenterControls, (preset) => {
     console.log('Selected preset:', preset.name);
+    if (preset.sampleBbox) {
+      boxDrawer.setBox(preset.sampleBbox);
+    }
   });
   new LayerToggle(map, topRightControls);
 }
