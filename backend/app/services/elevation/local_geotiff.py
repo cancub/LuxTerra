@@ -4,7 +4,7 @@ Performs windowed extraction of LiDAR DTM rasters with perimeter buffering.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from pathlib import Path
 import numpy as np
 import rasterio
@@ -61,6 +61,29 @@ class LocalGeoTIFFProvider(ElevationProvider):
                     return tile_path
 
         return None
+
+    def find_covering_tile_pair(
+        self,
+        min_lon: float,
+        min_lat: float,
+        max_lon: float,
+        max_lat: float
+    ) -> Tuple[Optional[Path], Optional[Path]]:
+        """
+        Locates the cached DTM and DSM tile pair covering the requested bounding box.
+        Returns (dtm_path, dsm_path). If DSM is missing, returns (dtm_path, None).
+        """
+        dtm_path, dsm_path = self.cache_manager.get_tile_pair(min_lon, min_lat, max_lon, max_lat)
+        if dtm_path and dtm_path.exists():
+            return (dtm_path, dsm_path)
+
+        dtm_path = self.find_covering_tile(min_lon, min_lat, max_lon, max_lat)
+        if dtm_path:
+            candidate_dsm = self.cache_manager.dsm_dir / dtm_path.name.replace("dtm", "dsm")
+            dsm_path = candidate_dsm if candidate_dsm.exists() else None
+            return (dtm_path, dsm_path)
+
+        return (None, None)
 
     def acquire_covering_tile(
         self,
@@ -136,12 +159,12 @@ class LocalGeoTIFFProvider(ElevationProvider):
         )
         target_crs = geo_info["target_crs"]
 
-        tile_path = self.find_covering_tile(min_lon, min_lat, max_lon, max_lat)
-        if not tile_path:
+        dtm_path, dsm_path = self.find_covering_tile_pair(min_lon, min_lat, max_lon, max_lat)
+        if not dtm_path:
             logger.info(f"No local tile covers [{min_lon:.4f}, {min_lat:.4f}, {max_lon:.4f}, {max_lat:.4f}]. Attempting on-demand acquisition...")
-            tile_path = self.acquire_covering_tile(min_lon, min_lat, max_lon, max_lat, buffer_meters=buffer_meters)
+            dtm_path = self.acquire_covering_tile(min_lon, min_lat, max_lon, max_lat, buffer_meters=buffer_meters)
 
-        if not tile_path:
+        if not dtm_path:
             raise FileNotFoundError(
                 f"No elevation raster available for the requested location "
                 f"[{min_lon:.4f}, {min_lat:.4f}, {max_lon:.4f}, {max_lat:.4f}]. "
@@ -158,15 +181,15 @@ class LocalGeoTIFFProvider(ElevationProvider):
             b_min_x, b_min_y, b_max_x, b_max_y, desired_w, desired_h
         )
 
-        with rasterio.open(tile_path) as src:
-            nodata_val = src.nodata if src.nodata is not None else -9999.0
+        with rasterio.open(dtm_path) as src_dtm:
+            nodata_val = src_dtm.nodata if src_dtm.nodata is not None else -9999.0
             buffered_elevation = np.full((desired_h, desired_w), nodata_val, dtype=np.float32)
 
             reproject(
-                source=rasterio.band(src, 1),
+                source=rasterio.band(src_dtm, 1),
                 destination=buffered_elevation,
-                src_transform=src.transform,
-                src_crs=src.crs,
+                src_transform=src_dtm.transform,
+                src_crs=src_dtm.crs,
                 dst_transform=dst_transform,
                 dst_crs=target_crs,
                 resampling=Resampling.bilinear
@@ -183,28 +206,62 @@ class LocalGeoTIFFProvider(ElevationProvider):
                 fallback_elev = float(np.median(valid_pixels)) if valid_pixels.size > 0 else 100.0
                 buffered_elevation[mask_invalid] = fallback_elev
 
-            h, w = buffered_elevation.shape
+        # Reproject paired DSM if available, otherwise fallback to bare ground
+        has_canopy = False
+        buffered_dsm = buffered_elevation.copy()
+        if dsm_path and dsm_path.exists():
+            try:
+                with rasterio.open(dsm_path) as src_dsm:
+                    dsm_nodata = src_dsm.nodata if src_dsm.nodata is not None else -9999.0
+                    dsm_raw = np.full((desired_h, desired_w), dsm_nodata, dtype=np.float32)
+                    reproject(
+                        source=rasterio.band(src_dsm, 1),
+                        destination=dsm_raw,
+                        src_transform=src_dsm.transform,
+                        src_crs=src_dsm.crs,
+                        dst_transform=dst_transform,
+                        dst_crs=target_crs,
+                        resampling=Resampling.bilinear
+                    )
+                    # For nodata DSM cells, clamp to bare ground DTM
+                    dsm_invalid = (dsm_raw == dsm_nodata) | np.isnan(dsm_raw) | (dsm_raw < -500.0)
+                    dsm_raw[dsm_invalid] = buffered_elevation[dsm_invalid]
+                    # Physical surface elevation is always at least bare ground
+                    buffered_dsm = np.maximum(buffered_elevation, dsm_raw)
+                    has_canopy = True
+            except Exception as e:
+                logger.warning(f"Could not reproject DSM from {dsm_path}: {e}. Falling back to DTM.")
+                buffered_dsm = buffered_elevation.copy()
 
-            # Compute pixel coordinates of the inner target patch
-            y_start = max(0, int(round((b_max_y - p_max_y) / target_resolution_m)))
-            y_end = min(h, int(round((b_max_y - p_min_y) / target_resolution_m)))
-            x_start = max(0, int(round((p_min_x - b_min_x) / target_resolution_m)))
-            x_end = min(w, int(round((p_max_x - b_min_x) / target_resolution_m)))
+        buffered_chm = np.maximum(0.0, buffered_dsm - buffered_elevation)
 
-            patch_slice_y = slice(y_start, y_end)
-            patch_slice_x = slice(x_start, x_end)
+        h, w = buffered_elevation.shape
 
-            patch_elevation = buffered_elevation[patch_slice_y, patch_slice_x]
-            median_elevation = float(np.median(patch_elevation)) if patch_elevation.size > 0 else float(np.median(buffered_elevation))
+        # Compute pixel coordinates of the inner target patch
+        y_start = max(0, int(round((b_max_y - p_max_y) / target_resolution_m)))
+        y_end = min(h, int(round((b_max_y - p_min_y) / target_resolution_m)))
+        x_start = max(0, int(round((p_min_x - b_min_x) / target_resolution_m)))
+        x_end = min(w, int(round((p_max_x - b_min_x) / target_resolution_m)))
 
-            return {
-                "buffered_elevation": buffered_elevation,
-                "patch_slice_y": patch_slice_y,
-                "patch_slice_x": patch_slice_x,
-                "resolution_m": float(target_resolution_m),
-                "crs": target_crs,
-                "affine_transform": dst_transform,
-                "median_elevation_m": median_elevation,
-                "geo_info": geo_info,
-                "tile_source": str(tile_path.name)
-            }
+        patch_slice_y = slice(y_start, y_end)
+        patch_slice_x = slice(x_start, x_end)
+
+        patch_elevation = buffered_elevation[patch_slice_y, patch_slice_x]
+        median_elevation = float(np.median(patch_elevation)) if patch_elevation.size > 0 else float(np.median(buffered_elevation))
+
+        return {
+            "buffered_elevation": buffered_elevation,
+            "dtm": buffered_elevation,
+            "dsm": buffered_dsm,
+            "chm": buffered_chm,
+            "has_canopy": has_canopy,
+            "patch_slice_y": patch_slice_y,
+            "patch_slice_x": patch_slice_x,
+            "resolution_m": float(target_resolution_m),
+            "crs": target_crs,
+            "affine_transform": dst_transform,
+            "median_elevation_m": median_elevation,
+            "geo_info": geo_info,
+            "tile_source": str(dtm_path.name),
+            "dsm_tile_source": str(dsm_path.name) if dsm_path else None
+        }

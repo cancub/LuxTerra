@@ -4,6 +4,7 @@ Unit and integration tests for LuxTerra Elevation & DTM Pipeline.
 
 import pytest
 import numpy as np
+import rasterio
 from pathlib import Path
 
 from backend.app.services.elevation.geo_utils import (
@@ -130,3 +131,70 @@ def test_elevation_window_extraction_and_resampling(tmp_path):
     assert patch_cells.size > 0
     assert np.all(patch_cells > 0)
     assert not np.any(np.isnan(elev_1m))
+
+
+def test_dual_raster_window_extraction_and_chm(tmp_path):
+    from rasterio.transform import from_origin
+    
+    cache = TileCacheManager(cache_dir=tmp_path / "dtm", dsm_dir=tmp_path / "dsm")
+    dtm_path = cache.cache_dir / "dtm_canopy_test.tif"
+    dsm_path = cache.dsm_dir / "dsm_canopy_test.tif"
+    
+    # 500x500 1m raster centered in Montreal UTM Zone 18N
+    width, height = 300, 300
+    res = 1.0
+    min_x, max_y = 600000.0, 5040000.0
+    transform = from_origin(min_x, max_y, res, res)
+    
+    dtm_elev = np.ones((height, width), dtype=np.float32) * 120.0
+    # Add a 15m tree canopy grove in the center
+    dsm_elev = dtm_elev.copy()
+    dsm_elev[100:200, 100:200] += 15.0
+    
+    for path, data in [(dtm_path, dtm_elev), (dsm_path, dsm_elev)]:
+        with rasterio.open(
+            path,
+            'w',
+            driver='GTiff',
+            height=height,
+            width=width,
+            count=1,
+            dtype=np.float32,
+            crs="EPSG:32618",
+            transform=transform,
+            nodata=-9999.0
+        ) as dst:
+            dst.write(data, 1)
+            
+    cache.update_manifest()
+    provider = LocalGeoTIFFProvider(cache_manager=cache)
+    
+    manifest = cache.load_manifest()
+    min_lon, min_lat, max_lon, max_lat = manifest["tiles"][0]["bounds_wgs84"]
+    c_lon = (min_lon + max_lon) / 2.0
+    c_lat = (min_lat + max_lat) / 2.0
+    delta = 0.0003
+    
+    result = provider.get_elevation_window(
+        min_lon=c_lon - delta,
+        min_lat=c_lat - delta,
+        max_lon=c_lon + delta,
+        max_lat=c_lat + delta,
+        buffer_meters=50.0,
+        target_resolution_m=1.0
+    )
+    
+    assert "dtm" in result
+    assert "dsm" in result
+    assert "chm" in result
+    assert result["has_canopy"] is True
+    assert result["dsm_tile_source"] == "dsm_canopy_test.tif"
+    
+    dtm_grid = result["dtm"]
+    dsm_grid = result["dsm"]
+    chm_grid = result["chm"]
+    
+    assert np.all(dsm_grid >= dtm_grid - 1e-4)
+    assert np.all(chm_grid >= 0.0)
+    assert np.max(chm_grid) > 10.0 # Tree canopy detected
+    assert np.array_equal(result["buffered_elevation"], dtm_grid)
