@@ -4,7 +4,6 @@
  * with interactive corner handle points for resizing.
  */
 
-import maplibregl from 'maplibre-gl';
 import {
   clampBboxToMaxArea,
   computeBboxDimensions,
@@ -20,6 +19,8 @@ export class BoxDrawer {
 
     this.isDrawingActive = false;
     this.isDragging = false;
+    this.isResizing = false;
+    this.activeCornerId = null;
     this.startLngLat = null;
     this.currentBbox = null;
     this.handles = { nw: null, ne: null, se: null, sw: null };
@@ -79,6 +80,75 @@ export class BoxDrawer {
         'line-dasharray': [2, 2]
       }
     });
+
+    // Native WebGL-rendered interactive handle layers (zero lag during map pan/zoom)
+    if (!this.map.getSource('draw-handles-source')) {
+      this.map.addSource('draw-handles-source', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: []
+        }
+      });
+
+      this.map.addLayer({
+        id: 'draw-handles-glow',
+        type: 'circle',
+        source: 'draw-handles-source',
+        paint: {
+          'circle-radius': [
+            'case',
+            ['boolean', ['feature-state', 'hover'], false],
+            12,
+            9
+          ],
+          'circle-color': [
+            'case',
+            ['boolean', ['feature-state', 'clamped'], false],
+            'rgba(239, 68, 68, 0.5)',
+            'rgba(56, 189, 248, 0.45)'
+          ],
+          'circle-blur': 0.4
+        }
+      });
+
+      this.map.addLayer({
+        id: 'draw-handles-core',
+        type: 'circle',
+        source: 'draw-handles-source',
+        paint: {
+          'circle-radius': [
+            'case',
+            ['boolean', ['feature-state', 'hover'], false],
+            7.5,
+            6
+          ],
+          'circle-color': '#ffffff',
+          'circle-stroke-width': 2.5,
+          'circle-stroke-color': [
+            'case',
+            ['boolean', ['feature-state', 'clamped'], false],
+            '#ef4444',
+            '#38bdf8'
+          ]
+        }
+      });
+
+      this.map.addLayer({
+        id: 'draw-handles-hit',
+        type: 'circle',
+        source: 'draw-handles-source',
+        paint: {
+          'circle-radius': 14,
+          'circle-color': '#000000',
+          'circle-opacity': 0.001
+        }
+      });
+
+      if (this.currentBbox) {
+        this.updateHandles(this.currentBbox, false);
+      }
+    }
   }
 
   initTooltip() {
@@ -187,6 +257,110 @@ export class BoxDrawer {
 
     this.map.on('mouseup', finalizeDraw);
     window.addEventListener('mouseup', finalizeDraw);
+
+    // Interactive WebGL Handle Events (zero DOM lag during scroll or zoom)
+    let hoveredHandleId = null;
+
+    this.map.on('mouseenter', 'draw-handles-hit', (e) => {
+      if (this.isDrawingActive || this.isDragging || this.isResizing) return;
+      if (e.features && e.features.length > 0) {
+        const feat = e.features[0];
+        hoveredHandleId = feat.id;
+        this.map.getCanvas().style.cursor = feat.properties.cursor || 'pointer';
+        this.map.setFeatureState(
+          { source: 'draw-handles-source', id: hoveredHandleId },
+          { hover: true }
+        );
+      }
+    });
+
+    this.map.on('mouseleave', 'draw-handles-hit', () => {
+      if (hoveredHandleId !== null) {
+        this.map.setFeatureState(
+          { source: 'draw-handles-source', id: hoveredHandleId },
+          { hover: false }
+        );
+        hoveredHandleId = null;
+      }
+      if (!this.isDrawingActive && !this.isResizing) {
+        this.map.getCanvas().style.cursor = '';
+      }
+    });
+
+    this.map.on('mousedown', 'draw-handles-hit', (e) => {
+      if (this.isDrawingActive || !this.currentBbox) return;
+      e.preventDefault();
+      if (e.features && e.features.length > 0) {
+        const feat = e.features[0];
+        this.startResize(feat.properties.cornerId, feat.properties.cursor);
+      }
+    });
+
+    this.map.on('touchstart', 'draw-handles-hit', (e) => {
+      if (this.isDrawingActive || !this.currentBbox) return;
+      if (e.points && e.points.length !== 1) return;
+      e.preventDefault();
+      if (e.features && e.features.length > 0) {
+        const feat = e.features[0];
+        this.startResize(feat.properties.cornerId, feat.properties.cursor);
+      }
+    });
+  }
+
+  startResize(cornerId, cursor) {
+    this.isResizing = true;
+    this.activeCornerId = cornerId;
+    this.map.dragPan.disable();
+    this.map.getCanvas().style.cursor = cursor || 'nwse-resize';
+
+    const onMove = (e) => {
+      if (!this.isResizing || !this.activeCornerId) return;
+      this.onHandleDrag(this.activeCornerId, e.lngLat);
+    };
+
+    const onTouchMove = (e) => {
+      if (!this.isResizing || !this.activeCornerId) return;
+      if (e.lngLat) {
+        this.onHandleDrag(this.activeCornerId, e.lngLat);
+      }
+    };
+
+    const onUp = () => {
+      this.map.off('mousemove', onMove);
+      window.removeEventListener('mousemove', onWindowMove);
+      window.removeEventListener('mouseup', onUp);
+      this.map.off('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onUp);
+
+      if (this.isResizing) {
+        this.isResizing = false;
+        this.activeCornerId = null;
+        this.map.dragPan.enable();
+        this.map.getCanvas().style.cursor = '';
+        this.onHandleDragEnd();
+      }
+    };
+
+    const onWindowMove = (e) => {
+      if (!this.isResizing || !this.activeCornerId) return;
+      const rect = this.map.getCanvas().getBoundingClientRect();
+      if (
+        e.clientX < rect.left ||
+        e.clientX > rect.right ||
+        e.clientY < rect.top ||
+        e.clientY > rect.bottom
+      ) {
+        const pt = [e.clientX - rect.left, e.clientY - rect.top];
+        const lngLat = this.map.unproject(pt);
+        this.onHandleDrag(this.activeCornerId, lngLat);
+      }
+    };
+
+    this.map.on('mousemove', onMove);
+    window.addEventListener('mousemove', onWindowMove);
+    window.addEventListener('mouseup', onUp);
+    this.map.on('touchmove', onTouchMove);
+    window.addEventListener('touchend', onUp);
   }
 
   updateBox(bbox, isClamped = false) {
@@ -236,59 +410,61 @@ export class BoxDrawer {
   }
 
   createHandles() {
-    this.removeHandles();
-    if (!this.currentBbox) return;
-
-    const minLon = Math.min(this.currentBbox[0], this.currentBbox[2]);
-    const maxLon = Math.max(this.currentBbox[0], this.currentBbox[2]);
-    const minLat = Math.min(this.currentBbox[1], this.currentBbox[3]);
-    const maxLat = Math.max(this.currentBbox[1], this.currentBbox[3]);
-
-    const corners = [
-      { id: 'nw', lngLat: [minLon, maxLat], cursor: 'nwse-resize' },
-      { id: 'ne', lngLat: [maxLon, maxLat], cursor: 'nesw-resize' },
-      { id: 'se', lngLat: [maxLon, minLat], cursor: 'nwse-resize' },
-      { id: 'sw', lngLat: [minLon, minLat], cursor: 'nesw-resize' }
-    ];
-
-    corners.forEach(corner => {
-      const el = document.createElement('div');
-      el.className = `box-corner-handle handle-${corner.id}`;
-      el.style.width = '12px';
-      el.style.height = '12px';
-      el.style.borderRadius = '50%';
-      el.style.background = '#ffffff';
-      el.style.border = '2px solid #38bdf8';
-      el.style.boxShadow = '0 0 8px rgba(56, 189, 248, 0.9)';
-      el.style.cursor = corner.cursor;
-      el.style.zIndex = '50';
-      el.title = 'Drag to resize area';
-
-      const marker = new maplibregl.Marker({
-        element: el,
-        draggable: true
-      })
-        .setLngLat(corner.lngLat)
-        .addTo(this.map);
-
-      marker.on('drag', () => {
-        this.onHandleDrag(corner.id, marker.getLngLat());
-      });
-
-      marker.on('dragend', () => {
-        this.onHandleDragEnd();
-      });
-
-      this.handles[corner.id] = marker;
-    });
+    this.updateHandles(this.currentBbox, false);
   }
 
   removeHandles() {
-    Object.keys(this.handles).forEach(key => {
-      if (this.handles[key]) {
-        this.handles[key].remove();
-        this.handles[key] = null;
+    this.updateHandles(null, false);
+  }
+
+  updateHandles(bbox, isClamped = false) {
+    const source = this.map.getSource('draw-handles-source');
+    if (!source) return;
+
+    if (!bbox) {
+      source.setData({
+        type: 'FeatureCollection',
+        features: []
+      });
+      return;
+    }
+
+    const minLon = Math.min(bbox[0], bbox[2]);
+    const maxLon = Math.max(bbox[0], bbox[2]);
+    const minLat = Math.min(bbox[1], bbox[3]);
+    const maxLat = Math.max(bbox[1], bbox[3]);
+
+    const corners = [
+      { id: 1, cornerId: 'nw', lngLat: [minLon, maxLat], cursor: 'nwse-resize' },
+      { id: 2, cornerId: 'ne', lngLat: [maxLon, maxLat], cursor: 'nesw-resize' },
+      { id: 3, cornerId: 'se', lngLat: [maxLon, minLat], cursor: 'nwse-resize' },
+      { id: 4, cornerId: 'sw', lngLat: [minLon, minLat], cursor: 'nesw-resize' }
+    ];
+
+    const features = corners.map(c => ({
+      type: 'Feature',
+      id: c.id,
+      properties: {
+        id: c.id,
+        cornerId: c.cornerId,
+        cursor: c.cursor
+      },
+      geometry: {
+        type: 'Point',
+        coordinates: c.lngLat
       }
+    }));
+
+    source.setData({
+      type: 'FeatureCollection',
+      features
+    });
+
+    corners.forEach(c => {
+      this.map.setFeatureState(
+        { source: 'draw-handles-source', id: c.id },
+        { clamped: isClamped }
+      );
     });
   }
 
@@ -332,12 +508,7 @@ export class BoxDrawer {
 
     this.currentBbox = newBbox;
     this.updateBox(newBbox, clamped.isClamped);
-
-    // Sync other 3 handles to maintain rectangle alignment
-    if (this.handles.nw && cornerId !== 'nw') this.handles.nw.setLngLat([newMinLon, newMaxLat]);
-    if (this.handles.ne && cornerId !== 'ne') this.handles.ne.setLngLat([newMaxLon, newMaxLat]);
-    if (this.handles.se && cornerId !== 'se') this.handles.se.setLngLat([newMaxLon, newMinLat]);
-    if (this.handles.sw && cornerId !== 'sw') this.handles.sw.setLngLat([newMinLon, newMinLat]);
+    this.updateHandles(newBbox, clamped.isClamped);
 
     const dims = computeBboxDimensions(...newBbox);
     const msg = `Resize: ${dims.widthM.toFixed(0)}m × ${dims.heightM.toFixed(0)}m · ${dims.areaM2.toLocaleString('en-US', { maximumFractionDigits: 0 })} m²${clamped.isClamped ? ' (Max 100,000 m² reached)' : ''}`;
@@ -349,15 +520,7 @@ export class BoxDrawer {
     this.hideTooltip();
     if (!this.currentBbox) return;
 
-    const minLon = Math.min(this.currentBbox[0], this.currentBbox[2]);
-    const maxLon = Math.max(this.currentBbox[0], this.currentBbox[2]);
-    const minLat = Math.min(this.currentBbox[1], this.currentBbox[3]);
-    const maxLat = Math.max(this.currentBbox[1], this.currentBbox[3]);
-
-    if (this.handles.nw) this.handles.nw.setLngLat([minLon, maxLat]);
-    if (this.handles.ne) this.handles.ne.setLngLat([maxLon, maxLat]);
-    if (this.handles.se) this.handles.se.setLngLat([maxLon, minLat]);
-    if (this.handles.sw) this.handles.sw.setLngLat([minLon, minLat]);
+    this.updateHandles(this.currentBbox, false);
 
     const dims = computeBboxDimensions(...this.currentBbox);
     if (dims.areaM2 >= 100.0) {
