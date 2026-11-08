@@ -78,6 +78,24 @@ body, html {
   pointer-events: auto;
 }
 
+.top-center-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.top-right-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-sm {
+  padding: 5px 10px;
+  font-size: 0.78rem;
+  border-radius: 6px;
+}
+
 .brand-badge {
   display: flex;
   align-items: center;

@@ -4,8 +4,8 @@
 
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './styles.css';
-
-console.log('LuxTerra Frontend initialized');
+import { initMap } from './components/MapViewer.js';
+import { LayerToggle } from './components/LayerToggle.js';
 
 const appContainer = document.getElementById('app');
 if (appContainer) {
@@ -27,6 +27,12 @@ if (appContainer) {
         <span>LuxTerra</span>
         <span class="pill">QC Solar 1m</span>
       </div>
+      <div class="top-center-controls" id="top-center-controls"></div>
+      <div class="top-right-controls" id="top-right-controls"></div>
     </div>
   `;
+
+  const map = initMap('map');
+  const topRightControls = document.getElementById('top-right-controls');
+  new LayerToggle(map, topRightControls);
 }
