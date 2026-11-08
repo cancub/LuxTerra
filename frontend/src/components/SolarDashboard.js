@@ -69,14 +69,28 @@ export class SolarDashboard {
           </div>
         </div>
 
-        <!-- Shaded Percentage & Progress Bar -->
-        <div style="display: flex; flex-direction: column; gap: 6px;">
+        <!-- Shaded Percentage & Progress Bar (Terrain) -->
+        <div style="display: flex; flex-direction: column; gap: 4px;">
           <div style="display: flex; justify-content: space-between; font-size: 0.78rem;">
             <span style="color: var(--text-secondary);">Terrain Shadow Shading</span>
             <span class="shaded-pct-val" style="font-family: var(--font-mono); font-weight: 700; color: var(--accent-sun);">0.0%</span>
           </div>
-          <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
+          <div style="width: 100%; height: 5px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
             <div class="shaded-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #10b981 0%, #f59e0b 60%, #ef4444 100%); transition: width 0.15s ease;"></div>
+          </div>
+        </div>
+
+        <!-- Canopy Shaded Percentage & Progress Bar (Canopy) -->
+        <div class="canopy-shading-container" style="display: flex; flex-direction: column; gap: 4px;">
+          <div style="display: flex; justify-content: space-between; font-size: 0.78rem;">
+            <span style="color: var(--text-secondary); display: flex; align-items: center; gap: 4px;">
+              <span>🌲 Tree Canopy Shading</span>
+              <span class="canopy-tau-badge" style="font-size: 0.68rem; color: #34d399; font-family: var(--font-mono);">(τ 15%)</span>
+            </span>
+            <span class="canopy-shaded-pct-val" style="font-family: var(--font-mono); font-weight: 700; color: #34d399;">0.0%</span>
+          </div>
+          <div style="width: 100%; height: 5px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
+            <div class="canopy-shaded-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #10b981 0%, #059669 50%, #047857 100%); transition: width 0.15s ease;"></div>
           </div>
         </div>
 
@@ -115,6 +129,10 @@ export class SolarDashboard {
     this.kwGauge = this.element.querySelector('.kw-gauge');
     this.shadedPctVal = this.element.querySelector('.shaded-pct-val');
     this.shadedProgressBar = this.element.querySelector('.shaded-progress-bar');
+    this.canopyShadingContainer = this.element.querySelector('.canopy-shading-container');
+    this.canopyTauBadge = this.element.querySelector('.canopy-tau-badge');
+    this.canopyShadedPctVal = this.element.querySelector('.canopy-shaded-pct-val');
+    this.canopyShadedProgressBar = this.element.querySelector('.canopy-shaded-progress-bar');
     this.kwhTotal = this.element.querySelector('.kwh-total');
     this.peakKw = this.element.querySelector('.peak-kw');
     this.pvConfigMount = this.element.querySelector('.pv-config-internal-mount');
@@ -158,6 +176,15 @@ export class SolarDashboard {
       this.patchSizePill.textContent = `${data.metadata.patch_area_m2.toLocaleString('en-US', { maximumFractionDigits: 0 })} m²`;
     }
 
+    if (data.canopy_transmittance !== undefined && this.canopyTauBadge) {
+      this.canopyTauBadge.textContent = `(τ ${(data.canopy_transmittance * 100).toFixed(0)}%)`;
+    }
+
+    if (this.canopyShadingContainer) {
+      const showCanopy = data.metadata ? (data.metadata.has_canopy_data && data.metadata.include_tree_canopy) : true;
+      this.canopyShadingContainer.style.opacity = showCanopy ? '1.0' : '0.4';
+    }
+
     this.updateDailyMetrics();
     this.chart.setData(this.timeseries, this.currentScaleFactor);
   }
@@ -192,6 +219,14 @@ export class SolarDashboard {
     const shadedPct = metric.percent_shaded || 0.0;
     this.shadedPctVal.textContent = `${shadedPct.toFixed(1)}%`;
     this.shadedProgressBar.style.width = `${Math.min(100, Math.max(0, shadedPct))}%`;
+
+    const canopyPct = metric.canopy_shaded_pct || 0.0;
+    if (this.canopyShadedPctVal) {
+      this.canopyShadedPctVal.textContent = `${canopyPct.toFixed(1)}%`;
+    }
+    if (this.canopyShadedProgressBar) {
+      this.canopyShadedProgressBar.style.width = `${Math.min(100, Math.max(0, canopyPct))}%`;
+    }
 
     this.chart.setPlayhead(stepIndex, this.currentScaleFactor);
   }

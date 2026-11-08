@@ -86,8 +86,19 @@ if (appContainer) {
   });
 
   const pvConfigPanel = new PVConfigPanel(solarDashboard.getPVConfigMount(), (newConfig) => {
-    if (!currentSimulationData) return;
-    // Real-time instantaneous local power recalculation without server roundtrip
+    if (!currentSimulationData || !baseSimulationConfig) return;
+
+    // If deployment mode or canopy settings changed, trigger a fresh simulation
+    if (
+      newConfig.deploymentMode !== baseSimulationConfig.deploymentMode ||
+      newConfig.includeTreeCanopy !== baseSimulationConfig.includeTreeCanopy ||
+      newConfig.canopyMode !== baseSimulationConfig.canopyMode
+    ) {
+      triggerSimulation();
+      return;
+    }
+
+    // Real-time instantaneous local power recalculation without server roundtrip for slider changes
     const gcrRatio = newConfig.gcr / baseSimulationConfig.gcr;
     const effRatio = newConfig.moduleEfficiency / baseSimulationConfig.moduleEfficiency;
     const prRatio = newConfig.systemDerate / baseSimulationConfig.systemDerate;
@@ -106,10 +117,16 @@ if (appContainer) {
       const meta = currentSimulationData.metadata;
       if (metric.is_daylight && metric.mask_index !== null && currentSimulationData.masks) {
         const maskStr = currentSimulationData.masks[metric.mask_index];
-        shadowCanvasLayer.renderFrame(maskStr, meta.grid_rows, meta.grid_cols);
+        const canopyMaskStr = currentSimulationData.canopy_masks ? currentSimulationData.canopy_masks[metric.mask_index] : null;
+        shadowCanvasLayer.renderFrame(maskStr, meta.grid_rows, meta.grid_cols, canopyMaskStr);
       } else if (currentSimulationData.night_mask) {
         // Nighttime: render 100% shade inside the user's selected shape (polygon or rectangle)
-        shadowCanvasLayer.renderFrame(currentSimulationData.night_mask, meta.grid_rows, meta.grid_cols);
+        shadowCanvasLayer.renderFrame(
+          currentSimulationData.night_mask,
+          meta.grid_rows,
+          meta.grid_cols,
+          currentSimulationData.night_canopy_mask
+        );
       } else {
         // Fallback: render shade masked to active polygon geometry
         shadowCanvasLayer.renderFullShade(meta.grid_rows, meta.grid_cols, currentPolygon, meta.patch_bounds_wgs84);
@@ -184,15 +201,20 @@ if (appContainer) {
         deployment_mode: pvConfig.deploymentMode,
         module_efficiency: pvConfig.moduleEfficiency,
         system_derate: pvConfig.systemDerate,
-        gcr: pvConfig.gcr
+        gcr: pvConfig.gcr,
+        include_tree_canopy: pvConfig.includeTreeCanopy !== undefined ? pvConfig.includeTreeCanopy : true,
+        canopy_mode: pvConfig.canopyMode || 'seasonal'
       };
 
       const data = await runSimulation(payload);
       currentSimulationData = data;
       baseSimulationConfig = {
+        deploymentMode: data.metadata.deployment_mode,
         gcr: data.metadata.effective_gcr,
         moduleEfficiency: data.metadata.module_efficiency,
-        systemDerate: data.metadata.system_derate
+        systemDerate: data.metadata.system_derate,
+        includeTreeCanopy: data.metadata.include_tree_canopy,
+        canopyMode: data.metadata.canopy_mode
       };
 
       shadowCanvasLayer.setPatchBounds(data.metadata.patch_bounds_wgs84);

@@ -13,6 +13,8 @@ export class PVConfigPanel {
     this.moduleEfficiency = 0.20; // 20%
     this.systemDerate = 0.80; // 80%
     this.gcr = 1.0; // 100% for rooftop, 0.45 for ground-mount
+    this.includeTreeCanopy = true; // Enabled by default per user request
+    this.canopyMode = 'seasonal'; // Seasonal Auto by default per user request
 
     this.render();
   }
@@ -70,6 +72,30 @@ export class PVConfigPanel {
         </div>
         <input type="range" class="derate-slider" min="60" max="95" step="1" value="80" style="width: 100%; accent-color: var(--accent-solar); cursor: pointer; height: 6px;" />
       </div>
+
+      <!-- Tree Canopy Shading Section -->
+      <div style="border-top: 1px solid var(--border-card); padding-top: 8px; margin-top: 2px; display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <span style="font-weight: 600; font-size: 0.80rem; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+            <span>🌲 Tree Canopy Shading</span>
+          </span>
+          <label class="canopy-toggle-switch">
+            <input type="checkbox" class="canopy-toggle-input" ${this.includeTreeCanopy ? 'checked' : ''}>
+            <span class="canopy-toggle-slider"></span>
+          </label>
+        </div>
+
+        <!-- Foliage Mode Selector -->
+        <div class="canopy-mode-container" style="display: flex; flex-direction: column; gap: 4px; ${this.includeTreeCanopy ? '' : 'opacity: 0.45; pointer-events: none;'}">
+          <span style="font-size: 0.74rem; color: var(--text-secondary);">Canopy Foliage Mode:</span>
+          <select class="canopy-mode-select" style="width: 100%; background: rgba(0,0,0,0.3); color: var(--text-primary); border: 1px solid var(--border-card); border-radius: 6px; padding: 4px 8px; font-size: 0.76rem; cursor: pointer;">
+            <option value="seasonal" ${this.canopyMode === 'seasonal' ? 'selected' : ''}>Auto (Seasonal Phenology)</option>
+            <option value="leaf_on" ${this.canopyMode === 'leaf_on' ? 'selected' : ''}>Dense Summer (Leaf-On, 15% τ)</option>
+            <option value="leaf_off" ${this.canopyMode === 'leaf_off' ? 'selected' : ''}>Bare Winter (Leaf-Off, 60% τ)</option>
+            <option value="bare_terrain" ${this.canopyMode === 'bare_terrain' ? 'selected' : ''}>Bare Terrain Only (Canopy Ignored)</option>
+          </select>
+        </div>
+      </div>
     `;
 
     this.modeButtons = this.element.querySelectorAll('.mode-btn');
@@ -77,6 +103,9 @@ export class PVConfigPanel {
     this.efficiencyVal = this.element.querySelector('.efficiency-val');
     this.derateSlider = this.element.querySelector('.derate-slider');
     this.derateVal = this.element.querySelector('.derate-val');
+    this.canopyToggle = this.element.querySelector('.canopy-toggle-input');
+    this.canopyModeSelect = this.element.querySelector('.canopy-mode-select');
+    this.canopyModeContainer = this.element.querySelector('.canopy-mode-container');
 
     this.modeButtons.forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -96,6 +125,24 @@ export class PVConfigPanel {
       this.derateVal.textContent = `${parseInt(e.target.value, 10)}%`;
       this.notifyChange();
     });
+
+    if (this.canopyToggle) {
+      this.canopyToggle.addEventListener('change', (e) => {
+        this.includeTreeCanopy = e.target.checked;
+        if (this.canopyModeContainer) {
+          this.canopyModeContainer.style.opacity = this.includeTreeCanopy ? '1.0' : '0.45';
+          this.canopyModeContainer.style.pointerEvents = this.includeTreeCanopy ? 'auto' : 'none';
+        }
+        this.notifyChange();
+      });
+    }
+
+    if (this.canopyModeSelect) {
+      this.canopyModeSelect.addEventListener('change', (e) => {
+        this.canopyMode = e.target.value;
+        this.notifyChange();
+      });
+    }
 
     this.container.appendChild(this.element);
   }
@@ -121,7 +168,9 @@ export class PVConfigPanel {
       deploymentMode: this.deploymentMode,
       gcr: this.gcr,
       moduleEfficiency: this.moduleEfficiency,
-      systemDerate: this.systemDerate
+      systemDerate: this.systemDerate,
+      includeTreeCanopy: this.includeTreeCanopy,
+      canopyMode: this.canopyMode
     });
   }
 
@@ -130,7 +179,9 @@ export class PVConfigPanel {
       deploymentMode: this.deploymentMode,
       gcr: this.gcr,
       moduleEfficiency: this.moduleEfficiency,
-      systemDerate: this.systemDerate
+      systemDerate: this.systemDerate,
+      includeTreeCanopy: this.includeTreeCanopy,
+      canopyMode: this.canopyMode
     };
   }
 }
