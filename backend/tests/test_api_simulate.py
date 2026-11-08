@@ -370,11 +370,20 @@ async def test_simulate_tree_canopy_dual_masks():
         summary = data["daily_summary"]
         assert "avg_canopy_shaded_pct" in summary
         assert summary["avg_canopy_shaded_pct"] >= 0.0
+        assert "unshaded_daily_kwh" in summary
+        assert "canopy_loss_kwh" in summary
+        assert "canopy_loss_pct" in summary
+        assert summary["unshaded_daily_kwh"] >= summary["total_daily_kwh"]
+        assert summary["canopy_loss_kwh"] >= 0.0
 
         # Check timeseries metric fields
         first_daylight = next(m for m in data["timeseries"] if m["is_daylight"])
         assert "canopy_shaded_pct" in first_daylight
         assert first_daylight["canopy_shaded_pct"] >= 0.0
+        assert "unshaded_power_kw" in first_daylight
+        assert "canopy_loss_kw" in first_daylight
+        assert first_daylight["unshaded_power_kw"] >= first_daylight["power_kw"]
+        assert first_daylight["canopy_loss_kw"] >= 0.0
 
 
 @pytest.mark.asyncio

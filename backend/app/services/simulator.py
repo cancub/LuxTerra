@@ -222,6 +222,20 @@ class SimulationOrchestrator:
                 shaded_pct_list.append(percent_shaded)
                 canopy_shaded_pct_list.append(canopy_shaded_pct)
 
+                total_active_cells = int(np.count_nonzero(polygon_mask)) if polygon_mask is not None else int(mask.size)
+                conv_factor = cell_area_m2 * pv_cfg.effective_gcr * pv_cfg.module_efficiency * pv_cfg.system_derate / 1000.0
+
+                unshaded_power_kw = round(
+                    total_active_cells * (irradiance.poa_direct_w_m2 + irradiance.poa_diffuse_w_m2) * conv_factor,
+                    3
+                )
+
+                canopy_shaded_cells = int(round(total_active_cells * (canopy_shaded_pct / 100.0)))
+                canopy_loss_kw = round(
+                    canopy_shaded_cells * (1.0 - canopy_transmittance) * irradiance.poa_direct_w_m2 * conv_factor,
+                    3
+                )
+
                 if power_kw > peak_power_kw:
                     peak_power_kw = power_kw
                     peak_time = ts_str
@@ -232,6 +246,8 @@ class SimulationOrchestrator:
                         solar_azimuth_deg=round(angles.azimuth_deg, 2),
                         solar_elevation_deg=round(angles.elevation_deg, 2),
                         power_kw=power_kw,
+                        unshaded_power_kw=unshaded_power_kw,
+                        canopy_loss_kw=canopy_loss_kw,
                         percent_shaded=percent_shaded,
                         canopy_shaded_pct=canopy_shaded_pct,
                         is_daylight=True,
@@ -247,6 +263,8 @@ class SimulationOrchestrator:
                         solar_azimuth_deg=round(angles.azimuth_deg, 2),
                         solar_elevation_deg=round(angles.elevation_deg, 2),
                         power_kw=0.0,
+                        unshaded_power_kw=0.0,
+                        canopy_loss_kw=0.0,
                         percent_shaded=100.0,
                         canopy_shaded_pct=0.0,
                         is_daylight=False,
@@ -256,7 +274,14 @@ class SimulationOrchestrator:
 
         # Numerical integration using trapezoidal rule over 24h curve
         power_values = [m.power_kw for m in timeseries_metrics]
+        unshaded_power_values = [m.unshaded_power_kw for m in timeseries_metrics]
+        canopy_loss_values = [m.canopy_loss_kw for m in timeseries_metrics]
+
         total_daily_kwh = float(np.trapezoid(power_values, dx=step_min / 60.0))
+        unshaded_daily_kwh = float(np.trapezoid(unshaded_power_values, dx=step_min / 60.0))
+        canopy_loss_kwh = float(np.trapezoid(canopy_loss_values, dx=step_min / 60.0))
+        canopy_loss_pct = float(round((canopy_loss_kwh / unshaded_daily_kwh * 100.0), 1)) if unshaded_daily_kwh > 0 else 0.0
+        unshaded_peak_kw = float(max(unshaded_power_values)) if unshaded_power_values else 0.0
 
         # 7. Encode daytime masks (masking out non-polygon cells as transparent/unshaded)
         if polygon_mask is not None and daylight_masks:
@@ -291,7 +316,11 @@ class SimulationOrchestrator:
 
         daily_summary = DailySummary(
             total_daily_kwh=round(total_daily_kwh, 2),
+            unshaded_daily_kwh=round(unshaded_daily_kwh, 2),
+            canopy_loss_kwh=round(canopy_loss_kwh, 2),
+            canopy_loss_pct=round(canopy_loss_pct, 1),
             peak_power_kw=round(peak_power_kw, 2),
+            unshaded_peak_kw=round(unshaded_peak_kw, 2),
             peak_time=peak_time,
             sunrise_time=sunrise_time,
             sunset_time=sunset_time,

@@ -907,3 +907,21 @@ input:focus, select:focus {
 .canopy-toggle-switch input:checked + .canopy-toggle-slider:before {
   transform: translateX(16px);
 }
+
+/* Solar Dashboard Canopy Visuals & Tooltips */
+.canopy-loss-pill {
+  transition: all 0.2s ease;
+}
+
+.canopy-loss-area {
+  transition: all 0.2s ease;
+}
+
+.potential-line {
+  transition: all 0.2s ease;
+}
+
+.sparkline-tooltip {
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+}
