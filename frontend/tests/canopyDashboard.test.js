@@ -58,7 +58,7 @@ test('canopy physics: direct beam attenuation formula matches winter and summer 
   assert.ok(canopyLossSummer > canopyLossWinter);
 });
 
-test('SolarDashboard: telemetry correctly populates canopy loss badges and daily metrics', () => {
+test('SolarDashboard: telemetry correctly populates stacked subtraction and 3-part shade bar', () => {
   const container = createMockElement('div');
   const dashboard = new SolarDashboard(container);
 
@@ -83,29 +83,54 @@ test('SolarDashboard: telemetry correctly populates canopy loss badges and daily
         power_kw: 53.1,
         unshaded_power_kw: 81.9,
         canopy_loss_kw: 28.8,
+        geological_loss_kw: 0.0,
         percent_shaded: 0.0,
         canopy_shaded_pct: 92.1,
         is_daylight: true
+      },
+      {
+        timestamp: '2026-12-21T22:00:00-05:00',
+        power_kw: 0.0,
+        unshaded_power_kw: 0.0,
+        canopy_loss_kw: 0.0,
+        geological_loss_kw: 0.0,
+        percent_shaded: 100.0,
+        canopy_shaded_pct: 0.0,
+        is_daylight: false
       }
     ]
   };
 
   dashboard.setSimulationData(mockSimulationData);
 
+  // Daily energy is displayed at top without loss mention
   assert.equal(dashboard.kwhTotal.textContent, '231.9');
-  assert.equal(dashboard.peakKw.textContent, '54.4');
-  assert.equal(dashboard.dailyCanopyLossVal.textContent, '-105.4 kWh');
-  assert.equal(dashboard.dailyCanopyLossPct.textContent, '(-31.2%)');
-  assert.equal(dashboard.unshadedPeakVal.textContent, '82.1 kW');
 
-  // Update telemetry for 11:36 frame
+  // Update telemetry for daylight frame (11:36)
   dashboard.updateTelemetry(mockSimulationData.timeseries[0], 0);
 
-  assert.equal(dashboard.kwGauge.textContent, '53.1');
-  assert.equal(dashboard.unshadedKwVal.textContent, '81.9 kW');
-  assert.equal(dashboard.canopyLossKw.textContent, '-28.8 kW');
-  assert.equal(dashboard.canopyLossPct.textContent, '(-35.2%)');
-  assert.equal(dashboard.canopyShadedPctVal.textContent, '92.1%');
+  // Stacked subtraction: Clear-Sky (81.9) - Geological Shade (0.0) - Tree Shade (28.8) = AC Power (53.1)
+  assert.equal(dashboard.subClearSkyVal.textContent, '81.9 kW');
+  assert.equal(dashboard.subGeoShadeVal.textContent, '0.0 kW');
+  assert.equal(dashboard.subTreeShadeVal.textContent, '28.8 kW');
+  assert.equal(dashboard.subAcPowerVal.textContent, '53.1 kW');
+  assert.equal(dashboard.kwGauge.textContent, '53.1 kW');
+
+  // 3-Part shade progress bar (sums strictly to 100%)
+  assert.equal(dashboard.triBarLit.style.width, '7.90%');
+  assert.equal(dashboard.triBarTree.style.width, '92.10%');
+  assert.equal(dashboard.triBarGeo.style.width, '0.00%');
+  const sumDaylight = parseFloat(dashboard.triBarLit.style.width) +
+                      parseFloat(dashboard.triBarTree.style.width) +
+                      parseFloat(dashboard.triBarGeo.style.width);
+  assert.ok(Math.abs(sumDaylight - 100.0) < 0.01);
+
+  // Update telemetry for nighttime frame
+  dashboard.updateTelemetry(mockSimulationData.timeseries[1], 1);
+  assert.equal(dashboard.subAcPowerVal.textContent, '0.0 kW');
+  assert.equal(dashboard.triBarLit.style.width, '0%');
+  assert.equal(dashboard.triBarTree.style.width, '0%');
+  assert.equal(dashboard.triBarGeo.style.width, '100%');
 });
 
 test('SparklineChart: correctly builds clear-sky potential curve and canopy loss region', () => {

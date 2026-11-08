@@ -65,13 +65,6 @@ export class SparklineChart {
         <circle class="playhead-dot" cx="0" cy="0" r="3.5" fill="#38bdf8" stroke="#ffffff" stroke-width="1.5" style="display: none;" />
       </svg>
 
-      <!-- Interactive Hover/Scrub Tooltip -->
-      <div class="sparkline-tooltip" style="display: none; position: absolute; top: -28px; left: 0; background: rgba(15, 23, 42, 0.92); border: 1px solid rgba(56, 189, 248, 0.35); backdrop-filter: blur(8px); padding: 2px 7px; border-radius: 4px; font-size: 0.68rem; font-family: var(--font-mono); color: var(--text-primary); pointer-events: none; white-space: nowrap; z-index: 10; transform: translateX(-50%);">
-        <span class="tooltip-time" style="color: var(--text-secondary);">--:--</span>
-        <span class="tooltip-actual" style="color: #38bdf8; font-weight: 700; margin-left: 4px;">0.0 kW</span>
-        <span class="tooltip-canopy" style="color: #34d399; margin-left: 4px; display: none;">(-0.0 kW 🌲)</span>
-      </div>
-
       <!-- Time Axis -->
       <div style="display: flex; justify-content: space-between; font-size: 0.64rem; font-family: var(--font-mono); color: var(--text-muted); margin-top: 2px;">
         <span>00:00</span>
@@ -105,10 +98,6 @@ export class SparklineChart {
     this.playheadDot = this.wrapper.querySelector('.playhead-dot');
     this.playheadPotentialDot = this.wrapper.querySelector('.playhead-potential-dot');
     this.playheadDropLine = this.wrapper.querySelector('.playhead-drop-line');
-    this.tooltip = this.wrapper.querySelector('.sparkline-tooltip');
-    this.tooltipTime = this.wrapper.querySelector('.tooltip-time');
-    this.tooltipActual = this.wrapper.querySelector('.tooltip-actual');
-    this.tooltipCanopy = this.wrapper.querySelector('.tooltip-canopy');
     this.legendCanopy = this.wrapper.querySelector('.legend-canopy');
     this.legendPotential = this.wrapper.querySelector('.legend-potential');
 
@@ -145,8 +134,9 @@ export class SparklineChart {
       const rawPot = d.unshaded_power_kw !== undefined ? d.unshaded_power_kw : d.power_kw;
       return (rawPot || 0.0) * scaleFactor;
     });
+    const canopyLosses = this.timeseries.map((d) => (d.canopy_loss_kw || 0.0) * scaleFactor);
 
-    const hasCanopyLoss = this.timeseries.some((d) => (d.canopy_loss_kw || 0.0) > 0.05);
+    const hasCanopyLoss = canopyLosses.some((loss) => loss > 0.05);
 
     this.maxPowerKw = Math.max(1.0, ...potentials, ...powers);
 
@@ -156,6 +146,7 @@ export class SparklineChart {
     const n = this.timeseries.length;
 
     const actualPoints = [];
+    const canopyTopPoints = [];
     const potentialPoints = [];
 
     for (let i = 0; i < n; i++) {
@@ -164,6 +155,12 @@ export class SparklineChart {
       const normYActual = powers[i] / this.maxPowerKw;
       const yActual = this.height - padBottom - normYActual * usableH;
       actualPoints.push(`${x.toFixed(1)},${yActual.toFixed(1)}`);
+
+      // Canopy top curve = actual power + canopy loss (canopy loss excluding geological shading)
+      const canopyTopKw = Math.min(potentials[i], powers[i] + canopyLosses[i]);
+      const normYCanopy = canopyTopKw / this.maxPowerKw;
+      const yCanopy = this.height - padBottom - normYCanopy * usableH;
+      canopyTopPoints.push(`${x.toFixed(1)},${yCanopy.toFixed(1)}`);
 
       const normYPot = potentials[i] / this.maxPowerKw;
       const yPot = this.height - padBottom - normYPot * usableH;
@@ -184,12 +181,13 @@ export class SparklineChart {
       this.potentialLine.style.display = hasCanopyLoss ? 'block' : 'none';
     }
 
-    // Canopy loss shaded area between potential and actual
+    // Canopy loss shaded area between canopy top and actual power (canopy - geological)
     if (this.canopyLossArea) {
       if (hasCanopyLoss) {
-        // Potential forward + actual reversed
+        // Canopy top forward + actual reversed
         const reversedActual = [...actualPoints].reverse().join(' ');
-        const lossAreaStr = `${potLineStr} ${reversedActual}`;
+        const canopyTopLineStr = canopyTopPoints.join(' ');
+        const lossAreaStr = `${canopyTopLineStr} ${reversedActual}`;
         this.canopyLossArea.setAttribute('points', lossAreaStr);
         this.canopyLossArea.style.display = 'block';
       } else {
@@ -250,23 +248,6 @@ export class SparklineChart {
     } else {
       if (this.playheadPotentialDot) this.playheadPotentialDot.style.display = 'none';
       if (this.playheadDropLine) this.playheadDropLine.style.display = 'none';
-    }
-
-    if (this.tooltip && m.timestamp) {
-      const timeStr = m.timestamp.split('T')[1]?.slice(0, 5) || '--:--';
-      this.tooltipTime.textContent = timeStr;
-      this.tooltipActual.textContent = `${power.toFixed(1)} kW`;
-
-      if (canopyLoss > 0.05) {
-        const lossPct = potential > 0 ? ((canopyLoss / potential) * 100).toFixed(0) : '0';
-        this.tooltipCanopy.textContent = `(-${canopyLoss.toFixed(1)} kW · -${lossPct}% 🌲)`;
-        this.tooltipCanopy.style.display = 'inline';
-      } else {
-        this.tooltipCanopy.style.display = 'none';
-      }
-
-      this.tooltip.style.left = `${x.toFixed(1)}px`;
-      this.tooltip.style.display = 'block';
     }
   }
 }
