@@ -163,6 +163,7 @@ test('E2E: Instantaneous PV Scaling (Rooftop 100% GCR vs Ground-Mount 45% GCR)',
     },
     date: '2026-06-21',
     time_step_minutes: 30,
+    include_tree_canopy: false,
     deployment_mode: 'rooftop'
   };
 
@@ -181,10 +182,19 @@ test('E2E: Instantaneous PV Scaling (Rooftop 100% GCR vs Ground-Mount 45% GCR)',
   });
   const groundData = await groundRes.json();
 
-  // Validate ground power is scaled by 0.45
+  // Validate bare terrain ground power is scaled by 0.45 GCR
   const rooftopKwh = rooftopData.daily_summary.total_daily_kwh;
   const groundKwh = groundData.daily_summary.total_daily_kwh;
   const ratio = groundKwh / rooftopKwh;
 
   assert.ok(Math.abs(ratio - 0.45) < 0.01, `Ground-mount ratio ${ratio} expected to be ~0.45`);
+
+  // Ground mount with canopy enabled suffers additional structure/tree shade
+  const canopyRes = await fetch(`${SERVER_URL}/api/simulate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...groundPayload, include_tree_canopy: true })
+  });
+  const canopyData = await canopyRes.json();
+  assert.ok(canopyData.daily_summary.total_daily_kwh < groundKwh, 'Canopy shade should reduce ground mount yield');
 });
