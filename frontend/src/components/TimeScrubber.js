@@ -24,6 +24,8 @@ export class TimeScrubber {
     this.element.style.maxWidth = '520px';
 
     this.element.innerHTML = `
+      <div class="scrubber-power-curve-mount" id="scrubber-power-curve-mount" style="width: 100%;"></div>
+
       <div class="timeline-header" style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem;">
         <div style="display: flex; align-items: center; gap: 10px;">
           <span class="time-readout" style="font-family: var(--font-mono); font-size: 1.15rem; font-weight: 700; color: var(--accent-sun);">12:00</span>
@@ -56,6 +58,7 @@ export class TimeScrubber {
       </div>
     `;
 
+    this.powerCurveMount = this.element.querySelector('.scrubber-power-curve-mount');
     this.timeReadout = this.element.querySelector('.time-readout');
     this.daylightBadge = this.element.querySelector('.daylight-badge');
     this.azVal = this.element.querySelector('.az-val');
@@ -85,6 +88,10 @@ export class TimeScrubber {
     });
 
     this.container.appendChild(this.element);
+  }
+
+  getPowerCurveMount() {
+    return this.powerCurveMount;
   }
 
   setTimeseries(timeseries, dailySummary) {

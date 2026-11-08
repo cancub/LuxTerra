@@ -23,14 +23,15 @@ export class SparklineChart {
 
   render() {
     this.element = document.createElement('div');
-    this.element.className = 'glass-panel power-curve-panel';
+    this.element.className = 'power-curve-panel';
     this.element.style.width = '100%';
-    this.element.style.maxWidth = '520px';
-    this.element.style.padding = '8px 14px';
     this.element.style.boxSizing = 'border-box';
     this.element.style.display = 'flex';
     this.element.style.flexDirection = 'column';
     this.element.style.gap = '4px';
+    this.element.style.padding = '0 0 8px 0';
+    this.element.style.marginBottom = '6px';
+    this.element.style.borderBottom = '1px solid rgba(255, 255, 255, 0.08)';
 
     this.element.innerHTML = `
       <!-- Collapsible Card Header -->

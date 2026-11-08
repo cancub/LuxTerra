@@ -91,7 +91,6 @@ if (appContainer) {
     <div class="bottom-dock" id="bottom-dock">
       <div class="energy-metrics-mount" id="energy-metrics-mount"></div>
       <div class="timeline-cluster" id="timeline-cluster">
-        <div id="power-curve-mount" style="width: 100%; display: flex; justify-content: center;"></div>
         <div class="timeline-controls-row" id="timeline-controls-row">
           <div id="date-selector-mount"></div>
           <div id="playback-controls-mount"></div>
@@ -114,7 +113,6 @@ if (appContainer) {
   const playbackControlsMount = document.getElementById('playback-controls-mount');
   const timelineScrubberMount = document.getElementById('timeline-scrubber-mount');
   const energyMetricsMount = document.getElementById('energy-metrics-mount');
-  const powerCurveMount = document.getElementById('power-curve-mount');
   const pvConfigModalMount = document.getElementById('pv-config-modal-mount');
 
   const settingsModal = document.getElementById('pv-settings-modal');
@@ -162,37 +160,16 @@ if (appContainer) {
     systemDerate: 0.80
   };
 
-  const solarDashboard = new SolarDashboard(energyMetricsMount, (seekIndex) => {
-    timeScrubber.setStep(seekIndex);
-  }, { chartContainer: powerCurveMount });
-
-  const pvConfigPanel = new PVConfigPanel(pvConfigModalMount, (newConfig) => {
-    if (!currentSimulationData || !baseSimulationConfig) return;
-
-    // If deployment mode or canopy settings changed, trigger a fresh simulation
-    if (
-      newConfig.deploymentMode !== baseSimulationConfig.deploymentMode ||
-      newConfig.includeTreeCanopy !== baseSimulationConfig.includeTreeCanopy ||
-      newConfig.canopyMode !== baseSimulationConfig.canopyMode
-    ) {
-      triggerSimulation();
-      return;
-    }
-
-    // Real-time instantaneous local power recalculation without server roundtrip for slider changes
-    const gcrRatio = newConfig.gcr / baseSimulationConfig.gcr;
-    const effRatio = newConfig.moduleEfficiency / baseSimulationConfig.moduleEfficiency;
-    const prRatio = newConfig.systemDerate / baseSimulationConfig.systemDerate;
-    const scaleFactor = gcrRatio * effRatio * prRatio;
-
-    solarDashboard.setScaleFactor(scaleFactor);
-  }, { isModal: true });
+  let playbackEngine = null;
+  let solarDashboard = null;
 
   const timeScrubber = new TimeScrubber(timelineScrubberMount, (index, metric) => {
     if (playbackEngine) {
       playbackEngine.setCurrentStep(index);
     }
-    solarDashboard.updateTelemetry(metric, index);
+    if (solarDashboard) {
+      solarDashboard.updateTelemetry(metric, index);
+    }
 
     if (currentSimulationData) {
       const meta = currentSimulationData.metadata;
@@ -217,9 +194,35 @@ if (appContainer) {
     }
   });
 
-  const playbackEngine = new PlaybackEngine(playbackControlsMount, (stepIndex) => {
+  solarDashboard = new SolarDashboard(energyMetricsMount, (seekIndex) => {
+    timeScrubber.setStep(seekIndex);
+  }, { chartContainer: timeScrubber.getPowerCurveMount() });
+
+  playbackEngine = new PlaybackEngine(playbackControlsMount, (stepIndex) => {
     timeScrubber.setStep(stepIndex);
   });
+
+  const pvConfigPanel = new PVConfigPanel(pvConfigModalMount, (newConfig) => {
+    if (!currentSimulationData || !baseSimulationConfig) return;
+
+    // If deployment mode or canopy settings changed, trigger a fresh simulation
+    if (
+      newConfig.deploymentMode !== baseSimulationConfig.deploymentMode ||
+      newConfig.includeTreeCanopy !== baseSimulationConfig.includeTreeCanopy ||
+      newConfig.canopyMode !== baseSimulationConfig.canopyMode
+    ) {
+      triggerSimulation();
+      return;
+    }
+
+    // Real-time instantaneous local power recalculation without server roundtrip for slider changes
+    const gcrRatio = newConfig.gcr / baseSimulationConfig.gcr;
+    const effRatio = newConfig.moduleEfficiency / baseSimulationConfig.moduleEfficiency;
+    const prRatio = newConfig.systemDerate / baseSimulationConfig.systemDerate;
+    const scaleFactor = gcrRatio * effRatio * prRatio;
+
+    solarDashboard.setScaleFactor(scaleFactor);
+  }, { isModal: true });
 
   const toastContainer = document.getElementById('toast-container');
   const statusPill = document.querySelector('.brand-badge .pill');
