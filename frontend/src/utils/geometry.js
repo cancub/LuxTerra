@@ -97,3 +97,147 @@ export function bboxToGeoJSON(minLon, minLat, maxLon, maxLat) {
     }
   };
 }
+
+/**
+ * Computes metric surface area (m²), perimeter (m), and bounding box for an arbitrary polygon.
+ * Uses high-precision geodesic equirectangular projection to metric coordinates and the Shoelace formula.
+ */
+export function computePolygonDimensions(coordinates) {
+  if (!coordinates || coordinates.length < 3) {
+    return {
+      areaM2: 0,
+      perimeterM: 0,
+      bbox: [0, 0, 0, 0],
+      centroid: [0, 0]
+    };
+  }
+
+  // Remove duplicate closing point if present for vertex processing
+  const pts = [...coordinates];
+  if (
+    pts.length > 3 &&
+    pts[0][0] === pts[pts.length - 1][0] &&
+    pts[0][1] === pts[pts.length - 1][1]
+  ) {
+    pts.pop();
+  }
+
+  const n = pts.length;
+  let minLon = Infinity;
+  let maxLon = -Infinity;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let sumLon = 0;
+  let sumLat = 0;
+
+  for (let i = 0; i < n; i++) {
+    const [lon, lat] = pts[i];
+    if (lon < minLon) minLon = lon;
+    if (lon > maxLon) maxLon = lon;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+    sumLon += lon;
+    sumLat += lat;
+  }
+
+  const centerLon = sumLon / n;
+  const centerLat = sumLat / n;
+  const midLatRad = centerLat * (Math.PI / 180.0);
+  const cosMidLat = Math.cos(midLatRad);
+
+  // Convert to local metric planar coordinates (x East, y North)
+  const metricCoords = pts.map(([lon, lat]) => [
+    EARTH_RADIUS_METERS * cosMidLat * (lon * (Math.PI / 180.0)),
+    EARTH_RADIUS_METERS * (lat * (Math.PI / 180.0))
+  ]);
+
+  // Shoelace formula for area & perimeter
+  let areaSum = 0;
+  let perimeter = 0;
+
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const [x0, y0] = metricCoords[i];
+    const [x1, y1] = metricCoords[j];
+    areaSum += (x0 * y1) - (x1 * y0);
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    perimeter += Math.sqrt(dx * dx + dy * dy);
+  }
+
+  const areaM2 = Math.abs(areaSum) / 2.0;
+
+  return {
+    areaM2: Math.round(areaM2 * 100) / 100,
+    perimeterM: Math.round(perimeter * 100) / 100,
+    bbox: [minLon, minLat, maxLon, maxLat],
+    centroid: [centerLon, centerLat]
+  };
+}
+
+/**
+ * Clamps a polygon so that its surface area never exceeds maxAreaM2,
+ * scaling vertices radially towards its centroid.
+ */
+export function clampPolygonToMaxArea(coordinates, maxAreaM2 = MAX_PATCH_AREA_M2) {
+  const dims = computePolygonDimensions(coordinates);
+
+  if (dims.areaM2 <= maxAreaM2 || dims.areaM2 <= 0) {
+    return {
+      coordinates,
+      areaM2: dims.areaM2,
+      bbox: dims.bbox,
+      isClamped: false
+    };
+  }
+
+  const scale = Math.sqrt(maxAreaM2 / dims.areaM2);
+  const [cLon, cLat] = dims.centroid;
+
+  // Scale each vertex around centroid
+  const clampedCoords = coordinates.map(([lon, lat]) => [
+    cLon + (lon - cLon) * scale,
+    cLat + (lat - cLat) * scale
+  ]);
+
+  const clampedDims = computePolygonDimensions(clampedCoords);
+
+  return {
+    coordinates: clampedCoords,
+    areaM2: Math.min(maxAreaM2, clampedDims.areaM2),
+    bbox: clampedDims.bbox,
+    isClamped: true
+  };
+}
+
+/**
+ * Converts an array of coordinates into a GeoJSON Polygon feature.
+ */
+export function polygonToGeoJSON(coordinates) {
+  if (!coordinates || coordinates.length < 3) {
+    return {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[]]
+      }
+    };
+  }
+
+  const ring = [...coordinates];
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) {
+    ring.push([first[0], first[1]]);
+  }
+
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: {
+      type: 'Polygon',
+      coordinates: [ring]
+    }
+  };
+}

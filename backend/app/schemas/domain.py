@@ -41,7 +41,7 @@ class GeoBoundingBox(BaseModel):
                 data["max_lon"] = n_max_lon
                 data["max_lat"] = n_max_lat
 
-                is_valid, area, msg = validate_patch_area(n_min_lon, n_min_lat, n_max_lon, n_max_lat)
+                is_valid, area, msg = validate_patch_area(n_min_lon, n_min_lat, n_max_lon, n_max_lat, max_area_m2=250000.0)
                 if not is_valid:
                     raise ValueError(msg)
         return data

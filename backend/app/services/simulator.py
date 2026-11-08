@@ -23,6 +23,7 @@ from ..interfaces.elevation_source import ElevationProvider
 from ..interfaces.solar_engine import SolarEngine
 from ..interfaces.occlusion_engine import OcclusionEngine
 from ..interfaces.pv_model import PVSystemModel
+from .elevation.geo_utils import transform_geometry
 from .serializer import encode_masks_batch
 
 TZ_QUEBEC = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
@@ -69,6 +70,34 @@ class SimulationOrchestrator:
         patch_h = patch_slice_y.stop - patch_slice_y.start
         patch_w = patch_slice_x.stop - patch_slice_x.start
         cell_area_m2 = request.resolution_m * request.resolution_m
+
+        # 1b. Rasterize polygon inclusion mask if an oblong/custom shape was requested
+        polygon_mask = None
+        polygon_area_m2 = None
+        if request.polygon and len(request.polygon) >= 3:
+            from shapely.geometry import Polygon as ShapelyPolygon
+            import rasterio.features
+            import rasterio.transform
+
+            poly_wgs84 = ShapelyPolygon(request.polygon)
+            target_crs = elev_data["crs"]
+            poly_utm = transform_geometry(poly_wgs84, "EPSG:4326", target_crs)
+            polygon_area_m2 = float(poly_utm.area)
+
+            p_min_x, p_min_y, p_max_x, p_max_y = geo_info["patch_bounds_metric"]
+            patch_transform = rasterio.transform.from_bounds(
+                p_min_x, p_min_y, p_max_x, p_max_y, patch_w, patch_h
+            )
+            polygon_mask = rasterio.features.rasterize(
+                [poly_utm],
+                out_shape=(patch_h, patch_w),
+                transform=patch_transform,
+                fill=0,
+                default_value=1,
+                dtype=np.uint8
+            ).astype(bool)
+            if not np.any(polygon_mask):
+                polygon_mask = None
 
         # 2. Build 24-hour timestep intervals (robust against DST transitions)
         sim_date = date.fromisoformat(request.date)
@@ -150,7 +179,8 @@ class SimulationOrchestrator:
                     shadow_mask=mask,
                     irradiance=irradiance,
                     cell_area_m2=cell_area_m2,
-                    config=pv_cfg
+                    config=pv_cfg,
+                    inclusion_mask=polygon_mask
                 )
 
                 shaded_pct_list.append(percent_shaded)
@@ -189,8 +219,16 @@ class SimulationOrchestrator:
         power_values = [m.power_kw for m in timeseries_metrics]
         total_daily_kwh = float(np.trapezoid(power_values, dx=step_min / 60.0))
 
-        # 7. Encode daytime masks
-        encoded_masks = encode_masks_batch(daylight_masks)
+        # 7. Encode daytime masks (masking out non-polygon cells as transparent/unshaded)
+        if polygon_mask is not None and daylight_masks:
+            export_masks = []
+            for m in daylight_masks:
+                em = m.copy()
+                em[~polygon_mask] = 1 # 1 = transparent in UI canvas
+                export_masks.append(em)
+            encoded_masks = encode_masks_batch(export_masks)
+        else:
+            encoded_masks = encode_masks_batch(daylight_masks)
 
         # 8. Daily Summary
         daylight_hours = round(len(daylight_indices) * (step_min / 60.0), 2)
@@ -206,10 +244,12 @@ class SimulationOrchestrator:
             avg_shaded_pct=avg_shaded
         )
 
+        effective_area = polygon_area_m2 if polygon_area_m2 is not None else geo_info["patch_area_m2"]
+
         metadata = SimulateMetadata(
             patch_width_m=round(geo_info["patch_width_m"], 2),
             patch_height_m=round(geo_info["patch_height_m"], 2),
-            patch_area_m2=round(geo_info["patch_area_m2"], 2),
+            patch_area_m2=round(effective_area, 2),
             patch_bounds_wgs84=list(geo_info["patch_bounds_wgs84"]),
             grid_rows=patch_h,
             grid_cols=patch_w,

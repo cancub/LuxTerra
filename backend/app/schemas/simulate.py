@@ -4,16 +4,22 @@ Pydantic schemas for the simulation request and response payloads.
 
 from typing import List, Optional
 from datetime import date
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .domain import GeoBoundingBox, DeploymentMode
+from ..services.elevation.geo_utils import calculate_bbox_area_meters, calculate_polygon_area_meters
 
 
 class SimulateRequest(BaseModel):
     """
     Request payload for POST /api/simulate.
+    Supports both axis-aligned bounding boxes and arbitrary oblong/irregular polygons.
     """
     bbox: GeoBoundingBox = Field(..., description="Target patch bounding box in WGS84")
+    polygon: Optional[List[List[float]]] = Field(
+        default=None,
+        description="Optional closed polygon coordinates [[lon, lat], ...] defining exact oblong/irregular boundary within bbox"
+    )
     date: str = Field(..., description="Simulation date in YYYY-MM-DD format (e.g. 2026-06-21)")
     time_step_minutes: int = Field(default=1, ge=1, le=60, description="Interval in minutes between frames")
     deployment_mode: DeploymentMode = Field(default=DeploymentMode.ROOFTOP, description="rooftop (100% GCR) or ground_mount (45% GCR)")
@@ -31,6 +37,23 @@ class SimulateRequest(BaseModel):
             return v
         except ValueError:
             raise ValueError(f"Invalid date format '{v}'. Expected YYYY-MM-DD.")
+
+    @model_validator(mode="after")
+    def validate_simulation_area(self) -> "SimulateRequest":
+        if self.polygon and len(self.polygon) >= 3:
+            poly_area = calculate_polygon_area_meters(self.polygon)
+            if poly_area > 100000.0:
+                raise ValueError(
+                    f"Selected polygon area ({poly_area:,.1f} m²) exceeds the maximum allowable limit of 100,000 m²."
+                )
+        else:
+            bbox = self.bbox
+            area = calculate_bbox_area_meters(bbox.min_lon, bbox.min_lat, bbox.max_lon, bbox.max_lat)
+            if area > 100000.0:
+                raise ValueError(
+                    f"Selected area ({area:,.1f} m²) exceeds the maximum allowable limit of 100,000 m²."
+                )
+        return self
 
 
 class SimulateMetadata(BaseModel):

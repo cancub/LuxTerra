@@ -73,6 +73,7 @@ if (appContainer) {
   const shadowCanvasLayer = new ShadowCanvasLayer(map);
 
   let currentBbox = null;
+  let currentPolygon = null;
   let currentSimulationData = null;
   let baseSimulationConfig = {
     gcr: 1.0,
@@ -174,6 +175,7 @@ if (appContainer) {
           max_lon: currentBbox[2],
           max_lat: currentBbox[3]
         },
+        polygon: currentPolygon || undefined,
         date: date,
         time_step_minutes: 1,
         deployment_mode: pvConfig.deploymentMode,
@@ -213,6 +215,7 @@ if (appContainer) {
 
   const boxDrawer = new BoxDrawer(map, topRightControls, (selection) => {
     currentBbox = selection.bbox;
+    currentPolygon = selection.polygon || null;
     triggerSimulation();
   });
 

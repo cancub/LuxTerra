@@ -21,19 +21,27 @@ class StandardPVModel(PVSystemModel):
         shadow_mask: np.ndarray,
         irradiance: IrradianceComponents,
         cell_area_m2: float = 1.0,
-        config: Optional[PVConfig] = None
+        config: Optional[PVConfig] = None,
+        inclusion_mask: Optional[np.ndarray] = None
     ) -> Tuple[float, float]:
         """
         Calculates instantaneous usable AC power in kW and percentage of the patch shaded.
+        If inclusion_mask is provided, only cells inside the polygon boundary are evaluated.
         """
         cfg = config or PVConfig()
         
-        total_cells = shadow_mask.size
-        if total_cells == 0:
-            return 0.0, 0.0
+        if inclusion_mask is not None:
+            active_mask = shadow_mask[inclusion_mask]
+            total_cells = int(active_mask.size)
+            if total_cells == 0:
+                return 0.0, 0.0
+            unshaded_cells = int(np.count_nonzero(active_mask > 0))
+        else:
+            total_cells = shadow_mask.size
+            if total_cells == 0:
+                return 0.0, 0.0
+            unshaded_cells = int(np.count_nonzero(shadow_mask > 0))
 
-        # Unshaded cells have mask == 1, shaded cells have mask == 0
-        unshaded_cells = int(np.count_nonzero(shadow_mask > 0))
         shaded_cells = total_cells - unshaded_cells
         percent_shaded = float((shaded_cells / total_cells) * 100.0)
 

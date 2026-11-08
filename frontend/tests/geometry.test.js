@@ -5,6 +5,9 @@ import {
   clampBboxToMaxArea,
   normalizeBbox,
   bboxToGeoJSON,
+  computePolygonDimensions,
+  clampPolygonToMaxArea,
+  polygonToGeoJSON,
   MAX_PATCH_AREA_M2
 } from '../src/utils/geometry.js';
 
@@ -45,4 +48,42 @@ test('bboxToGeoJSON generates valid Polygon GeoJSON', () => {
   assert.equal(geojson.type, 'Feature');
   assert.equal(geojson.geometry.type, 'Polygon');
   assert.equal(geojson.geometry.coordinates[0].length, 5);
+});
+
+test('computePolygonDimensions calculates oblong polygon area accurately', () => {
+  // Oblong triangle in Montreal: ~200m base, ~100m height => Area ~10,000 m²
+  const triangle = [
+    [-73.619, 45.502],
+    [-73.61644, 45.502],
+    [-73.619, 45.5029]
+  ];
+  const dims = computePolygonDimensions(triangle);
+  assert.ok(dims.areaM2 > 9500 && dims.areaM2 < 10500, `Area ${dims.areaM2} should be ~10,000 m²`);
+  assert.equal(dims.bbox[0], -73.619);
+  assert.equal(dims.bbox[1], 45.502);
+});
+
+test('clampPolygonToMaxArea scales large oblong polygon down to <= 100,000 m²', () => {
+  // Large triangle ~200,000 m²
+  const largePoly = [
+    [-73.63, 45.50],
+    [-73.61, 45.50],
+    [-73.63, 45.52]
+  ];
+  const res = clampPolygonToMaxArea(largePoly, MAX_PATCH_AREA_M2);
+  assert.equal(res.isClamped, true);
+  assert.ok(res.areaM2 <= MAX_PATCH_AREA_M2);
+  assert.ok(res.areaM2 > 99500);
+});
+
+test('polygonToGeoJSON closes ring if open', () => {
+  const coords = [
+    [-73.619, 45.502],
+    [-73.616, 45.502],
+    [-73.619, 45.503]
+  ];
+  const geojson = polygonToGeoJSON(coords);
+  assert.equal(geojson.geometry.type, 'Polygon');
+  assert.equal(geojson.geometry.coordinates[0].length, 4);
+  assert.deepEqual(geojson.geometry.coordinates[0][0], geojson.geometry.coordinates[0][3]);
 });

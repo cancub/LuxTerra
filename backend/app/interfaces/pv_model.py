@@ -21,7 +21,8 @@ class PVSystemModel(ABC):
         shadow_mask: np.ndarray,
         irradiance: IrradianceComponents,
         cell_area_m2: float = 1.0,
-        config: Optional[PVConfig] = None
+        config: Optional[PVConfig] = None,
+        inclusion_mask: Optional[np.ndarray] = None
     ) -> Tuple[float, float]:
         """
         Calculates instantaneous usable AC electrical power output and percentage of patch shaded.

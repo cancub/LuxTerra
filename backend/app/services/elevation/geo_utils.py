@@ -3,7 +3,7 @@ Geospatial transformation and geodesic buffering utilities for LuxTerra.
 """
 
 from functools import lru_cache
-from typing import Tuple, Dict, Any, Optional
+from typing import Tuple, Dict, Any, Optional, List
 import pyproj
 import shapely
 from shapely.geometry import box, Polygon
@@ -63,6 +63,22 @@ def calculate_bbox_area_meters(min_lon: float, min_lat: float, max_lon: float, m
     geom_metric = transform_geometry(geom_wgs84, "EPSG:4326", utm_crs)
     
     return float(geom_metric.area)
+
+
+def calculate_polygon_area_meters(coordinates: List[List[float]]) -> float:
+    """
+    Calculate the accurate surface area of an arbitrary WGS84 polygon in square meters.
+    Uses local UTM projection to ensure precise metric calculations.
+    """
+    from shapely.geometry import Polygon as ShapelyPolygon
+    if not coordinates or len(coordinates) < 3:
+        return 0.0
+    poly_wgs84 = ShapelyPolygon(coordinates)
+    center_lon = float(poly_wgs84.centroid.x)
+    center_lat = float(poly_wgs84.centroid.y)
+    utm_crs = get_utm_crs_for_lon_lat(center_lon, center_lat)
+    poly_metric = transform_geometry(poly_wgs84, "EPSG:4326", utm_crs)
+    return float(poly_metric.area)
 
 
 def validate_patch_area(

@@ -279,3 +279,35 @@ async def test_simulate_one_minute_intervals():
         assert len(data["timeseries"]) == 1440
         assert len(data["masks"]) > 900
 
+
+@pytest.mark.asyncio
+async def test_simulate_oblong_polygon_shape():
+    """
+    Test simulation with custom oblong multi-point polygon boundary within bounding box.
+    Verifies that patch_area_m2 reflects the exact polygon area (~10,000 m²) rather than full bbox.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        triangle = [
+            [-73.619, 45.502],
+            [-73.617, 45.502],
+            [-73.619, 45.503]
+        ]
+        payload = {
+            "bbox": {
+                "min_lon": -73.619,
+                "min_lat": 45.502,
+                "max_lon": -73.617,
+                "max_lat": 45.504
+            },
+            "polygon": triangle,
+            "date": "2026-06-21",
+            "time_step_minutes": 15
+        }
+        response = await client.post("/api/simulate", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        meta = data["metadata"]
+        assert meta["patch_area_m2"] < 25000.0 # Triangle is ~8,000 m², well below 35,000 m² bbox
+        assert data["daily_summary"]["total_daily_kwh"] > 0.0
+
