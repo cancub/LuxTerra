@@ -3,7 +3,8 @@ Shared ray-marching vector geometry and coordinate conversion utilities.
 """
 
 import math
-from typing import Tuple, NamedTuple
+from typing import Tuple, NamedTuple, Optional
+import numpy as np
 
 
 class RayStepParameters(NamedTuple):
@@ -13,6 +14,34 @@ class RayStepParameters(NamedTuple):
     step_dist: float
     max_steps: int
     is_daylight: bool
+
+
+def compute_receiver_altitude_grid(
+    dtm: np.ndarray,
+    dsm: Optional[np.ndarray] = None,
+    is_rooftop: bool = True,
+    ground_stand_height_m: float = 1.5
+) -> np.ndarray:
+    """
+    Computes the receiver origin altitude z0(r, c) across the target grid.
+    
+    Physical logic:
+      - Rooftop Mode (is_rooftop=True): Solar panels sit directly on building rooftops or atop
+        canopy structures at z0 = z_dsm. The building surface itself does not self-shadow the panels,
+        but taller overhanging trees or adjacent elevated buildings will cast shadows if the solar ray
+        intersects them. If DSM is not provided, defaults to bare DTM.
+      - Ground-Mount Mode (is_rooftop=False): Solar panels sit on ground racking elevated by
+        ground_stand_height_m (default 1.5m) above bare earth: z0 = z_dtm + 1.5m.
+        Any nearby tree, canopy grove, or building taller than 1.5m above ground will cast shade.
+    """
+    if is_rooftop:
+        if dsm is not None:
+            # Panels sit on top of surface structures/roofs (z_dsm >= z_dtm)
+            return np.maximum(dtm, dsm).astype(np.float32)
+        return dtm.astype(np.float32)
+    else:
+        # Panels sit on ground racking 1.5m above bare earth
+        return (dtm + float(ground_stand_height_m)).astype(np.float32)
 
 
 def calculate_ray_step(

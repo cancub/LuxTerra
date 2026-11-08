@@ -8,6 +8,7 @@ import numpy as np
 from backend.app.services.occlusion.cupy_raymarch import CuPyOcclusionEngine
 from backend.app.services.occlusion.numpy_raymarch import NumPyOcclusionEngine
 from backend.app.services.occlusion.factory import get_best_occlusion_engine, is_gpu_available
+from backend.app.services.occlusion.ray_math import compute_receiver_altitude_grid
 
 
 @pytest.fixture
@@ -144,3 +145,31 @@ def test_night_shadow_all_zero():
         gpu_engine = CuPyOcclusionEngine()
         mask_gpu = gpu_engine.compute_shadow_mask(grid, patch_y, patch_x, 180.0, -10.0)
         assert np.all(mask_gpu == 0)
+
+
+def test_receiver_altitude_calculation():
+    dtm = np.full((10, 10), 100.0, dtype=np.float32)
+    dsm = np.full((10, 10), 100.0, dtype=np.float32)
+    # Add a 15m building at (2:5, 2:5)
+    dsm[2:5, 2:5] = 115.0
+    # Add a 20m tree at (7:9, 7:9)
+    dsm[7:9, 7:9] = 120.0
+
+    # 1. Rooftop Mode
+    z0_roof = compute_receiver_altitude_grid(dtm, dsm, is_rooftop=True)
+    assert z0_roof.shape == (10, 10)
+    assert np.all(z0_roof[2:5, 2:5] == 115.0)
+    assert np.all(z0_roof[7:9, 7:9] == 120.0)
+    assert z0_roof[0, 0] == 100.0
+
+    # 2. Ground-Mount Mode (1.5m rack above ground)
+    z0_ground = compute_receiver_altitude_grid(dtm, dsm, is_rooftop=False, ground_stand_height_m=1.5)
+    assert z0_ground.shape == (10, 10)
+    assert np.all(z0_ground == 101.5)
+
+    # 3. Fallback when DSM is absent
+    z0_fallback_roof = compute_receiver_altitude_grid(dtm, dsm=None, is_rooftop=True)
+    assert np.array_equal(z0_fallback_roof, dtm)
+
+    z0_fallback_ground = compute_receiver_altitude_grid(dtm, dsm=None, is_rooftop=False, ground_stand_height_m=2.0)
+    assert np.all(z0_fallback_ground == 102.0)
