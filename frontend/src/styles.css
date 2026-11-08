@@ -78,12 +78,6 @@ body, html {
   pointer-events: auto;
 }
 
-.top-center-controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .top-right-controls {
   display: flex;
   align-items: center;
@@ -506,28 +500,6 @@ input:focus, select:focus {
 
 .box-corner-handle:active {
   transform: scale(1.5);
-}
-
-/* Bookmark Buttons High Contrast */
-.bookmark-btn {
-  background: rgba(30, 41, 59, 0.9) !important;
-  border: 1px solid rgba(255, 255, 255, 0.22) !important;
-  color: #f8fafc !important;
-  font-weight: 600 !important;
-  transition: all 0.15s ease;
-}
-
-.bookmark-btn:hover {
-  background: rgba(51, 65, 85, 0.95) !important;
-  border-color: rgba(255, 255, 255, 0.4) !important;
-  color: #ffffff !important;
-}
-
-.bookmark-btn.active {
-  background: #2563eb !important;
-  border-color: #60a5fa !important;
-  color: #ffffff !important;
-  box-shadow: 0 0 12px rgba(37, 99, 235, 0.5) !important;
 }
 
 /* Central Simulation Computing Loading Pill */

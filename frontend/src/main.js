@@ -8,7 +8,6 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import './styles.css';
 import { initMap } from './components/MapViewer.js';
 import { LayerToggle } from './components/LayerToggle.js';
-import { Bookmarks } from './components/Bookmarks.js';
 import { Geocoder } from './components/Geocoder.js';
 import { BoxDrawer } from './components/BoxDrawer.js';
 import { ShadowCanvasLayer } from './components/ShadowCanvasLayer.js';
@@ -42,7 +41,6 @@ if (appContainer) {
         </div>
         <div id="geocoder-mount"></div>
       </div>
-      <div class="top-center-controls" id="top-center-controls"></div>
       <div class="top-right-controls" id="top-right-controls"></div>
     </div>
 
@@ -66,7 +64,6 @@ if (appContainer) {
 
   const map = initMap('map');
   const geocoderMount = document.getElementById('geocoder-mount');
-  const topCenterControls = document.getElementById('top-center-controls');
   const topRightControls = document.getElementById('top-right-controls');
   const dateSelectorMount = document.getElementById('date-selector-mount');
   const playbackControlsMount = document.getElementById('playback-controls-mount');
@@ -221,12 +218,6 @@ if (appContainer) {
 
   new Geocoder(map, geocoderMount, (loc) => {
     console.log('Selected geocoder location:', loc.name);
-  });
-
-  new Bookmarks(map, topCenterControls, (preset) => {
-    if (preset.sampleBbox) {
-      boxDrawer.setBox(preset.sampleBbox);
-    }
   });
 
   new LayerToggle(map, topRightControls);
