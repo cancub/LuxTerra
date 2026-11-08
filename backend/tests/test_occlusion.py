@@ -173,3 +173,63 @@ def test_receiver_altitude_calculation():
 
     z0_fallback_ground = compute_receiver_altitude_grid(dtm, dsm=None, is_rooftop=False, ground_stand_height_m=2.0)
     assert np.all(z0_fallback_ground == 102.0)
+
+
+def test_cuda_dual_surface_synthetic_canopy():
+    if not is_gpu_available():
+        pytest.skip("CUDA GPU not available")
+
+    gpu_engine = CuPyOcclusionEngine()
+    
+    # 200x200 flat ground at 100m
+    dtm = np.full((200, 200), 100.0, dtype=np.float32)
+    # DSM has a 20m tree canopy grove at col 120 spanning rows 50:150
+    dsm = dtm.copy()
+    dsm[:, 120] = 120.0 # 20m trees
+
+    patch_y = slice(60, 140)
+    patch_x = slice(80, 140) # Col 120 is at local index 40
+
+    # Sun from East (azimuth = 90°), elevation = 45°
+    terrain_mask, canopy_mask = gpu_engine.compute_dual_shadow_mask(
+        dtm_grid=dtm,
+        dsm_grid=dsm,
+        patch_slice_y=patch_y,
+        patch_slice_x=patch_x,
+        solar_azimuth_deg=90.0,
+        solar_elevation_deg=45.0,
+        resolution_m=1.0,
+        max_search_radius_m=100.0,
+        is_rooftop=False,
+        ground_stand_height_m=1.5
+    )
+
+    # 1. Solid terrain is flat: terrain_mask should be 1 (completely unshaded by terrain)
+    assert np.all(terrain_mask == 1)
+
+    # 2. Canopy mask should show shadows extending west from col 40 (col 120)
+    # Tree height = 120m, receiver = 101.5m -> shadow length = 18.5m -> 19 cells
+    tree_local_idx = 40
+    shadow_start = tree_local_idx - 18
+    # Cells before shadow are unshaded
+    assert np.all(canopy_mask[:, :shadow_start] == 1)
+    # Cells in shadow are occluded by canopy
+    assert np.all(canopy_mask[:, shadow_start:tree_local_idx] == 0)
+
+    # Test batch computation
+    angles = [(90.0, 45.0), (180.0, 60.0), (270.0, -5.0)]
+    t_batch, c_batch = gpu_engine.compute_dual_shadow_masks_batch(
+        dtm_grid=dtm,
+        dsm_grid=dsm,
+        patch_slice_y=patch_y,
+        patch_slice_x=patch_x,
+        sun_angles=angles,
+        is_rooftop=False
+    )
+    assert len(t_batch) == 3
+    assert len(c_batch) == 3
+    assert np.array_equal(t_batch[0], terrain_mask)
+    assert np.array_equal(c_batch[0], canopy_mask)
+    # Night frame
+    assert np.all(t_batch[2] == 0)
+    assert np.all(c_batch[2] == 0)
