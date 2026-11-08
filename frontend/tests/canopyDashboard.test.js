@@ -122,9 +122,14 @@ test('SolarDashboard: telemetry correctly populates stacked subtraction and 3-pa
   assert.equal(dashboard.subAcPowerVal.textContent, '0.0 kW');
 });
 
-test('PVConfigPanel: collapsible by default and toggles expand/collapse', () => {
+test('PVConfigPanel: collapsible by default and toggles expand/collapse', (t, done) => {
   const container = createMockElement('div');
   const panel = new PVConfigPanel(container);
+
+  let scrollCalled = false;
+  panel.element.scrollIntoView = (opts) => {
+    scrollCalled = true;
+  };
 
   assert.equal(panel.isCollapsed, true);
   assert.equal(panel.body.style.display, 'none');
@@ -133,9 +138,15 @@ test('PVConfigPanel: collapsible by default and toggles expand/collapse', () => 
   assert.equal(panel.isCollapsed, false);
   assert.equal(panel.body.style.display, 'flex');
 
-  panel.toggleCollapse();
-  assert.equal(panel.isCollapsed, true);
-  assert.equal(panel.body.style.display, 'none');
+  // Verify scrollIntoView triggered on expansion
+  setTimeout(() => {
+    assert.equal(scrollCalled, true);
+
+    panel.toggleCollapse();
+    assert.equal(panel.isCollapsed, true);
+    assert.equal(panel.body.style.display, 'none');
+    done();
+  }, 60);
 });
 
 test('SparklineChart: correctly builds clear-sky potential curve and canopy loss region', () => {

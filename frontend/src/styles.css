@@ -156,7 +156,7 @@ body, html {
 }
 
 .bottom-dock > * {
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 /* Right Sidebar Dock */
@@ -164,33 +164,42 @@ body, html {
   position: absolute;
   top: 112px;
   right: 16px;
-  width: 320px;
-  z-index: 10;
+  width: 324px;
+  z-index: 20;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: calc(100vh - 230px);
+  max-height: calc(100vh - 130px);
   overflow-y: auto;
-  overflow-x: visible;
-  pointer-events: none;
-  padding-right: 2px;
+  overflow-x: hidden;
+  pointer-events: auto;
+  padding-right: 4px;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
 }
 
 .right-dock > * {
   pointer-events: auto;
+  width: 100%;
 }
 
 .right-dock::-webkit-scrollbar {
-  width: 4px;
+  width: 5px;
 }
 
 .right-dock::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
 }
 
 .right-dock::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+}
+
+.right-dock::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
 }
 
 /* Toast Notification */
@@ -271,6 +280,19 @@ body, html {
   justify-content: center;
   gap: 12px;
   width: 100%;
+  pointer-events: none;
+}
+
+.timeline-controls-row > * {
+  pointer-events: auto;
+}
+
+#timeline-scrubber-mount {
+  pointer-events: none;
+}
+
+#timeline-scrubber-mount > * {
+  pointer-events: auto;
 }
 
 .btn-sm {
@@ -546,7 +568,8 @@ input:focus, select:focus {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: 320px;
+  width: 100%;
+  max-width: 320px;
   transition: all 0.25s ease;
 }
 

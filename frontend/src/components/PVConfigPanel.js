@@ -30,6 +30,7 @@ export class PVConfigPanel {
     this.element.style.display = 'flex';
     this.element.style.flexDirection = 'column';
     this.element.style.gap = '8px';
+    this.element.style.width = '100%';
 
     this.element.innerHTML = `
       <!-- Collapsible Section Header -->
@@ -179,6 +180,11 @@ export class PVConfigPanel {
     } else {
       this.body.style.display = 'flex';
       this.chevron.style.transform = 'rotate(0deg)';
+      if (typeof this.element.scrollIntoView === 'function') {
+        setTimeout(() => {
+          this.element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 50);
+      }
     }
   }
 

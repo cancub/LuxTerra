@@ -29,7 +29,8 @@ export class SolarDashboard {
     this.element.style.display = 'flex';
     this.element.style.flexDirection = 'column';
     this.element.style.gap = '12px';
-    this.element.style.width = '320px';
+    this.element.style.width = '100%';
+    this.element.style.maxWidth = '320px';
     this.element.style.transition = 'all 0.25s ease';
 
     this.element.innerHTML = `
@@ -170,6 +171,11 @@ export class SolarDashboard {
       this.body.style.display = 'flex';
       this.chevron.style.transform = 'rotate(0deg)';
       this.headerPowerBadge.style.display = 'none';
+      if (typeof this.element.scrollIntoView === 'function') {
+        setTimeout(() => {
+          this.element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 50);
+      }
     }
   }
 
