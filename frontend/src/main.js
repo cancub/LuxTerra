@@ -12,6 +12,7 @@ import { BoxDrawer } from './components/BoxDrawer.js';
 import { ShadowCanvasLayer } from './components/ShadowCanvasLayer.js';
 import { DateSelector } from './components/DateSelector.js';
 import { TimeScrubber } from './components/TimeScrubber.js';
+import { PlaybackEngine } from './components/PlaybackEngine.js';
 
 const appContainer = document.getElementById('app');
 if (appContainer) {
@@ -53,6 +54,7 @@ if (appContainer) {
   const topCenterControls = document.getElementById('top-center-controls');
   const topRightControls = document.getElementById('top-right-controls');
   const dateSelectorMount = document.getElementById('date-selector-mount');
+  const playbackControlsMount = document.getElementById('playback-controls-mount');
   const timelineScrubberMount = document.getElementById('timeline-scrubber-mount');
 
   const shadowCanvasLayer = new ShadowCanvasLayer(map);
@@ -60,6 +62,9 @@ if (appContainer) {
   let currentSimulationData = null;
 
   const timeScrubber = new TimeScrubber(timelineScrubberMount, (index, metric) => {
+    if (playbackEngine) {
+      playbackEngine.setCurrentStep(index);
+    }
     if (currentSimulationData && currentSimulationData.masks && metric.mask_index !== null) {
       const maskStr = currentSimulationData.masks[metric.mask_index];
       const meta = currentSimulationData.metadata;
@@ -67,6 +72,10 @@ if (appContainer) {
     } else {
       shadowCanvasLayer.clear();
     }
+  });
+
+  const playbackEngine = new PlaybackEngine(playbackControlsMount, (stepIndex) => {
+    timeScrubber.setStep(stepIndex);
   });
 
   const dateSelector = new DateSelector(dateSelectorMount, '2026-06-21', (newDate) => {
