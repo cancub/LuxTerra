@@ -8,6 +8,8 @@ import {
   computePolygonDimensions,
   clampPolygonToMaxArea,
   polygonToGeoJSON,
+  computeDistanceMeters,
+  computeScreenAlignedRect,
   MAX_PATCH_AREA_M2
 } from '../src/utils/geometry.js';
 
@@ -86,4 +88,78 @@ test('polygonToGeoJSON closes ring if open', () => {
   assert.equal(geojson.geometry.type, 'Polygon');
   assert.equal(geojson.geometry.coordinates[0].length, 4);
   assert.deepEqual(geojson.geometry.coordinates[0][0], geojson.geometry.coordinates[0][3]);
+});
+
+test('computeDistanceMeters accurately calculates distance in Montreal', () => {
+  // 100m north-south at lat 45.5
+  // deltaLat = 100 / 111195 ~= 0.0008993
+  const d = computeDistanceMeters(-73.60, 45.50, -73.60, 45.5008993);
+  assert.ok(Math.abs(d - 100) < 0.5, `Distance should be ~100m, got ${d}`);
+});
+
+test('computeScreenAlignedRect creates screen-parallel rectangle (bearing 0)', () => {
+  // Simple unproject where 1 px = 1m = (0.000013 deg lon, 0.000009 deg lat)
+  const unproject = ([x, y]) => ({
+    lng: -73.60 + x * 0.000013,
+    lat: 45.50 - y * 0.000009
+  });
+
+  const startPoint = { x: 100, y: 100 };
+  const endPoint = { x: 200, y: 250 }; // 100px width x 150px height
+
+  const rect = computeScreenAlignedRect(startPoint, endPoint, unproject, MAX_PATCH_AREA_M2);
+  assert.ok(rect !== null);
+  assert.equal(rect.coordinates.length, 5); // 4 corners + closed
+  assert.deepEqual(rect.coordinates[0], rect.coordinates[4]); // closed ring
+  assert.ok(rect.areaM2 > 10000 && rect.areaM2 < 20000);
+  assert.equal(rect.isClamped, false);
+});
+
+test('computeScreenAlignedRect handles rotated camera (bearing 45)', () => {
+  // 45 degree camera rotation mock
+  const cos45 = Math.cos(Math.PI / 4);
+  const sin45 = Math.sin(Math.PI / 4);
+  const unproject = ([x, y]) => {
+    // Rotated ground space (meters)
+    const gx = x * cos45 - y * sin45;
+    const gy = x * sin45 + y * cos45;
+    return {
+      lng: -73.60 + gx * 0.000013,
+      lat: 45.50 + gy * 0.000009
+    };
+  };
+
+  const startPoint = { x: 50, y: 50 };
+  const endPoint = { x: 150, y: 150 };
+
+  const rect = computeScreenAlignedRect(startPoint, endPoint, unproject, MAX_PATCH_AREA_M2);
+  assert.ok(rect !== null);
+  assert.equal(rect.coordinates.length, 5);
+  // Ground coordinates are rotated (not axis-aligned in lon/lat)
+  assert.notEqual(rect.coordinates[0][0], rect.coordinates[1][0]);
+  assert.notEqual(rect.coordinates[0][1], rect.coordinates[1][1]);
+  assert.ok(rect.areaM2 > 0);
+});
+
+test('computeScreenAlignedRect clamps area exceeding maxAreaM2', () => {
+  // Massive 2000px x 2000px box
+  const unproject = ([x, y]) => ({
+    lng: -73.60 + x * 0.001,
+    lat: 45.50 - y * 0.001
+  });
+
+  const startPoint = { x: 0, y: 0 };
+  const endPoint = { x: 2000, y: 2000 };
+
+  const rect = computeScreenAlignedRect(startPoint, endPoint, unproject, MAX_PATCH_AREA_M2);
+  assert.ok(rect !== null);
+  assert.equal(rect.isClamped, true);
+  assert.ok(rect.areaM2 <= MAX_PATCH_AREA_M2);
+  assert.ok(rect.areaM2 > 99000);
+});
+
+test('computeScreenAlignedRect ignores tiny drags < 2px', () => {
+  const unproject = ([x, y]) => ({ lng: x, lat: y });
+  const rect = computeScreenAlignedRect({ x: 10, y: 10 }, { x: 11, y: 10 }, unproject);
+  assert.equal(rect, null);
 });

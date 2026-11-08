@@ -319,11 +319,11 @@ export class SavedViewsPanel {
     // 2. Clear button & status pill
     if (state.hasShape && state.dimensions) {
       const areaStr = Math.round(state.dimensions.areaM2).toLocaleString('en-US');
-      if (state.isPolygon) {
-        this.shapeStatusPill.textContent = `🔷 Oblong (${areaStr} m²)`;
+      if (state.shapeType === 'rectangle' || state.isRectangle) {
+        this.shapeStatusPill.textContent = `⬛ Rect (${areaStr} m²)`;
         this.shapeStatusPill.style.color = 'var(--accent-solar)';
       } else {
-        this.shapeStatusPill.textContent = `⬛ Rect (${areaStr} m²)`;
+        this.shapeStatusPill.textContent = `🔷 Oblong (${areaStr} m²)`;
         this.shapeStatusPill.style.color = 'var(--accent-solar)';
       }
       this.btnClear.disabled = false;
@@ -346,7 +346,10 @@ export class SavedViewsPanel {
     const selection = this.boxDrawer.getSelection();
     let detail = '📷 Camera View';
 
-    if (selection.polygon && selection.dimensions) {
+    if (selection.shapeType === 'rectangle' || selection.isRectangle) {
+      const area = Math.round(selection.dimensions.areaM2).toLocaleString('en-US');
+      detail = `⬛ Rectangle • ${area} m²`;
+    } else if (selection.polygon && selection.dimensions) {
       const area = Math.round(selection.dimensions.areaM2).toLocaleString('en-US');
       detail = `🔷 Oblong • ${area} m²`;
     } else if (selection.bbox && selection.dimensions) {
@@ -371,6 +374,7 @@ export class SavedViewsPanel {
       bearing: Math.round(bearing),
       bbox: selection.bbox ? selection.bbox.map(n => Number(n.toFixed(5))) : null,
       polygon: selection.polygon ? selection.polygon.map(pt => [Number(pt[0].toFixed(5)), Number(pt[1].toFixed(5))]) : null,
+      shapeType: selection.shapeType || (selection.isRectangle ? 'rectangle' : (selection.polygon ? 'polygon' : null)),
       date: date,
       createdAt: new Date().toISOString()
     };

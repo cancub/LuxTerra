@@ -241,3 +241,104 @@ export function polygonToGeoJSON(coordinates) {
     }
   };
 }
+
+/**
+ * Computes high-precision metric geodesic distance between two WGS84 points.
+ */
+export function computeDistanceMeters(lon1, lat1, lon2, lat2) {
+  const midLat = ((lat1 + lat2) / 2.0) * (Math.PI / 180.0);
+  const dx = EARTH_RADIUS_METERS * Math.cos(midLat) * ((lon2 - lon1) * (Math.PI / 180.0));
+  const dy = EARTH_RADIUS_METERS * ((lat2 - lat1) * (Math.PI / 180.0));
+  return Math.hypot(dx, dy);
+}
+
+/**
+ * Computes a screen-aligned rectangle polygon from two screen points.
+ * Corners are ordered clockwise: Top-Left, Top-Right, Bottom-Right, Bottom-Left, Top-Left (closed).
+ * All 4 edges in screen space are strictly horizontal and vertical (parallel to viewport edges),
+ * regardless of the camera's bearing or pitch.
+ *
+ * @param {{x: number, y: number}} startPoint Screen coordinate of start point
+ * @param {{x: number, y: number}} endPoint Screen coordinate of current/end point
+ * @param {Function} unproject Function converting [x, y] screen point to {lng, lat} or [lng, lat]
+ * @param {number} maxAreaM2 Maximum allowed area in square meters (default: 100,000)
+ */
+export function computeScreenAlignedRect(startPoint, endPoint, unproject, maxAreaM2 = MAX_PATCH_AREA_M2) {
+  if (!startPoint || !endPoint || typeof unproject !== 'function') {
+    return null;
+  }
+
+  let x1 = startPoint.x;
+  let y1 = startPoint.y;
+  let x2 = endPoint.x;
+  let y2 = endPoint.y;
+
+  const dx = Math.abs(x2 - x1);
+  const dy = Math.abs(y2 - y1);
+  if (dx < 2 || dy < 2) {
+    return null;
+  }
+
+  const toLngLat = (pt) => {
+    const res = unproject(pt);
+    if (!res) return [0, 0];
+    const lng = (res.lng !== undefined) ? res.lng : res[0];
+    const lat = (res.lat !== undefined) ? res.lat : res[1];
+    return [lng, lat];
+  };
+
+  const getCorners = (p1x, p1y, p2x, p2y) => {
+    const minX = Math.min(p1x, p2x);
+    const maxX = Math.max(p1x, p2x);
+    const minY = Math.min(p1y, p2y);
+    const maxY = Math.max(p1y, p2y);
+
+    const tl = toLngLat([minX, minY]);
+    const tr = toLngLat([maxX, minY]);
+    const br = toLngLat([maxX, maxY]);
+    const bl = toLngLat([minX, maxY]);
+
+    return [tl, tr, br, bl, tl];
+  };
+
+  let coords = getCorners(x1, y1, x2, y2);
+  let dims = computePolygonDimensions(coords);
+  let isClamped = false;
+
+  if (dims.areaM2 > maxAreaM2 && dims.areaM2 > 0) {
+    let scale = Math.sqrt(maxAreaM2 / dims.areaM2);
+    x2 = x1 + (x2 - x1) * scale;
+    y2 = y1 + (y2 - y1) * scale;
+
+    coords = getCorners(x1, y1, x2, y2);
+    dims = computePolygonDimensions(coords);
+
+    // One refinement step if geodesic projection curvature introduced slight variance
+    if (Math.abs(dims.areaM2 - maxAreaM2) > 1.0 && dims.areaM2 > 0) {
+      scale = Math.sqrt((maxAreaM2 - 0.5) / dims.areaM2);
+      x2 = x1 + (x2 - x1) * scale;
+      y2 = y1 + (y2 - y1) * scale;
+      coords = getCorners(x1, y1, x2, y2);
+      dims = computePolygonDimensions(coords);
+    }
+    isClamped = true;
+  }
+
+  // Metric width & height from opposing parallel edges
+  const widthM = computeDistanceMeters(coords[0][0], coords[0][1], coords[1][0], coords[1][1]);
+  const heightM = computeDistanceMeters(coords[1][0], coords[1][1], coords[2][0], coords[2][1]);
+
+  return {
+    coordinates: coords,
+    bbox: dims.bbox,
+    areaM2: dims.areaM2,
+    widthM: Math.round(widthM * 10) / 10,
+    heightM: Math.round(heightM * 10) / 10,
+    isClamped,
+    dimensions: {
+      ...dims,
+      widthM: Math.round(widthM * 10) / 10,
+      heightM: Math.round(heightM * 10) / 10
+    }
+  };
+}

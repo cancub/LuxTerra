@@ -274,7 +274,8 @@ if (appContainer) {
       if (view.polygon || view.bbox) {
         boxDrawer.setSelection({
           bbox: view.bbox,
-          polygon: view.polygon
+          polygon: view.polygon,
+          shapeType: view.shapeType || (view.detail && view.detail.includes('Rectangle') ? 'rectangle' : (view.polygon && view.polygon.length !== 5 ? 'polygon' : 'rectangle'))
         });
       } else {
         boxDrawer.clearSelection();
