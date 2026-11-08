@@ -1,5 +1,7 @@
 /**
  * LuxTerra - Main Application Entrypoint
+ * Orchestrates MapLibre viewer, real-time GPU shadow projection, interactive box drawing,
+ * 24-hour timeline scrubbing, and real-time PV generation telemetry.
  */
 
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -13,6 +15,9 @@ import { ShadowCanvasLayer } from './components/ShadowCanvasLayer.js';
 import { DateSelector } from './components/DateSelector.js';
 import { TimeScrubber } from './components/TimeScrubber.js';
 import { PlaybackEngine } from './components/PlaybackEngine.js';
+import { PVConfigPanel } from './components/PVConfigPanel.js';
+import { SolarDashboard } from './components/SolarDashboard.js';
+import { runSimulation } from './services/api.js';
 
 const appContainer = document.getElementById('app');
 if (appContainer) {
@@ -40,6 +45,14 @@ if (appContainer) {
       <div class="top-center-controls" id="top-center-controls"></div>
       <div class="top-right-controls" id="top-right-controls"></div>
     </div>
+
+    <!-- Floating Right Sidebar Dock -->
+    <div class="right-dock" id="right-dock">
+      <div id="solar-dashboard-mount"></div>
+      <div id="pv-config-mount"></div>
+    </div>
+
+    <!-- Bottom Timeline Dock -->
     <div class="bottom-dock" id="bottom-dock">
       <div class="timeline-controls-row" id="timeline-controls-row">
         <div id="date-selector-mount"></div>
@@ -56,15 +69,29 @@ if (appContainer) {
   const dateSelectorMount = document.getElementById('date-selector-mount');
   const playbackControlsMount = document.getElementById('playback-controls-mount');
   const timelineScrubberMount = document.getElementById('timeline-scrubber-mount');
+  const solarDashboardMount = document.getElementById('solar-dashboard-mount');
+  const pvConfigMount = document.getElementById('pv-config-mount');
 
   const shadowCanvasLayer = new ShadowCanvasLayer(map);
 
+  let currentBbox = null;
   let currentSimulationData = null;
+  let baseSimulationConfig = {
+    gcr: 1.0,
+    moduleEfficiency: 0.20,
+    systemDerate: 0.80
+  };
+
+  const solarDashboard = new SolarDashboard(solarDashboardMount, (seekIndex) => {
+    timeScrubber.setStep(seekIndex);
+  });
 
   const timeScrubber = new TimeScrubber(timelineScrubberMount, (index, metric) => {
     if (playbackEngine) {
       playbackEngine.setCurrentStep(index);
     }
+    solarDashboard.updateTelemetry(metric, index);
+
     if (currentSimulationData && currentSimulationData.masks && metric.mask_index !== null) {
       const maskStr = currentSimulationData.masks[metric.mask_index];
       const meta = currentSimulationData.metadata;
@@ -78,12 +105,62 @@ if (appContainer) {
     timeScrubber.setStep(stepIndex);
   });
 
-  const dateSelector = new DateSelector(dateSelectorMount, '2026-06-21', (newDate) => {
-    console.log('Date changed to:', newDate);
+  const pvConfigPanel = new PVConfigPanel(pvConfigMount, (newConfig) => {
+    if (!currentSimulationData) return;
+    // Real-time instantaneous local power recalculation without server roundtrip
+    const gcrRatio = newConfig.gcr / baseSimulationConfig.gcr;
+    const effRatio = newConfig.moduleEfficiency / baseSimulationConfig.moduleEfficiency;
+    const prRatio = newConfig.systemDerate / baseSimulationConfig.systemDerate;
+    const scaleFactor = gcrRatio * effRatio * prRatio;
+
+    solarDashboard.setScaleFactor(scaleFactor);
+  });
+
+  async function triggerSimulation() {
+    if (!currentBbox) return;
+    const pvConfig = pvConfigPanel.getConfig();
+    const date = dateSelector.getDate();
+
+    try {
+      const payload = {
+        bbox: {
+          min_lon: currentBbox[0],
+          min_lat: currentBbox[1],
+          max_lon: currentBbox[2],
+          max_lat: currentBbox[3]
+        },
+        date: date,
+        time_step_minutes: 5,
+        deployment_mode: pvConfig.deploymentMode,
+        module_efficiency: pvConfig.moduleEfficiency,
+        system_derate: pvConfig.systemDerate,
+        gcr: pvConfig.gcr
+      };
+
+      const data = await runSimulation(payload);
+      currentSimulationData = data;
+      baseSimulationConfig = {
+        gcr: data.metadata.effective_gcr,
+        moduleEfficiency: data.metadata.module_efficiency,
+        systemDerate: data.metadata.system_derate
+      };
+
+      shadowCanvasLayer.setPatchBounds(data.metadata.patch_bounds_wgs84);
+      solarDashboard.setSimulationData(data, 1.0);
+      timeScrubber.setTimeseries(data.timeseries, data.daily_summary);
+      playbackEngine.setSimulationContext(data.timeseries.length, data.metadata.time_step_minutes);
+    } catch (err) {
+      console.warn('Simulation execution error:', err);
+    }
+  }
+
+  const dateSelector = new DateSelector(dateSelectorMount, '2026-06-21', () => {
+    triggerSimulation();
   });
 
   const boxDrawer = new BoxDrawer(map, topRightControls, (selection) => {
-    console.log('Selection complete:', selection);
+    currentBbox = selection.bbox;
+    triggerSimulation();
   });
 
   new Geocoder(map, geocoderMount, (loc) => {
@@ -91,7 +168,6 @@ if (appContainer) {
   });
 
   new Bookmarks(map, topCenterControls, (preset) => {
-    console.log('Selected preset:', preset.name);
     if (preset.sampleBbox) {
       boxDrawer.setBox(preset.sampleBbox);
     }
