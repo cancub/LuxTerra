@@ -77,7 +77,7 @@ class PVConfig(BaseModel):
     """
     Configuration parameters for PV system performance and ground coverage.
     """
-    deployment_mode: DeploymentMode = Field(default=DeploymentMode.ROOFTOP)
+    deployment_mode: DeploymentMode = Field(default=DeploymentMode.GROUND_MOUNT)
     module_efficiency: float = Field(default=0.20, ge=0.05, le=0.40, description="Module efficiency (default: 20%)")
     system_derate: float = Field(default=0.80, ge=0.40, le=1.00, description="System performance ratio derate (default: 80%)")
     gcr: Optional[float] = Field(default=None, ge=0.10, le=1.00, description="Ground Coverage Ratio override")

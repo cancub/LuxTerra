@@ -138,7 +138,8 @@ class NumPyOcclusionEngine(OcclusionEngine):
         resolution_m: float = 1.0,
         max_search_radius_m: float = 500.0,
         is_rooftop: bool = True,
-        ground_stand_height_m: float = 1.5
+        ground_stand_height_m: float = 1.5,
+        include_tree_canopy: bool = True
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Computes dual binary shadow masks (terrain_mask, canopy_mask) on CPU.
@@ -204,15 +205,6 @@ class NumPyOcclusionEngine(OcclusionEngine):
             z_dtm_bot = (1.0 - dc) * z_dtm_10 + dc * z_dtm_11
             z_dtm_sampled = (1.0 - dr) * z_dtm_top + dr * z_dtm_bot
 
-            # Bilinear DSM
-            z_dsm_00 = dsm_grid[r0_i, c0_i]
-            z_dsm_01 = dsm_grid[r0_i, c1_i]
-            z_dsm_10 = dsm_grid[r1_i, c0_i]
-            z_dsm_11 = dsm_grid[r1_i, c1_i]
-            z_dsm_top = (1.0 - dc) * z_dsm_00 + dc * z_dsm_01
-            z_dsm_bot = (1.0 - dc) * z_dsm_10 + dc * z_dsm_11
-            z_dsm_sampled = np.maximum(z_dtm_sampled, (1.0 - dr) * z_dsm_top + dr * z_dsm_bot)
-
             z_ray = z0[in_bounds] + (np.float32(s) * s_dist * t_alpha)
 
             active_r = py_indices[in_bounds]
@@ -227,11 +219,21 @@ class NumPyOcclusionEngine(OcclusionEngine):
                 canopy_unshaded[tr, tc] = False
 
             # 2. Canopy block (for rays not blocked by terrain)
-            canopy_occluded = (~terrain_occluded) & (z_dsm_sampled > z_ray)
-            if np.any(canopy_occluded):
-                cr = active_r[canopy_occluded]
-                cc = active_c[canopy_occluded]
-                canopy_unshaded[cr, cc] = False
+            if include_tree_canopy:
+                # Bilinear DSM
+                z_dsm_00 = dsm_grid[r0_i, c0_i]
+                z_dsm_01 = dsm_grid[r0_i, c1_i]
+                z_dsm_10 = dsm_grid[r1_i, c0_i]
+                z_dsm_11 = dsm_grid[r1_i, c1_i]
+                z_dsm_top = (1.0 - dc) * z_dsm_00 + dc * z_dsm_01
+                z_dsm_bot = (1.0 - dc) * z_dsm_10 + dc * z_dsm_11
+                z_dsm_sampled = np.maximum(z_dtm_sampled, (1.0 - dr) * z_dsm_top + dr * z_dsm_bot)
+
+                canopy_occluded = (~terrain_occluded) & (z_dsm_sampled > z_ray)
+                if np.any(canopy_occluded):
+                    cr = active_r[canopy_occluded]
+                    cc = active_c[canopy_occluded]
+                    canopy_unshaded[cr, cc] = False
 
         return terrain_unshaded.astype(np.uint8), canopy_unshaded.astype(np.uint8)
 
@@ -245,7 +247,8 @@ class NumPyOcclusionEngine(OcclusionEngine):
         resolution_m: float = 1.0,
         max_search_radius_m: float = 500.0,
         is_rooftop: bool = True,
-        ground_stand_height_m: float = 1.5
+        ground_stand_height_m: float = 1.5,
+        include_tree_canopy: bool = True
     ) -> Tuple[List[np.ndarray], List[np.ndarray]]:
         terrain_list = []
         canopy_list = []
@@ -253,7 +256,7 @@ class NumPyOcclusionEngine(OcclusionEngine):
             t_m, c_m = self.compute_dual_shadow_mask(
                 dtm_grid, dsm_grid, patch_slice_y, patch_slice_x,
                 az, el, resolution_m, max_search_radius_m,
-                is_rooftop, ground_stand_height_m
+                is_rooftop, ground_stand_height_m, include_tree_canopy
             )
             terrain_list.append(t_m)
             canopy_list.append(c_m)

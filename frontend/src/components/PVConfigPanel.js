@@ -4,15 +4,24 @@
  * Controls Rooftop (100% GCR) vs Ground-Mount (45% GCR) deployment modes and live parameter tuning.
  */
 
+export const PV_DEPLOYMENT_MODE_KEY = 'luxterra_deployment_mode';
+
 export class PVConfigPanel {
   constructor(container, onConfigChange = () => {}) {
     this.container = container;
     this.onConfigChange = onConfigChange;
 
-    this.deploymentMode = 'rooftop'; // 'rooftop' or 'ground_mount'
+    let savedMode = null;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        savedMode = localStorage.getItem(PV_DEPLOYMENT_MODE_KEY);
+      }
+    } catch (e) {}
+
+    this.deploymentMode = (savedMode === 'rooftop' || savedMode === 'ground_mount') ? savedMode : 'ground_mount';
     this.moduleEfficiency = 0.20; // 20%
     this.systemDerate = 0.80; // 80%
-    this.gcr = 1.0; // 100% for rooftop, 0.45 for ground-mount
+    this.gcr = this.deploymentMode === 'rooftop' ? 1.0 : 0.45; // 45% for ground-mount, 100% for rooftop
     this.includeTreeCanopy = true; // Enabled by default per user request
     this.canopyMode = 'seasonal'; // Seasonal Auto by default per user request
     this.isCollapsed = true; // Collapsed by default
@@ -52,13 +61,13 @@ export class PVConfigPanel {
       <div class="pv-config-body" style="display: none; flex-direction: column; gap: 10px; margin-top: 4px;">
         <!-- Deployment Mode Toggle -->
         <div class="pv-mode-selector" style="display: flex; background: rgba(0, 0, 0, 0.3); padding: 3px; border-radius: 8px; border: 1px solid var(--border-card);">
-          <button class="btn btn-sm mode-btn mode-rooftop active" data-mode="rooftop" style="flex: 1; justify-content: center; font-size: 0.76rem; padding: 5px 8px;">
+          <button class="btn btn-sm mode-btn mode-rooftop ${this.deploymentMode === 'rooftop' ? 'active' : ''}" data-mode="rooftop" style="flex: 1; justify-content: center; font-size: 0.76rem; padding: 5px 8px;">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
             </svg>
             <span>Rooftop (100% GCR)</span>
           </button>
-          <button class="btn btn-sm mode-btn mode-ground" data-mode="ground_mount" style="flex: 1; justify-content: center; font-size: 0.76rem; padding: 5px 8px;">
+          <button class="btn btn-sm mode-btn mode-ground ${this.deploymentMode === 'ground_mount' ? 'active' : ''}" data-mode="ground_mount" style="flex: 1; justify-content: center; font-size: 0.76rem; padding: 5px 8px;">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
               <line x1="8" y1="21" x2="16" y2="21"></line>
@@ -192,6 +201,12 @@ export class PVConfigPanel {
     if (this.deploymentMode === mode) return;
     this.deploymentMode = mode;
     this.gcr = this.effectiveGCR;
+
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(PV_DEPLOYMENT_MODE_KEY, mode);
+      }
+    } catch (e) {}
 
     this.modeButtons.forEach(b => {
       if (b.dataset.mode === mode) {

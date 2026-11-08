@@ -76,7 +76,8 @@ void raymarch_dual_surface_kernel(
     float step_dist,
     int max_steps,
     int is_rooftop,                           // 1 = rooftop, 0 = ground mount
-    float ground_stand_height_m               // e.g. 1.5m
+    float ground_stand_height_m,              // e.g. 1.5m
+    int include_tree_canopy                   // 1 = raymarch DSM canopy, 0 = ignore canopy
 ) {
     int px = blockDim.x * blockIdx.x + threadIdx.x;
     int py = blockDim.y * blockIdx.y + threadIdx.y;
@@ -120,17 +121,6 @@ void raymarch_dual_surface_kernel(
         float z_dtm_bot = (1.0f - dc) * z_dtm_10 + dc * z_dtm_11;
         float z_dtm_sampled = (1.0f - dr) * z_dtm_top + dr * z_dtm_bot;
 
-        // Bilinear sample DSM
-        float z_dsm_00 = dsm[r0_i * W + c0_i];
-        float z_dsm_01 = dsm[r0_i * W + c1_i];
-        float z_dsm_10 = dsm[r1_i * W + c0_i];
-        float z_dsm_11 = dsm[r1_i * W + c1_i];
-        float z_dsm_top = (1.0f - dc) * z_dsm_00 + dc * z_dsm_01;
-        float z_dsm_bot = (1.0f - dc) * z_dsm_10 + dc * z_dsm_11;
-        float z_dsm_sampled = (1.0f - dr) * z_dsm_top + dr * z_dsm_bot;
-
-        z_dsm_sampled = fmaxf(z_dtm_sampled, z_dsm_sampled);
-
         float z_ray = z0 + ((float)s * step_dist) * tan_alpha;
 
         if (z_dtm_sampled > z_ray) {
@@ -138,9 +128,21 @@ void raymarch_dual_surface_kernel(
             is_terrain_unshaded = 0;
             is_canopy_unshaded = 0;
             break;
-        } else if (z_dsm_sampled > z_ray) {
-            // Blocked by tree canopy or elevated structure
-            is_canopy_unshaded = 0;
+        } else if (include_tree_canopy != 0) {
+            // Bilinear sample DSM
+            float z_dsm_00 = dsm[r0_i * W + c0_i];
+            float z_dsm_01 = dsm[r0_i * W + c1_i];
+            float z_dsm_10 = dsm[r1_i * W + c0_i];
+            float z_dsm_11 = dsm[r1_i * W + c1_i];
+            float z_dsm_top = (1.0f - dc) * z_dsm_00 + dc * z_dsm_01;
+            float z_dsm_bot = (1.0f - dc) * z_dsm_10 + dc * z_dsm_11;
+            float z_dsm_sampled = (1.0f - dr) * z_dsm_top + dr * z_dsm_bot;
+            z_dsm_sampled = fmaxf(z_dtm_sampled, z_dsm_sampled);
+
+            if (z_dsm_sampled > z_ray) {
+                // Blocked by tree canopy or elevated structure
+                is_canopy_unshaded = 0;
+            }
         }
     }
 

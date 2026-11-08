@@ -484,25 +484,26 @@ async def test_simulate_geological_shade_not_overlapped_by_canopy():
             "deployment_mode": "ground_mount"
         }
 
-        # Simulation with canopy OFF
-        res_off = await client.post("/api/simulate", json={**base_payload, "include_tree_canopy": False})
-        assert res_off.status_code == 200
-        data_off = res_off.json()
+        for mode in ["ground_mount", "rooftop"]:
+            # Simulation with canopy OFF
+            res_off = await client.post("/api/simulate", json={**base_payload, "deployment_mode": mode, "include_tree_canopy": False})
+            assert res_off.status_code == 200
+            data_off = res_off.json()
 
-        # Simulation with canopy ON
-        res_on = await client.post("/api/simulate", json={**base_payload, "include_tree_canopy": True})
-        assert res_on.status_code == 200
-        data_on = res_on.json()
+            # Simulation with canopy ON
+            res_on = await client.post("/api/simulate", json={**base_payload, "deployment_mode": mode, "include_tree_canopy": True})
+            assert res_on.status_code == 200
+            data_on = res_on.json()
 
-        # 1. Terrain masks must be bit-for-bit identical between canopy OFF and canopy ON
-        assert len(data_off["masks"]) == len(data_on["masks"])
-        for i, (m_off, m_on) in enumerate(zip(data_off["masks"], data_on["masks"])):
-            assert m_off == m_on, f"Terrain mask at daylight frame {i} changed when canopy was toggled!"
+            # 1. Terrain masks must be bit-for-bit identical between canopy OFF and canopy ON
+            assert len(data_off["masks"]) == len(data_on["masks"])
+            for i, (m_off, m_on) in enumerate(zip(data_off["masks"], data_on["masks"])):
+                assert m_off == m_on, f"Terrain mask at daylight frame {i} changed when canopy was toggled for {mode}!"
 
-        # 2. Geological loss kW and percent_shaded must be identical
-        for s_off, s_on in zip(data_off["timeseries"], data_on["timeseries"]):
-            assert pytest.approx(s_off["geological_loss_kw"], abs=0.01) == s_on["geological_loss_kw"]
-            assert pytest.approx(s_off["percent_shaded"], abs=0.01) == s_on["percent_shaded"]
+            # 2. Geological loss kW and percent_shaded must be identical
+            for s_off, s_on in zip(data_off["timeseries"], data_on["timeseries"]):
+                assert pytest.approx(s_off["geological_loss_kw"], abs=0.01) == s_on["geological_loss_kw"]
+                assert pytest.approx(s_off["percent_shaded"], abs=0.01) == s_on["percent_shaded"]
 
 
 

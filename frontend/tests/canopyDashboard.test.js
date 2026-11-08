@@ -133,6 +133,8 @@ test('PVConfigPanel: collapsible by default and toggles expand/collapse', (t, do
 
   assert.equal(panel.isCollapsed, true);
   assert.equal(panel.body.style.display, 'none');
+  assert.equal(panel.deploymentMode, 'ground_mount');
+  assert.equal(panel.gcr, 0.45);
 
   panel.toggleCollapse();
   assert.equal(panel.isCollapsed, false);

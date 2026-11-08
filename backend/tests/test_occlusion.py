@@ -291,3 +291,48 @@ def test_gpu_cpu_dual_surface_bit_for_bit_equivalence():
         assert np.array_equal(t_batch_gpu[idx], t_batch_cpu[idx])
         assert np.array_equal(c_batch_gpu[idx], c_batch_cpu[idx])
 
+
+def test_terrain_mask_invariance_to_canopy_toggle():
+    """
+    Guarantees that toggling include_tree_canopy ON or OFF NEVER alters
+    the terrain shadow mask (bit-for-bit invariance), preventing tree crowns
+    from artificially appearing inside geological mountain shadows.
+    """
+    cpu_engine = NumPyOcclusionEngine()
+
+    np.random.seed(42)
+    dtm = np.full((150, 150), 100.0, dtype=np.float32)
+    y_idx, x_idx = np.indices((150, 150))
+    dtm += (y_idx * 0.1).astype(np.float32)
+
+    dsm = dtm.copy()
+    dsm[40:80, 50:70] += 20.0 # 20m tree grove
+    dsm[90:120, 80:110] += 25.0
+
+    patch_y = slice(30, 120)
+    patch_x = slice(30, 120)
+
+    angles = [
+        (90.0, 15.0),
+        (180.0, 45.0),
+        (270.0, 10.0),
+        (297.0, 6.8),
+    ]
+
+    for is_roof in [True, False]:
+        for az, el in angles:
+            t_on, c_on = cpu_engine.compute_dual_shadow_mask(
+                dtm, dsm, patch_y, patch_x, az, el,
+                is_rooftop=is_roof, include_tree_canopy=True
+            )
+            t_off, c_off = cpu_engine.compute_dual_shadow_mask(
+                dtm, dsm, patch_y, patch_x, az, el,
+                is_rooftop=is_roof, include_tree_canopy=False
+            )
+
+            # Terrain mask MUST be bit-for-bit identical!
+            assert np.array_equal(t_on, t_off), f"Terrain mask altered by canopy toggle: roof={is_roof}, az={az}, el={el}"
+            # When canopy is toggled off, any terrain-unshaded cell must be completely unshaded by canopy
+            assert np.all(c_off[t_off == 1] == 1)
+
+

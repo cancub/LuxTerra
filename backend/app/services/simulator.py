@@ -136,18 +136,18 @@ class SimulationOrchestrator:
         if daylight_angle_pairs:
             is_rooftop = (request.deployment_mode == DeploymentMode.ROOFTOP)
             stand_height = 0.0 if is_rooftop else 1.5
-            active_dsm = dsm_grid if has_canopy else dtm_grid
 
             daylight_masks, daylight_canopy_masks = self.occlusion_engine.compute_dual_shadow_masks_batch(
                 dtm_grid=dtm_grid,
-                dsm_grid=active_dsm,
+                dsm_grid=dsm_grid,
                 patch_slice_y=patch_slice_y,
                 patch_slice_x=patch_slice_x,
                 sun_angles=daylight_angle_pairs,
                 resolution_m=request.resolution_m,
                 max_search_radius_m=request.buffer_meters,
                 is_rooftop=is_rooftop,
-                ground_stand_height_m=stand_height
+                ground_stand_height_m=stand_height,
+                include_tree_canopy=has_canopy
             )
 
             # Vectorized calculation of clear-sky irradiance for all daytime frames
