@@ -26,12 +26,14 @@ import {
 } from '../utils/geometry.js';
 
 export class BoxDrawer {
-  constructor(map, container, onSelectionComplete) {
+  constructor(map, container, onSelectionComplete, onStateChange) {
     this.map = map;
     this.container = container;
     this.onSelectionComplete = onSelectionComplete || (() => {});
+    this.onStateChange = onStateChange || (() => {});
 
     this.isDrawingActive = false;
+    this.drawMode = 'polygon'; // 'polygon' | 'rectangle'
     this.isDragging = false;
     this.isResizing = false;
     this.activeVertexIndex = null;
@@ -51,7 +53,9 @@ export class BoxDrawer {
 
     this.initLayers();
     this.initTooltip();
-    this.render();
+    if (this.container) {
+      this.render();
+    }
     this.bindMapEvents();
     this.bindKeyboardEvents();
   }
@@ -206,6 +210,7 @@ export class BoxDrawer {
   }
 
   render() {
+    if (!this.container) return;
     this.button = document.createElement('button');
     this.button.className = 'btn btn-sm btn-draw';
     this.button.title = 'Select Solar Area: Click sequence of points for oblong shape (Hold Shift / double-click to close), or drag rectangle';
@@ -225,31 +230,85 @@ export class BoxDrawer {
     this.container.appendChild(this.button);
   }
 
-  toggleDrawing() {
-    this.isDrawingActive = !this.isDrawingActive;
-    if (this.isDrawingActive) {
+  setStateChangeListener(fn) {
+    this.onStateChange = fn;
+    this.notifyState();
+  }
+
+  notifyState() {
+    if (typeof this.onStateChange === 'function') {
+      const dims = this.currentPolygon
+        ? computePolygonDimensions(this.currentPolygon)
+        : (this.currentBbox ? computeBboxDimensions(...this.currentBbox) : null);
+
+      this.onStateChange({
+        isDrawingActive: this.isDrawingActive,
+        drawMode: this.drawMode,
+        hasShape: !!(this.currentPolygon || this.currentBbox),
+        isPolygon: !!this.currentPolygon,
+        currentBbox: this.currentBbox,
+        currentPolygon: this.currentPolygon,
+        dimensions: dims
+      });
+    }
+  }
+
+  startDrawing(mode = 'polygon') {
+    if (this.isDrawingActive && this.drawMode === mode) {
+      this.cancelDrawing();
+      return;
+    }
+
+    this.drawMode = mode;
+    this.isDrawingActive = true;
+    this.isDragging = false;
+    this.points = [];
+    this.isSnapToStart = false;
+
+    if (this.button) {
       this.button.classList.add('active', 'btn-accent');
-      this.map.getCanvas().style.cursor = 'crosshair';
-      this.map.dragPan.disable();
-      this.points = [];
-      this.isSnapToStart = false;
-      this.isDragging = false;
-      this.removeHandles();
-      this.showTooltip(0, 0, 'Click map to place 1st point • Esc to cancel');
+    }
+
+    this.map.getCanvas().style.cursor = 'crosshair';
+    this.map.dragPan.disable();
+    this.removeHandles();
+
+    if (mode === 'rectangle') {
+      this.showTooltip(0, 0, 'Click & drag on map to draw rectangle • Esc to cancel');
     } else {
+      this.showTooltip(0, 0, 'Click map to place 1st point • Esc to cancel');
+    }
+
+    this.notifyState();
+  }
+
+  stopDrawing() {
+    this.isDrawingActive = false;
+    this.isDragging = false;
+    this.points = [];
+    this.isSnapToStart = false;
+
+    if (this.button) {
       this.button.classList.remove('active', 'btn-accent');
-      this.map.getCanvas().style.cursor = '';
-      this.map.dragPan.enable();
-      this.points = [];
-      this.isSnapToStart = false;
-      this.isDragging = false;
-      this.hideTooltip();
+    }
+
+    this.map.getCanvas().style.cursor = '';
+    this.map.dragPan.enable();
+    this.hideTooltip();
+    this.notifyState();
+  }
+
+  toggleDrawing() {
+    if (this.isDrawingActive) {
+      this.cancelDrawing();
+    } else {
+      this.startDrawing(this.drawMode || 'polygon');
     }
   }
 
   cancelDrawing() {
     if (this.isDrawingActive) {
-      this.toggleDrawing();
+      this.stopDrawing();
       if (this.currentPolygon) {
         this.renderFinalShape(this.currentPolygon, false);
         this.updateHandles(this.currentPolygon, false);
@@ -259,6 +318,7 @@ export class BoxDrawer {
       } else {
         this.clearSource();
       }
+      this.notifyState();
     }
   }
 
@@ -303,7 +363,11 @@ export class BoxDrawer {
       if (!this.isDrawingActive) return;
       this.startLngLat = e.lngLat;
       this.startPoint = e.point;
-      this.isPotentialDrag = true;
+      if (this.drawMode === 'rectangle') {
+        this.isDragging = true;
+      } else {
+        this.isPotentialDrag = true;
+      }
     });
 
     // 2. Mouse move: updates preview for polygon line or drag-rectangle
@@ -313,8 +377,8 @@ export class BoxDrawer {
 
       if (!this.isDrawingActive) return;
 
-      // Check if user is drag-drawing a box
-      if (this.isPotentialDrag && this.points.length === 0 && this.startPoint) {
+      // Check if user is drag-drawing a box in polygon mode
+      if (this.drawMode !== 'rectangle' && this.isPotentialDrag && this.points.length === 0 && this.startPoint) {
         const dx = e.point.x - this.startPoint.x;
         const dy = e.point.y - this.startPoint.y;
         if (Math.hypot(dx, dy) > 20) {
@@ -331,7 +395,12 @@ export class BoxDrawer {
           e.lngLat.lat,
           MAX_PATCH_AREA_M2
         );
-        const bbox = [this.startLngLat.lng, this.startLngLat.lat, clamped.curLon, clamped.curLat];
+        const bbox = [
+          Math.min(this.startLngLat.lng, clamped.curLon),
+          Math.min(this.startLngLat.lat, clamped.curLat),
+          Math.max(this.startLngLat.lng, clamped.curLon),
+          Math.max(this.startLngLat.lat, clamped.curLat)
+        ];
         this.currentBbox = bbox;
         this.currentPolygon = null;
         this.renderFinalBbox(bbox, clamped.isClamped);
@@ -341,6 +410,8 @@ export class BoxDrawer {
         return;
       }
 
+      if (this.drawMode === 'rectangle') return;
+
       // Multi-point polygon drawing mode
       this.updateDrawingPreview(e.lngLat, e.point, e.originalEvent.clientX, e.originalEvent.clientY);
     });
@@ -348,6 +419,7 @@ export class BoxDrawer {
     // 3. Click: places vertices or closes polygon
     this.map.on('click', (e) => {
       if (!this.isDrawingActive) return;
+      if (this.drawMode === 'rectangle') return;
       if (this.isDragging) return; // Ignore clicks if it was a drag gesture
 
       const clickLngLat = [e.lngLat.lng, e.lngLat.lat];
@@ -376,10 +448,11 @@ export class BoxDrawer {
       if (this.isDragging && this.currentBbox) {
         this.isDragging = false;
         this.hideTooltip();
-        this.toggleDrawing();
+        this.stopDrawing();
         const dims = computeBboxDimensions(...this.currentBbox);
         if (dims.areaM2 >= 100.0) {
           this.createHandles();
+          this.notifyState();
           this.onSelectionComplete({
             bbox: this.currentBbox,
             polygon: null,
@@ -394,7 +467,7 @@ export class BoxDrawer {
 
     // 5. Double-click: finishes polygon
     this.map.on('dblclick', (e) => {
-      if (this.isDrawingActive && this.points.length >= 3) {
+      if (this.isDrawingActive && this.drawMode !== 'rectangle' && this.points.length >= 3) {
         e.preventDefault();
         this.finalizePolygon(this.points);
       }
@@ -586,7 +659,8 @@ export class BoxDrawer {
 
     this.renderFinalShape(finalPoints, isClamped);
     this.updateHandles(finalPoints, isClamped);
-    this.toggleDrawing();
+    this.stopDrawing();
+    this.notifyState();
 
     this.onSelectionComplete({
       bbox: dims.bbox,
@@ -710,6 +784,7 @@ export class BoxDrawer {
     this.hideTooltip();
     if (this.currentPolygon) {
       const dims = computePolygonDimensions(this.currentPolygon);
+      this.notifyState();
       this.onSelectionComplete({
         bbox: dims.bbox,
         polygon: this.currentPolygon,
@@ -720,6 +795,7 @@ export class BoxDrawer {
 
     if (this.currentBbox) {
       const dims = computeBboxDimensions(...this.currentBbox);
+      this.notifyState();
       this.onSelectionComplete({
         bbox: this.currentBbox,
         polygon: null,
@@ -779,11 +855,78 @@ export class BoxDrawer {
     this.currentPolygon = null;
     this.renderFinalBbox(targetBbox, false);
     this.createHandles();
+    this.notifyState();
     this.onSelectionComplete({
       bbox: targetBbox,
       polygon: null,
       dimensions: dims
     });
+  }
+
+  setPolygon(points) {
+    if (!points || points.length < 3) return;
+
+    let finalPoints = [...points];
+    if (
+      finalPoints[0][0] !== finalPoints[finalPoints.length - 1][0] ||
+      finalPoints[0][1] !== finalPoints[finalPoints.length - 1][1]
+    ) {
+      finalPoints.push([finalPoints[0][0], finalPoints[0][1]]);
+    }
+
+    let dims = computePolygonDimensions(finalPoints);
+    let isClamped = false;
+    if (dims.areaM2 > MAX_PATCH_AREA_M2) {
+      const clamped = clampPolygonToMaxArea(finalPoints, MAX_PATCH_AREA_M2);
+      finalPoints = clamped.coordinates;
+      dims = computePolygonDimensions(finalPoints);
+      isClamped = true;
+    }
+
+    this.currentPolygon = finalPoints;
+    this.currentBbox = dims.bbox;
+
+    this.renderFinalShape(finalPoints, isClamped);
+    this.createHandles();
+    this.notifyState();
+
+    this.onSelectionComplete({
+      bbox: dims.bbox,
+      polygon: finalPoints,
+      dimensions: dims
+    });
+  }
+
+  setSelection({ bbox, polygon }) {
+    if (polygon && Array.isArray(polygon) && polygon.length >= 3) {
+      this.setPolygon(polygon);
+    } else if (bbox && Array.isArray(bbox) && bbox.length === 4) {
+      this.setBox(bbox);
+    } else {
+      this.clearSelection();
+    }
+  }
+
+  clearSelection() {
+    this.clearBox();
+    this.notifyState();
+    this.onSelectionComplete({
+      bbox: null,
+      polygon: null,
+      dimensions: null
+    });
+  }
+
+  getSelection() {
+    const dims = this.currentPolygon
+      ? computePolygonDimensions(this.currentPolygon)
+      : (this.currentBbox ? computeBboxDimensions(...this.currentBbox) : null);
+
+    return {
+      bbox: this.currentBbox,
+      polygon: this.currentPolygon,
+      dimensions: dims
+    };
   }
 
   clearSource() {
@@ -803,6 +946,7 @@ export class BoxDrawer {
     this.points = [];
     this.clearSource();
     this.hideTooltip();
+    this.notifyState();
   }
 
   createHandles() {

@@ -261,7 +261,7 @@ export class DateSelector {
     }
   }
 
-  setDate(newDate) {
+  setDate(newDate, triggerCallback = true) {
     if (this.currentDate === newDate) return;
     this.currentDate = newDate;
     this.dateLabel.textContent = this.formatDateDisplay(newDate);
@@ -270,7 +270,9 @@ export class DateSelector {
     this.viewYear = y;
     this.viewMonth = m - 1;
 
-    this.onDateChange(newDate);
+    if (triggerCallback) {
+      this.onDateChange(newDate);
+    }
   }
 
   getDate() {

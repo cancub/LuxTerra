@@ -8,8 +8,8 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import './styles.css';
 import { initMap } from './components/MapViewer.js';
 import { LayerToggle } from './components/LayerToggle.js';
-import { Geocoder } from './components/Geocoder.js';
 import { BoxDrawer } from './components/BoxDrawer.js';
+import { SavedViewsPanel } from './components/SavedViewsPanel.js';
 import { ShadowCanvasLayer } from './components/ShadowCanvasLayer.js';
 import { DateSelector } from './components/DateSelector.js';
 import { TimeScrubber } from './components/TimeScrubber.js';
@@ -39,7 +39,6 @@ if (appContainer) {
           <span>LuxTerra</span>
           <span class="pill">QC Solar 1m</span>
         </div>
-        <div id="geocoder-mount"></div>
       </div>
       <div class="top-right-controls" id="top-right-controls"></div>
     </div>
@@ -49,6 +48,7 @@ if (appContainer) {
 
     <!-- Floating Right Sidebar Dock -->
     <div class="right-dock" id="right-dock">
+      <div id="views-panel-mount"></div>
       <div id="solar-dashboard-mount"></div>
     </div>
 
@@ -63,7 +63,7 @@ if (appContainer) {
   `;
 
   const map = initMap('map');
-  const geocoderMount = document.getElementById('geocoder-mount');
+  const viewsPanelMount = document.getElementById('views-panel-mount');
   const topRightControls = document.getElementById('top-right-controls');
   const dateSelectorMount = document.getElementById('date-selector-mount');
   const playbackControlsMount = document.getElementById('playback-controls-mount');
@@ -213,14 +213,49 @@ if (appContainer) {
     triggerSimulation();
   });
 
-  const boxDrawer = new BoxDrawer(map, topRightControls, (selection) => {
-    currentBbox = selection.bbox;
-    currentPolygon = selection.polygon || null;
-    triggerSimulation();
+  const boxDrawer = new BoxDrawer(map, null, (selection) => {
+    if (selection && selection.bbox) {
+      currentBbox = selection.bbox;
+      currentPolygon = selection.polygon || null;
+      triggerSimulation();
+    } else {
+      currentBbox = null;
+      currentPolygon = null;
+      shadowCanvasLayer.clear();
+      currentSimulationData = null;
+      solarDashboard.setSimulationData(null);
+    }
   });
 
-  new Geocoder(map, geocoderMount, (loc) => {
-    console.log('Selected geocoder location:', loc.name);
+  new SavedViewsPanel({
+    map,
+    container: viewsPanelMount,
+    boxDrawer,
+    dateSelector,
+    onRestoreView: (view) => {
+      map.flyTo({
+        center: view.center,
+        zoom: view.zoom,
+        pitch: view.pitch,
+        bearing: view.bearing,
+        essential: true,
+        duration: 1200
+      });
+
+      if (view.date) {
+        dateSelector.setDate(view.date, false);
+      }
+
+      if (view.polygon || view.bbox) {
+        boxDrawer.setSelection({
+          bbox: view.bbox,
+          polygon: view.polygon
+        });
+      } else {
+        boxDrawer.clearSelection();
+      }
+    },
+    showToast
   });
 
   new LayerToggle(map, topRightControls);

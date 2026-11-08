@@ -1,0 +1,462 @@
+/**
+ * SavedViewsPanel Component
+ * Collapsible glassmorphism right card overlay integrating:
+ * 1. Quebec City / Address Search Geocoder
+ * 2. Shape Selection Type (Oblong / Polygon vs Rectangle vs Clear)
+ * 3. Save View & Shape combos with custom labels to persistent localStorage
+ * 4. Interactive list of saved views with one-click Fly & Restore and Delete actions
+ */
+
+import { Geocoder } from './Geocoder.js';
+import {
+  computeBboxDimensions,
+  computePolygonDimensions
+} from '../utils/geometry.js';
+
+export const STORAGE_KEY = 'luxterra_saved_views';
+
+export const DEFAULT_PRESET_VIEWS = [
+  {
+    id: 'preset_montreal',
+    name: 'Montréal - Mount Royal Slopes',
+    detail: '🔷 Oblong • 52,088 m²',
+    center: [-73.618, 45.503],
+    zoom: 16.2,
+    pitch: 52,
+    bearing: -35,
+    polygon: [
+      [-73.6199, 45.5038],
+      [-73.6171, 45.5049],
+      [-73.6152, 45.5037],
+      [-73.6178, 45.5019],
+      [-73.6199, 45.5038]
+    ],
+    bbox: [-73.6199, 45.5019, -73.6152, 45.5049],
+    date: '2026-06-21',
+    createdAt: '2026-01-01T00:00:00Z',
+    isPreset: true
+  },
+  {
+    id: 'preset_sainte_lucie',
+    name: 'Sainte-Lucie Laurentians',
+    detail: '⬛ Rectangle • 42,000 m²',
+    center: [-74.195, 46.136],
+    zoom: 15.5,
+    pitch: 56,
+    bearing: 40,
+    bbox: [-74.197, 46.134, -74.194, 46.136],
+    polygon: null,
+    date: '2026-06-21',
+    createdAt: '2026-01-01T00:00:00Z',
+    isPreset: true
+  },
+  {
+    id: 'preset_laval',
+    name: 'Laval - Centropolis',
+    detail: '⬛ Rectangle • 48,000 m²',
+    center: [-73.748, 45.562],
+    zoom: 16.0,
+    pitch: 45,
+    bearing: 0,
+    bbox: [-73.750, 45.560, -73.746, 45.564],
+    polygon: null,
+    date: '2026-06-21',
+    createdAt: '2026-01-01T00:00:00Z',
+    isPreset: true
+  }
+];
+
+export class SavedViewsPanel {
+  constructor({
+    map,
+    container,
+    boxDrawer,
+    dateSelector,
+    onRestoreView,
+    showToast
+  }) {
+    this.map = map;
+    this.container = container;
+    this.boxDrawer = boxDrawer;
+    this.dateSelector = dateSelector;
+    this.onRestoreView = onRestoreView || (() => {});
+    this.showToast = showToast || console.log;
+
+    this.isCollapsed = false;
+    this.activeViewId = null;
+    this.savedViews = this.loadSavedViews();
+
+    this.render();
+    this.initGeocoder();
+    this.bindDrawerEvents();
+  }
+
+  loadSavedViews() {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to parse saved views from localStorage:', e);
+    }
+    // Default seed
+    this.saveToStorage(DEFAULT_PRESET_VIEWS);
+    return [...DEFAULT_PRESET_VIEWS];
+  }
+
+  saveToStorage(views) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(views));
+    } catch (e) {
+      console.warn('Failed to save views to localStorage:', e);
+    }
+  }
+
+  render() {
+    this.element = document.createElement('div');
+    this.element.className = 'glass-panel saved-views-panel';
+
+    this.element.innerHTML = `
+      <!-- Collapsible Card Header -->
+      <div class="panel-header" title="Click to collapse / expand">
+        <span class="panel-title">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-solar); flex-shrink: 0;">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <span>Saved Views & Shapes</span>
+        </span>
+        <div class="panel-header-actions">
+          <span class="views-count-badge pill">${this.savedViews.length} saved</span>
+          <button class="collapse-btn" title="Collapse / Expand Panel">
+            <svg class="chevron-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="18 15 12 9 6 15"></polyline>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Collapsible Card Body -->
+      <div class="panel-body">
+        <!-- Section 1: City Locator -->
+        <div class="panel-section">
+          <div class="panel-section-title">City / Address Locator</div>
+          <div class="geocoder-slot"></div>
+        </div>
+
+        <!-- Section 2: Shape Selection Type -->
+        <div class="panel-section">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <div class="panel-section-title" style="margin-bottom: 0;">Shape Selection Type</div>
+            <span class="shape-status-pill">No shape active</span>
+          </div>
+          <div class="shape-type-buttons">
+            <button class="btn btn-sm btn-shape-type btn-polygon" title="Draw multi-point oblong area. Hold Shift or click #1 to close, Enter to finish.">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                <polyline points="2 17 12 22 22 17"></polyline>
+                <polyline points="2 12 12 17 22 12"></polyline>
+              </svg>
+              <span>Oblong</span>
+            </button>
+            <button class="btn btn-sm btn-shape-type btn-rectangle" title="Click & drag on the map to draw a rectangular solar area.">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              </svg>
+              <span>Rectangle</span>
+            </button>
+            <button class="btn btn-sm btn-shape-clear" title="Clear active shape selection and reset shadows" disabled>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Section 3: Save Current View & Shape -->
+        <div class="panel-section">
+          <div class="panel-section-title">Save Current View + Shape</div>
+          <div class="save-view-row">
+            <input type="text" class="save-view-input" placeholder="Name combo (e.g. Laval Campus)..." />
+            <button class="btn btn-sm btn-accent save-view-btn" title="Save current camera position & shape combo">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                <polyline points="7 3 7 8 15 8"></polyline>
+              </svg>
+              <span>Save</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Section 4: Saved Views List -->
+        <div class="panel-section">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <div class="panel-section-title" style="margin-bottom: 0;">Saved Reviews</div>
+            <button class="btn-reset-presets" title="Restore default Quebec presets" style="background: none; border: none; font-size: 0.68rem; color: var(--text-muted); cursor: pointer; text-decoration: underline;">Defaults</button>
+          </div>
+          <div class="saved-views-list"></div>
+        </div>
+      </div>
+    `;
+
+    // Query sub-elements
+    this.header = this.element.querySelector('.panel-header');
+    this.body = this.element.querySelector('.panel-body');
+    this.chevron = this.element.querySelector('.chevron-icon');
+    this.countBadge = this.element.querySelector('.views-count-badge');
+    this.geocoderSlot = this.element.querySelector('.geocoder-slot');
+
+    this.btnPolygon = this.element.querySelector('.btn-polygon');
+    this.btnRectangle = this.element.querySelector('.btn-rectangle');
+    this.btnClear = this.element.querySelector('.btn-shape-clear');
+    this.shapeStatusPill = this.element.querySelector('.shape-status-pill');
+
+    this.saveInput = this.element.querySelector('.save-view-input');
+    this.saveBtn = this.element.querySelector('.save-view-btn');
+    this.savedListContainer = this.element.querySelector('.saved-views-list');
+    this.resetPresetsBtn = this.element.querySelector('.btn-reset-presets');
+
+    // Bind collapse toggle
+    this.header.addEventListener('click', () => this.toggleCollapse());
+
+    // Bind shape buttons
+    this.btnPolygon.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.boxDrawer.startDrawing('polygon');
+    });
+
+    this.btnRectangle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.boxDrawer.startDrawing('rectangle');
+    });
+
+    this.btnClear.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.boxDrawer.clearSelection();
+      this.activeViewId = null;
+      this.renderSavedList();
+    });
+
+    // Bind save combo
+    this.saveBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.saveCurrentCombo();
+    });
+
+    this.saveInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.stopPropagation();
+        this.saveCurrentCombo();
+      }
+    });
+
+    // Reset presets button
+    this.resetPresetsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.savedViews = [...DEFAULT_PRESET_VIEWS];
+      this.saveToStorage(this.savedViews);
+      this.renderSavedList();
+      this.showToast('Restored default Quebec presets', 'info');
+    });
+
+    this.renderSavedList();
+    this.container.appendChild(this.element);
+  }
+
+  toggleCollapse() {
+    this.isCollapsed = !this.isCollapsed;
+    if (this.isCollapsed) {
+      this.body.style.display = 'none';
+      this.chevron.style.transform = 'rotate(180deg)';
+      this.countBadge.style.display = 'inline-block';
+    } else {
+      this.body.style.display = 'flex';
+      this.chevron.style.transform = 'rotate(0deg)';
+      this.countBadge.style.display = 'inline-block';
+    }
+  }
+
+  initGeocoder() {
+    this.geocoder = new Geocoder(this.map, this.geocoderSlot, (loc) => {
+      if (loc && loc.name) {
+        const shortName = loc.name.split(',')[0].trim();
+        this.saveInput.value = shortName;
+        this.showToast(`Navigated to ${shortName}`, 'info');
+      }
+    });
+  }
+
+  bindDrawerEvents() {
+    if (typeof this.boxDrawer.setStateChangeListener === 'function') {
+      this.boxDrawer.setStateChangeListener((state) => {
+        this.updateDrawerState(state);
+      });
+    }
+  }
+
+  updateDrawerState(state) {
+    if (!state) return;
+
+    // 1. Tool button active states
+    if (state.isDrawingActive) {
+      if (state.drawMode === 'polygon') {
+        this.btnPolygon.classList.add('active');
+        this.btnRectangle.classList.remove('active');
+      } else {
+        this.btnRectangle.classList.add('active');
+        this.btnPolygon.classList.remove('active');
+      }
+    } else {
+      this.btnPolygon.classList.remove('active');
+      this.btnRectangle.classList.remove('active');
+    }
+
+    // 2. Clear button & status pill
+    if (state.hasShape && state.dimensions) {
+      const areaStr = Math.round(state.dimensions.areaM2).toLocaleString('en-US');
+      if (state.isPolygon) {
+        this.shapeStatusPill.textContent = `🔷 Oblong (${areaStr} m²)`;
+        this.shapeStatusPill.style.color = 'var(--accent-solar)';
+      } else {
+        this.shapeStatusPill.textContent = `⬛ Rect (${areaStr} m²)`;
+        this.shapeStatusPill.style.color = 'var(--accent-solar)';
+      }
+      this.btnClear.disabled = false;
+      this.btnClear.style.opacity = '1';
+    } else {
+      this.shapeStatusPill.textContent = 'No shape active';
+      this.shapeStatusPill.style.color = 'var(--text-muted)';
+      this.btnClear.disabled = true;
+      this.btnClear.style.opacity = '0.35';
+    }
+  }
+
+  saveCurrentCombo() {
+    const rawName = this.saveInput.value.trim();
+    const center = this.map.getCenter();
+    const zoom = this.map.getZoom();
+    const pitch = this.map.getPitch();
+    const bearing = this.map.getBearing();
+
+    const selection = this.boxDrawer.getSelection();
+    let detail = '📷 Camera View';
+
+    if (selection.polygon && selection.dimensions) {
+      const area = Math.round(selection.dimensions.areaM2).toLocaleString('en-US');
+      detail = `🔷 Oblong • ${area} m²`;
+    } else if (selection.bbox && selection.dimensions) {
+      const area = Math.round(selection.dimensions.areaM2).toLocaleString('en-US');
+      detail = `⬛ Rectangle • ${area} m²`;
+    }
+
+    const defaultName = selection.bbox
+      ? `Area at ${center.lat.toFixed(3)}°N, ${Math.abs(center.lng).toFixed(3)}°W`
+      : `View at ${center.lat.toFixed(3)}°N, ${Math.abs(center.lng).toFixed(3)}°W`;
+
+    const name = rawName || defaultName;
+    const date = this.dateSelector ? this.dateSelector.getDate() : '2026-06-21';
+
+    const newView = {
+      id: `view_${Date.now()}`,
+      name: name,
+      detail: detail,
+      center: [Number(center.lng.toFixed(5)), Number(center.lat.toFixed(5))],
+      zoom: Number(zoom.toFixed(2)),
+      pitch: Math.round(pitch),
+      bearing: Math.round(bearing),
+      bbox: selection.bbox ? selection.bbox.map(n => Number(n.toFixed(5))) : null,
+      polygon: selection.polygon ? selection.polygon.map(pt => [Number(pt[0].toFixed(5)), Number(pt[1].toFixed(5))]) : null,
+      date: date,
+      createdAt: new Date().toISOString()
+    };
+
+    this.savedViews.unshift(newView);
+    this.saveToStorage(this.savedViews);
+    this.activeViewId = newView.id;
+    this.saveInput.value = '';
+
+    this.renderSavedList();
+    this.showToast(`Saved view & shape combo "${name}"!`, 'info');
+  }
+
+  renderSavedList() {
+    this.savedListContainer.innerHTML = '';
+    this.countBadge.textContent = `${this.savedViews.length} saved`;
+
+    if (this.savedViews.length === 0) {
+      this.savedListContainer.innerHTML = `
+        <div style="padding: 12px 8px; font-size: 0.76rem; color: var(--text-muted); text-align: center; border: 1px dashed var(--border-card); border-radius: 6px;">
+          No saved views yet. Draw an area and save above, or click <strong style="color: var(--accent-solar); cursor: pointer;" class="load-presets-link">Load Presets</strong>.
+        </div>
+      `;
+      const link = this.savedListContainer.querySelector('.load-presets-link');
+      if (link) {
+        link.addEventListener('click', () => {
+          this.savedViews = [...DEFAULT_PRESET_VIEWS];
+          this.saveToStorage(this.savedViews);
+          this.renderSavedList();
+        });
+      }
+      return;
+    }
+
+    this.savedViews.forEach(view => {
+      const item = document.createElement('div');
+      item.className = `saved-view-item ${this.activeViewId === view.id ? 'active' : ''}`;
+      item.title = `Click to fly to ${view.name} and restore shape`;
+
+      item.innerHTML = `
+        <div class="view-item-info">
+          <div class="view-item-name">${view.name}</div>
+          <div class="view-item-detail">${view.detail || 'View & Shape'}</div>
+        </div>
+        <div class="view-item-actions">
+          <button class="btn btn-xs btn-restore-view" title="Restore view & simulate">Fly</button>
+          <button class="btn-delete-view" title="Delete saved view">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+      `;
+
+      // Click to fly & restore
+      const triggerRestore = (e) => {
+        e.stopPropagation();
+        this.activeViewId = view.id;
+        this.renderSavedList();
+        this.onRestoreView(view);
+      };
+
+      item.addEventListener('click', triggerRestore);
+      item.querySelector('.btn-restore-view').addEventListener('click', triggerRestore);
+
+      // Delete action
+      item.querySelector('.btn-delete-view').addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.deleteView(view.id);
+      });
+
+      this.savedListContainer.appendChild(item);
+    });
+  }
+
+  deleteView(id) {
+    const deleted = this.savedViews.find(v => v.id === id);
+    this.savedViews = this.savedViews.filter(v => v.id !== id);
+    if (this.activeViewId === id) {
+      this.activeViewId = null;
+    }
+    this.saveToStorage(this.savedViews);
+    this.renderSavedList();
+    if (deleted) {
+      this.showToast(`Removed saved view "${deleted.name}"`, 'info');
+    }
+  }
+}
