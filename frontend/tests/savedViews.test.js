@@ -2,30 +2,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  DEFAULT_PRESET_VIEWS,
-  STORAGE_KEY
+  STORAGE_KEY,
+  filterLegacyPresets
 } from '../src/components/SavedViewsPanel.js';
 
-test('DEFAULT_PRESET_VIEWS includes Montreal, Sainte-Lucie, and Laval', () => {
-  assert.equal(DEFAULT_PRESET_VIEWS.length, 3);
+test('filterLegacyPresets removes default presets and preserves user shapes', () => {
+  const legacyData = [
+    { id: 'preset_montreal', name: 'Montréal', isPreset: true },
+    { id: 'preset_sainte_lucie', name: 'Sainte-Lucie', isPreset: true },
+    { id: 'preset_laval', name: 'Laval', isPreset: true },
+    { id: 'view_1794150000', name: 'Custom Solar Array', isPreset: false }
+  ];
 
-  const mtl = DEFAULT_PRESET_VIEWS.find(v => v.id === 'preset_montreal');
-  assert.ok(mtl);
-  assert.equal(mtl.name, 'Montréal - Mount Royal Slopes');
-  assert.ok(Array.isArray(mtl.polygon));
-  assert.equal(mtl.polygon.length, 5); // Closed 4-point ring
+  const cleaned = filterLegacyPresets(legacyData);
+  assert.equal(cleaned.length, 1);
+  assert.equal(cleaned[0].id, 'view_1794150000');
+  assert.equal(cleaned[0].name, 'Custom Solar Array');
+});
 
-  const stLucie = DEFAULT_PRESET_VIEWS.find(v => v.id === 'preset_sainte_lucie');
-  assert.ok(stLucie);
-  assert.equal(stLucie.name, 'Sainte-Lucie Laurentians');
-  assert.ok(Array.isArray(stLucie.bbox));
-  assert.equal(stLucie.bbox.length, 4);
-
-  const laval = DEFAULT_PRESET_VIEWS.find(v => v.id === 'preset_laval');
-  assert.ok(laval);
-  assert.equal(laval.name, 'Laval - Centropolis');
-  assert.ok(Array.isArray(laval.bbox));
-  assert.equal(laval.bbox.length, 4);
+test('filterLegacyPresets returns empty array for empty or invalid input', () => {
+  assert.deepEqual(filterLegacyPresets([]), []);
+  assert.deepEqual(filterLegacyPresets(null), []);
+  assert.deepEqual(filterLegacyPresets(undefined), []);
+  assert.deepEqual(filterLegacyPresets('invalid'), []);
 });
 
 test('Saved view serialization preserves camera, bbox, and polygon precision', () => {

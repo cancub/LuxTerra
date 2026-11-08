@@ -15,56 +15,10 @@ import {
 
 export const STORAGE_KEY = 'luxterra_saved_views';
 
-export const DEFAULT_PRESET_VIEWS = [
-  {
-    id: 'preset_montreal',
-    name: 'Montréal - Mount Royal Slopes',
-    detail: '🔷 Oblong • 52,088 m²',
-    center: [-73.618, 45.503],
-    zoom: 16.2,
-    pitch: 52,
-    bearing: -35,
-    polygon: [
-      [-73.6199, 45.5038],
-      [-73.6171, 45.5049],
-      [-73.6152, 45.5037],
-      [-73.6178, 45.5019],
-      [-73.6199, 45.5038]
-    ],
-    bbox: [-73.6199, 45.5019, -73.6152, 45.5049],
-    date: '2026-06-21',
-    createdAt: '2026-01-01T00:00:00Z',
-    isPreset: true
-  },
-  {
-    id: 'preset_sainte_lucie',
-    name: 'Sainte-Lucie Laurentians',
-    detail: '⬛ Rectangle • 42,000 m²',
-    center: [-74.195, 46.136],
-    zoom: 15.5,
-    pitch: 56,
-    bearing: 40,
-    bbox: [-74.197, 46.134, -74.194, 46.136],
-    polygon: null,
-    date: '2026-06-21',
-    createdAt: '2026-01-01T00:00:00Z',
-    isPreset: true
-  },
-  {
-    id: 'preset_laval',
-    name: 'Laval - Centropolis',
-    detail: '⬛ Rectangle • 48,000 m²',
-    center: [-73.748, 45.562],
-    zoom: 16.0,
-    pitch: 45,
-    bearing: 0,
-    bbox: [-73.750, 45.560, -73.746, 45.564],
-    polygon: null,
-    date: '2026-06-21',
-    createdAt: '2026-01-01T00:00:00Z',
-    isPreset: true
-  }
-];
+export function filterLegacyPresets(views) {
+  if (!Array.isArray(views)) return [];
+  return views.filter(v => v && !v.isPreset && !v.id?.startsWith('preset_'));
+}
 
 export class SavedViewsPanel {
   constructor({
@@ -96,16 +50,16 @@ export class SavedViewsPanel {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+        const filtered = filterLegacyPresets(parsed);
+        if (filtered.length !== parsed.length) {
+          this.saveToStorage(filtered);
         }
+        return filtered;
       }
     } catch (e) {
       console.warn('Failed to parse saved views from localStorage:', e);
     }
-    // Default seed
-    this.saveToStorage(DEFAULT_PRESET_VIEWS);
-    return [...DEFAULT_PRESET_VIEWS];
+    return [];
   }
 
   saveToStorage(views) {
@@ -189,10 +143,6 @@ export class SavedViewsPanel {
 
         <!-- Section 4: Saved Views List -->
         <div class="panel-section">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <div class="panel-section-title" style="margin-bottom: 0;">Saved Reviews</div>
-            <button class="btn-reset-presets" title="Restore default Quebec presets" style="background: none; border: none; font-size: 0.68rem; color: var(--text-muted); cursor: pointer; text-decoration: underline;">Defaults</button>
-          </div>
           <div class="saved-views-list"></div>
         </div>
       </div>
@@ -212,7 +162,6 @@ export class SavedViewsPanel {
     this.saveInput = this.element.querySelector('.save-view-input');
     this.saveBtn = this.element.querySelector('.save-view-btn');
     this.savedListContainer = this.element.querySelector('.saved-views-list');
-    this.resetPresetsBtn = this.element.querySelector('.btn-reset-presets');
 
     // Bind collapse toggle
     this.header.addEventListener('click', () => this.toggleCollapse());
@@ -248,14 +197,7 @@ export class SavedViewsPanel {
       }
     });
 
-    // Reset presets button
-    this.resetPresetsBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.savedViews = [...DEFAULT_PRESET_VIEWS];
-      this.saveToStorage(this.savedViews);
-      this.renderSavedList();
-      this.showToast('Restored default Quebec presets', 'info');
-    });
+
 
     this.renderSavedList();
     this.container.appendChild(this.element);
@@ -377,18 +319,10 @@ export class SavedViewsPanel {
 
     if (this.savedViews.length === 0) {
       this.savedListContainer.innerHTML = `
-        <div style="padding: 12px 8px; font-size: 0.76rem; color: var(--text-muted); text-align: center; border: 1px dashed var(--border-card); border-radius: 6px;">
-          No saved views yet. Draw an area and save above, or click <strong style="color: var(--accent-solar); cursor: pointer;" class="load-presets-link">Load Presets</strong>.
+        <div style="padding: 10px 8px; font-size: 0.74rem; color: var(--text-muted); text-align: center; border: 1px dashed var(--border-card); border-radius: 6px;">
+          No saved views yet. Draw an area and save above.
         </div>
       `;
-      const link = this.savedListContainer.querySelector('.load-presets-link');
-      if (link) {
-        link.addEventListener('click', () => {
-          this.savedViews = [...DEFAULT_PRESET_VIEWS];
-          this.saveToStorage(this.savedViews);
-          this.renderSavedList();
-        });
-      }
       return;
     }
 
