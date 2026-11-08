@@ -250,6 +250,21 @@ class TileCacheManager:
             except Exception as e:
                 logger.warning(f"Could not read tile {tif_file.name} for manifest: {e}")
 
+        # Ensure deterministic ordering
+        manifest["tiles"].sort(key=lambda t: t.get("filename", ""))
+
+        # Check if identical to existing manifest to avoid dirtying git working tree and redundant I/O
+        if self.manifest_path.exists():
+            try:
+                with open(self.manifest_path, "r") as f:
+                    existing_manifest = json.load(f)
+                if existing_manifest == manifest:
+                    self._manifest_cache = manifest
+                    self._manifest_mtime = self.manifest_path.stat().st_mtime
+                    return manifest
+            except Exception:
+                pass
+
         with open(self.manifest_path, "w") as f:
             json.dump(manifest, f, indent=2)
 
