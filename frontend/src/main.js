@@ -251,10 +251,25 @@ if (appContainer) {
     }, durationMs);
   }
 
+  let lastSimulationKey = null;
+
   async function triggerSimulation() {
     if (!currentBbox) return;
     const pvConfig = pvConfigPanel.getConfig();
     const date = dateSelector.getDate();
+
+    const simKey = JSON.stringify({
+      bbox: currentBbox,
+      polygon: currentPolygon,
+      date: date,
+      deployment_mode: pvConfig.deploymentMode,
+      include_tree_canopy: pvConfig.includeTreeCanopy,
+      canopy_mode: pvConfig.canopyMode
+    });
+
+    if (lastSimulationKey === simKey && currentSimulationData) {
+      return;
+    }
 
     if (statusPill) {
       statusPill.innerHTML = `<span class="spinner" style="display: inline-block; vertical-align: middle; margin-right: 4px;"></span> Ray-marching...`;
@@ -305,6 +320,7 @@ if (appContainer) {
       solarDashboard.setSimulationData(data, 1.0);
       timeScrubber.setTimeseries(data.timeseries, data.daily_summary);
       playbackEngine.setSimulationContext(data.timeseries.length, data.metadata.time_step_minutes);
+      lastSimulationKey = simKey;
     } catch (err) {
       console.warn('Simulation execution error:', err);
       showToast(err.message, 'warning');
@@ -366,6 +382,7 @@ if (appContainer) {
     } else {
       currentBbox = null;
       currentPolygon = null;
+      lastSimulationKey = null;
       updateSelectionState(null);
       shadowCanvasLayer.clear();
       currentSimulationData = null;

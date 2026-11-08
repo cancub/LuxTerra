@@ -237,6 +237,14 @@ export class SavedViewsPanel {
   updateDrawerState(state) {
     if (!state) return;
 
+    // Reset active saved view if user starts drawing a new shape or clears the shape
+    if (state.isDrawingActive || !state.hasShape) {
+      if (this.activeViewId !== null) {
+        this.activeViewId = null;
+        this.renderSavedList();
+      }
+    }
+
     // 1. Tool button active states
     if (state.isDrawingActive) {
       if (state.drawMode === 'polygon') {
@@ -349,6 +357,18 @@ export class SavedViewsPanel {
       // Click to fly & restore
       const triggerRestore = (e) => {
         e.stopPropagation();
+        if (this.activeViewId === view.id) {
+          // If shape is already active and loaded, fly camera to it without reloading simulation on GPU
+          this.map.flyTo({
+            center: view.center,
+            zoom: view.zoom,
+            pitch: view.pitch,
+            bearing: view.bearing,
+            essential: true,
+            duration: 1200
+          });
+          return;
+        }
         this.activeViewId = view.id;
         this.renderSavedList();
         this.onRestoreView(view);
