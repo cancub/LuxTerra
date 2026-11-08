@@ -44,6 +44,11 @@ data/dtm/*.TIF
 data/dtm/*.tiff
 data/dtm/*.TIFF
 data/dtm/tmp/
+data/dsm/*.tif
+data/dsm/*.TIF
+data/dsm/*.tiff
+data/dsm/*.TIFF
+data/dsm/tmp/
 *.vrt
 
 # IDE & OS
