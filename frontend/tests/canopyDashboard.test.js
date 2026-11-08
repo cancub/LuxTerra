@@ -174,4 +174,32 @@ test('SparklineChart: correctly builds clear-sky potential curve and canopy loss
   assert.ok(chart.potentialLine.getAttribute('points').length > 0);
   assert.ok(chart.canopyLossArea.getAttribute('points').length > 0);
   assert.equal(chart.canopyLossArea.style.display, 'block');
+
+  // Verify chart collapsible toggle
+  assert.equal(chart.isCollapsed, false);
+  chart.toggleCurveCollapse();
+  assert.equal(chart.isCollapsed, true);
+  assert.equal(chart.curveBody.style.display, 'none');
+  chart.toggleCurveCollapse();
+  assert.equal(chart.isCollapsed, false);
+  assert.equal(chart.curveBody.style.display, 'flex');
+
+  // Verify legend collapsible toggle
+  assert.equal(chart.isLegendCollapsed, false);
+  chart.toggleLegendCollapse();
+  assert.equal(chart.isLegendCollapsed, true);
+  assert.equal(chart.legendItems.style.display, 'none');
+  chart.toggleLegendCollapse();
+  assert.equal(chart.isLegendCollapsed, false);
+  assert.equal(chart.legendItems.style.display, 'flex');
+});
+
+test('PVConfigPanel: modal mode opens body expanded with hidden inner header', () => {
+  const container = createMockElement('div');
+  const panel = new PVConfigPanel(container, () => {}, { isModal: true });
+
+  assert.equal(panel.isModal, true);
+  assert.equal(panel.isCollapsed, false);
+  assert.equal(panel.body.style.display, 'flex');
+  assert.equal(panel.header.style.display, 'none');
 });

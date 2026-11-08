@@ -7,9 +7,10 @@
 export const PV_DEPLOYMENT_MODE_KEY = 'luxterra_deployment_mode';
 
 export class PVConfigPanel {
-  constructor(container, onConfigChange = () => {}) {
+  constructor(container, onConfigChange = () => {}, options = {}) {
     this.container = container;
     this.onConfigChange = onConfigChange;
+    this.isModal = Boolean(options.isModal);
 
     let savedMode = null;
     try {
@@ -24,7 +25,7 @@ export class PVConfigPanel {
     this.gcr = this.deploymentMode === 'rooftop' ? 1.0 : 0.45; // 45% for ground-mount, 100% for rooftop
     this.includeTreeCanopy = true; // Enabled by default per user request
     this.canopyMode = 'seasonal'; // Seasonal Auto by default per user request
-    this.isCollapsed = true; // Collapsed by default
+    this.isCollapsed = !this.isModal; // Open by default when in modal, collapsed otherwise
 
     this.render();
   }
@@ -43,7 +44,7 @@ export class PVConfigPanel {
 
     this.element.innerHTML = `
       <!-- Collapsible Section Header -->
-      <div class="pv-config-header" style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none;">
+      <div class="pv-config-header" style="display: ${this.isModal ? 'none' : 'flex'}; align-items: center; justify-content: space-between; cursor: pointer; user-select: none;">
         <span style="font-weight: 600; font-size: 0.82rem; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-solar);">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
@@ -51,14 +52,14 @@ export class PVConfigPanel {
           <span>PV System Configuration</span>
         </span>
         <button class="pv-collapse-btn" title="Toggle PV Configuration" style="background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border-card); border-radius: 4px; color: var(--text-primary); cursor: pointer; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0;">
-          <svg class="pv-chevron-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform: rotate(180deg); transition: transform 0.2s ease;">
+          <svg class="pv-chevron-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform: ${this.isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)'}; transition: transform 0.2s ease;">
             <polyline points="18 15 12 9 6 15"></polyline>
           </svg>
         </button>
       </div>
 
-      <!-- Collapsible Body (Hidden by default) -->
-      <div class="pv-config-body" style="display: none; flex-direction: column; gap: 10px; margin-top: 4px;">
+      <!-- Body -->
+      <div class="pv-config-body" style="display: ${this.isCollapsed ? 'none' : 'flex'}; flex-direction: column; gap: 10px; margin-top: 4px;">
         <!-- Deployment Mode Toggle -->
         <div class="pv-mode-selector" style="display: flex; background: rgba(0, 0, 0, 0.3); padding: 3px; border-radius: 8px; border: 1px solid var(--border-card);">
           <button class="btn btn-sm mode-btn mode-rooftop ${this.deploymentMode === 'rooftop' ? 'active' : ''}" data-mode="rooftop" style="flex: 1; justify-content: center; font-size: 0.76rem; padding: 5px 8px;">
@@ -122,8 +123,12 @@ export class PVConfigPanel {
     this.body = this.element.querySelector('.pv-config-body');
     this.chevron = this.element.querySelector('.pv-chevron-icon');
 
+    if (this.header) {
+      this.header.style.display = this.isModal ? 'none' : 'flex';
+    }
+
     if (this.body) {
-      this.body.style.display = 'none';
+      this.body.style.display = this.isCollapsed ? 'none' : 'flex';
     }
 
     this.modeButtons = this.element.querySelectorAll('.mode-btn');

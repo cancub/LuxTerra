@@ -32,7 +32,13 @@ if (appContainer) {
   appContainer.innerHTML = `
     <div id="map"></div>
     <div class="top-bar">
-      <div class="top-left-group" style="display: flex; align-items: center; gap: 10px;">
+      <div class="top-left-group" style="display: flex; align-items: center; gap: 8px;">
+        <button id="settings-cog-btn" class="glass-panel settings-cog-btn" title="PV System Configuration" aria-label="Settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
         <div class="glass-panel brand-badge">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="5"></circle>
@@ -52,22 +58,46 @@ if (appContainer) {
       <div class="top-right-controls" id="top-right-controls"></div>
     </div>
 
+    <!-- PV System Configuration Settings Modal -->
+    <div id="pv-settings-modal" class="modal-backdrop" style="display: none;">
+      <div class="glass-panel modal-card">
+        <div class="modal-header" style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-card); padding-bottom: 12px; margin-bottom: 14px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-solar);">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            <span style="font-weight: 700; font-size: 0.95rem; color: var(--text-primary);">PV System Configuration</span>
+          </div>
+          <button id="modal-close-btn" class="modal-close-btn" title="Close Settings" aria-label="Close" style="background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border-card); border-radius: 6px; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div id="pv-config-modal-mount"></div>
+      </div>
+    </div>
+
     <!-- Notification Toasts -->
     <div class="toast-container" id="toast-container"></div>
 
     <!-- Floating Right Sidebar Dock -->
     <div class="right-dock" id="right-dock">
       <div id="views-panel-mount"></div>
-      <div id="solar-dashboard-mount"></div>
     </div>
 
     <!-- Bottom Timeline Dock -->
     <div class="bottom-dock" id="bottom-dock">
-      <div class="timeline-controls-row" id="timeline-controls-row">
-        <div id="date-selector-mount"></div>
-        <div id="playback-controls-mount"></div>
+      <div class="energy-metrics-mount" id="energy-metrics-mount"></div>
+      <div class="timeline-cluster" id="timeline-cluster">
+        <div id="power-curve-mount" style="width: 100%; display: flex; justify-content: center;"></div>
+        <div class="timeline-controls-row" id="timeline-controls-row">
+          <div id="date-selector-mount"></div>
+          <div id="playback-controls-mount"></div>
+        </div>
+        <div id="timeline-scrubber-mount" style="width: 100%; display: flex; justify-content: center;"></div>
       </div>
-      <div id="timeline-scrubber-mount" style="width: 100%; display: flex; justify-content: center;"></div>
     </div>
   `;
 
@@ -83,7 +113,43 @@ if (appContainer) {
   const dateSelectorMount = document.getElementById('date-selector-mount');
   const playbackControlsMount = document.getElementById('playback-controls-mount');
   const timelineScrubberMount = document.getElementById('timeline-scrubber-mount');
-  const solarDashboardMount = document.getElementById('solar-dashboard-mount');
+  const energyMetricsMount = document.getElementById('energy-metrics-mount');
+  const powerCurveMount = document.getElementById('power-curve-mount');
+  const pvConfigModalMount = document.getElementById('pv-config-modal-mount');
+
+  const settingsModal = document.getElementById('pv-settings-modal');
+  const settingsCogBtn = document.getElementById('settings-cog-btn');
+  const modalCloseBtn = document.getElementById('modal-close-btn');
+
+  function openSettingsModal() {
+    if (settingsModal) settingsModal.style.display = 'flex';
+  }
+
+  function closeSettingsModal() {
+    if (settingsModal) settingsModal.style.display = 'none';
+  }
+
+  if (settingsCogBtn) {
+    settingsCogBtn.addEventListener('click', openSettingsModal);
+  }
+
+  if (modalCloseBtn) {
+    modalCloseBtn.addEventListener('click', closeSettingsModal);
+  }
+
+  if (settingsModal) {
+    settingsModal.addEventListener('click', (e) => {
+      if (e.target === settingsModal) {
+        closeSettingsModal();
+      }
+    });
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && settingsModal && settingsModal.style.display !== 'none') {
+      closeSettingsModal();
+    }
+  });
 
   const shadowCanvasLayer = new ShadowCanvasLayer(map);
 
@@ -96,11 +162,11 @@ if (appContainer) {
     systemDerate: 0.80
   };
 
-  const solarDashboard = new SolarDashboard(solarDashboardMount, (seekIndex) => {
+  const solarDashboard = new SolarDashboard(energyMetricsMount, (seekIndex) => {
     timeScrubber.setStep(seekIndex);
-  });
+  }, { chartContainer: powerCurveMount });
 
-  const pvConfigPanel = new PVConfigPanel(solarDashboard.getPVConfigMount(), (newConfig) => {
+  const pvConfigPanel = new PVConfigPanel(pvConfigModalMount, (newConfig) => {
     if (!currentSimulationData || !baseSimulationConfig) return;
 
     // If deployment mode or canopy settings changed, trigger a fresh simulation
@@ -120,7 +186,7 @@ if (appContainer) {
     const scaleFactor = gcrRatio * effRatio * prRatio;
 
     solarDashboard.setScaleFactor(scaleFactor);
-  });
+  }, { isModal: true });
 
   const timeScrubber = new TimeScrubber(timelineScrubberMount, (index, metric) => {
     if (playbackEngine) {
