@@ -233,3 +233,47 @@ def test_cuda_dual_surface_synthetic_canopy():
     # Night frame
     assert np.all(t_batch[2] == 0)
     assert np.all(c_batch[2] == 0)
+
+
+def test_gpu_cpu_dual_surface_bit_for_bit_equivalence():
+    if not is_gpu_available():
+        pytest.skip("CUDA GPU not available")
+
+    gpu_engine = CuPyOcclusionEngine()
+    cpu_engine = NumPyOcclusionEngine()
+
+    # Create synthetic terrain with a hill and trees
+    np.random.seed(42)
+    dtm = np.full((150, 150), 100.0, dtype=np.float32)
+    # Sloping hill
+    y_idx, x_idx = np.indices((150, 150))
+    dtm += (y_idx * 0.1).astype(np.float32)
+
+    dsm = dtm.copy()
+    # Add 15m trees at (40:80, 50:70)
+    dsm[40:80, 50:70] += 15.0
+    # Add a 25m building at (90:120, 80:110)
+    dsm[90:120, 80:110] += 25.0
+
+    patch_y = slice(40, 110)
+    patch_x = slice(40, 110)
+
+    angles = [
+        (90.0, 30.0),
+        (135.0, 45.0),
+        (180.0, 60.0),
+        (225.0, 35.0),
+        (270.0, 20.0),
+    ]
+
+    for is_roof in [True, False]:
+        for az, el in angles:
+            t_gpu, c_gpu = gpu_engine.compute_dual_shadow_mask(
+                dtm, dsm, patch_y, patch_x, az, el, is_rooftop=is_roof
+            )
+            t_cpu, c_cpu = cpu_engine.compute_dual_shadow_mask(
+                dtm, dsm, patch_y, patch_x, az, el, is_rooftop=is_roof
+            )
+
+            assert np.array_equal(t_gpu, t_cpu), f"Terrain mismatch: roof={is_roof}, az={az}, el={el}"
+            assert np.array_equal(c_gpu, c_cpu), f"Canopy mismatch: roof={is_roof}, az={az}, el={el}"
