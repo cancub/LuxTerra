@@ -90,6 +90,32 @@ body, html {
   gap: 10px;
 }
 
+/* Bottom Timeline Dock */
+.bottom-dock {
+  position: absolute;
+  bottom: 24px;
+  left: 16px;
+  right: 16px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.bottom-dock > * {
+  pointer-events: auto;
+}
+
+.timeline-controls-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+}
+
 .btn-sm {
   padding: 5px 10px;
   font-size: 0.78rem;

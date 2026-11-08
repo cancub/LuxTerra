@@ -9,6 +9,9 @@ import { LayerToggle } from './components/LayerToggle.js';
 import { Bookmarks } from './components/Bookmarks.js';
 import { Geocoder } from './components/Geocoder.js';
 import { BoxDrawer } from './components/BoxDrawer.js';
+import { ShadowCanvasLayer } from './components/ShadowCanvasLayer.js';
+import { DateSelector } from './components/DateSelector.js';
+import { TimeScrubber } from './components/TimeScrubber.js';
 
 const appContainer = document.getElementById('app');
 if (appContainer) {
@@ -36,12 +39,39 @@ if (appContainer) {
       <div class="top-center-controls" id="top-center-controls"></div>
       <div class="top-right-controls" id="top-right-controls"></div>
     </div>
+    <div class="bottom-dock" id="bottom-dock">
+      <div class="timeline-controls-row" id="timeline-controls-row">
+        <div id="date-selector-mount"></div>
+        <div id="playback-controls-mount"></div>
+      </div>
+      <div id="timeline-scrubber-mount" style="width: 100%; display: flex; justify-content: center;"></div>
+    </div>
   `;
 
   const map = initMap('map');
   const geocoderMount = document.getElementById('geocoder-mount');
   const topCenterControls = document.getElementById('top-center-controls');
   const topRightControls = document.getElementById('top-right-controls');
+  const dateSelectorMount = document.getElementById('date-selector-mount');
+  const timelineScrubberMount = document.getElementById('timeline-scrubber-mount');
+
+  const shadowCanvasLayer = new ShadowCanvasLayer(map);
+
+  let currentSimulationData = null;
+
+  const timeScrubber = new TimeScrubber(timelineScrubberMount, (index, metric) => {
+    if (currentSimulationData && currentSimulationData.masks && metric.mask_index !== null) {
+      const maskStr = currentSimulationData.masks[metric.mask_index];
+      const meta = currentSimulationData.metadata;
+      shadowCanvasLayer.renderFrame(maskStr, meta.grid_rows, meta.grid_cols);
+    } else {
+      shadowCanvasLayer.clear();
+    }
+  });
+
+  const dateSelector = new DateSelector(dateSelectorMount, '2026-06-21', (newDate) => {
+    console.log('Date changed to:', newDate);
+  });
 
   const boxDrawer = new BoxDrawer(map, topRightControls, (selection) => {
     console.log('Selection complete:', selection);
@@ -50,11 +80,13 @@ if (appContainer) {
   new Geocoder(map, geocoderMount, (loc) => {
     console.log('Selected geocoder location:', loc.name);
   });
+
   new Bookmarks(map, topCenterControls, (preset) => {
     console.log('Selected preset:', preset.name);
     if (preset.sampleBbox) {
       boxDrawer.setBox(preset.sampleBbox);
     }
   });
+
   new LayerToggle(map, topRightControls);
 }
