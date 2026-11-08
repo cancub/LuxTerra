@@ -352,3 +352,57 @@ test('BoxDrawer oblong shape: click & drag midpoint adds new vertex and supports
   assert.deepEqual(drawer.currentPolygon[3], pA);
 });
 
+test('BoxDrawer: restores saved selection when style finishes loading', () => {
+  let styleLoaded = false;
+  const eventHandlers = {};
+  const sources = {};
+  const mockMap = {
+    isStyleLoaded: () => styleLoaded,
+    getSource: (id) => sources[id],
+    addSource: (id, data) => {
+      sources[id] = {
+        data,
+        setData: (d) => { sources[id].data = d; }
+      };
+    },
+    addLayer: () => {},
+    setFeatureState: () => {},
+    getCanvas: () => ({ style: {} }),
+    dragPan: { disable: () => {}, enable: () => {} },
+    doubleClickZoom: { disable: () => {}, enable: () => {} },
+    on: (evt, ...args) => {
+      const handler = typeof args[0] === 'function' ? args[0] : args[1];
+      if (!eventHandlers[evt]) eventHandlers[evt] = [];
+      eventHandlers[evt].push(handler);
+    },
+    off: () => {}
+  };
+
+  const drawer = new BoxDrawer(mockMap);
+  const savedSelection = {
+    bbox: [-73.619, 45.502, -73.617, 45.504],
+    polygon: [
+      [-73.619, 45.502],
+      [-73.617, 45.502],
+      [-73.617, 45.504],
+      [-73.619, 45.504],
+      [-73.619, 45.502]
+    ],
+    shapeType: 'rectangle'
+  };
+
+  // Restore selection while style is not yet loaded
+  drawer.setSelection(savedSelection);
+  assert.equal(drawer.currentPolygon.length, 5);
+
+  // Now simulate map style 'load' event
+  styleLoaded = true;
+  eventHandlers['load']?.forEach((fn) => fn());
+
+  // Sources must now exist and draw-box-source must contain the restored feature
+  assert.ok(mockMap.getSource('draw-box-source'));
+  assert.equal(mockMap.getSource('draw-box-source').data.features.length, 1);
+  assert.ok(mockMap.getSource('draw-handles-source'));
+  assert.equal(mockMap.getSource('draw-handles-source').data.features.length, 4);
+});
+

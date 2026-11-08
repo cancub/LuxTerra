@@ -33,6 +33,11 @@ export class ShadowCanvasLayer {
       [minLon, minLat]
     ];
 
+    if (!this.map.isStyleLoaded()) {
+      this.map.once('load', () => this.setPatchBounds(bounds));
+      return;
+    }
+
     const source = this.map.getSource(this.sourceId);
     if (source) {
       source.setCoordinates(coordinates);
@@ -42,6 +47,11 @@ export class ShadowCanvasLayer {
   }
 
   attachLayer(coordinates) {
+    if (!this.map.isStyleLoaded()) {
+      this.map.once('load', () => this.attachLayer(coordinates));
+      return;
+    }
+
     if (this.map.getSource(this.sourceId)) return;
 
     this.map.addSource(this.sourceId, {

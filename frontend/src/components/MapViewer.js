@@ -8,7 +8,13 @@ import maplibregl from 'maplibre-gl';
 export const QUEBEC_CENTER = [-71.208, 46.813]; // Quebec City
 export const DEFAULT_ZOOM = 6;
 
-export function initMap(containerId = 'map') {
+export function initMap(containerId = 'map', options = {}) {
+  const center = options.center || QUEBEC_CENTER;
+  const zoom = options.zoom !== undefined ? options.zoom : DEFAULT_ZOOM;
+  const pitch = options.pitch !== undefined ? options.pitch : 0;
+  const bearing = options.bearing !== undefined ? options.bearing : 0;
+  const activeLayer = options.activeLayer === 'esri' ? 'esri' : 'osm';
+
   const style = {
     version: 8,
     sources: {
@@ -35,7 +41,7 @@ export function initMap(containerId = 'map') {
         id: 'osm-layer',
         type: 'raster',
         source: 'osm',
-        layout: { visibility: 'visible' },
+        layout: { visibility: activeLayer === 'esri' ? 'none' : 'visible' },
         minzoom: 0,
         maxzoom: 19
       },
@@ -43,7 +49,7 @@ export function initMap(containerId = 'map') {
         id: 'esri-layer',
         type: 'raster',
         source: 'esri',
-        layout: { visibility: 'none' },
+        layout: { visibility: activeLayer === 'esri' ? 'visible' : 'none' },
         minzoom: 0,
         maxzoom: 19
       }
@@ -53,11 +59,11 @@ export function initMap(containerId = 'map') {
   const map = new maplibregl.Map({
     container: containerId,
     style: style,
-    center: QUEBEC_CENTER,
-    zoom: DEFAULT_ZOOM,
+    center: center,
+    zoom: zoom,
     maxPitch: 85,
-    pitch: 0,
-    bearing: 0
+    pitch: pitch,
+    bearing: bearing
   });
 
   // Controls

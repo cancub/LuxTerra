@@ -265,9 +265,11 @@ export class BoxDrawer {
       });
 
       if (this.currentPolygon) {
-        this.updateHandles(this.currentPolygon, false);
+        this.renderFinalShape(this.currentPolygon, this.isClamped || false);
+        this.updateHandles(this.currentPolygon, this.isClamped || false);
       } else if (this.currentBbox) {
-        this.updateHandles(this.currentBbox, false);
+        this.renderFinalBbox(this.currentBbox, this.isClamped || false);
+        this.updateHandles(this.currentBbox, this.isClamped || false);
       }
     }
   }
@@ -1434,6 +1436,7 @@ export class BoxDrawer {
       dims = computeBboxDimensions(...targetBbox);
     }
     this.currentBbox = targetBbox;
+    this.isClamped = targetBbox !== bbox;
     this.shapeType = 'rectangle';
     const [w, s, e, n] = targetBbox;
     this.currentPolygon = [
@@ -1478,6 +1481,7 @@ export class BoxDrawer {
     this.shapeType = shapeType || (finalPoints.length === 5 ? 'rectangle' : 'polygon');
     this.currentPolygon = finalPoints;
     this.currentBbox = dims.bbox;
+    this.isClamped = isClamped;
 
     this.renderFinalShape(finalPoints, isClamped);
     this.createHandles();
@@ -1543,6 +1547,7 @@ export class BoxDrawer {
     this.currentBbox = null;
     this.currentPolygon = null;
     this.shapeType = null;
+    this.isClamped = false;
     this.points = [];
     this.clearSource();
     this.clearMidpoint();

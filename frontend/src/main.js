@@ -17,9 +17,18 @@ import { PlaybackEngine } from './components/PlaybackEngine.js';
 import { PVConfigPanel } from './components/PVConfigPanel.js';
 import { SolarDashboard } from './components/SolarDashboard.js';
 import { runSimulation } from './services/api.js';
+import {
+  loadAppState,
+  updateMapState,
+  updateLayerState,
+  updateSelectionState,
+  updateDateState
+} from './utils/stateStorage.js';
 
 const appContainer = document.getElementById('app');
 if (appContainer) {
+  // Load persisted application state (orientation, zoom, satellite/map, rectangle location)
+  const savedState = loadAppState();
   appContainer.innerHTML = `
     <div id="map"></div>
     <div class="top-bar">
@@ -62,7 +71,13 @@ if (appContainer) {
     </div>
   `;
 
-  const map = initMap('map');
+  const map = initMap('map', {
+    center: savedState.map.center,
+    zoom: savedState.map.zoom,
+    pitch: savedState.map.pitch,
+    bearing: savedState.map.bearing,
+    activeLayer: savedState.layer
+  });
   const viewsPanelMount = document.getElementById('views-panel-mount');
   const topRightControls = document.getElementById('top-right-controls');
   const dateSelectorMount = document.getElementById('date-selector-mount');
@@ -234,7 +249,38 @@ if (appContainer) {
     }
   }
 
-  const dateSelector = new DateSelector(dateSelectorMount, '2026-06-21', () => {
+  // Map camera state persistence (orientation: pitch, bearing, center; zoom)
+  let cameraSaveTimeout = null;
+  const persistCamera = () => {
+    try {
+      const center = map.getCenter();
+      const zoom = map.getZoom();
+      const pitch = map.getPitch();
+      const bearing = map.getBearing();
+      updateMapState({
+        center: [Number(center.lng.toFixed(6)), Number(center.lat.toFixed(6))],
+        zoom: Number(zoom.toFixed(2)),
+        pitch: Number(pitch.toFixed(1)),
+        bearing: Number(bearing.toFixed(1))
+      });
+    } catch (e) {
+      // Map may not be fully initialized or already destroyed
+    }
+  };
+
+  map.on('moveend', persistCamera);
+  map.on('rotateend', persistCamera);
+  map.on('pitchend', persistCamera);
+
+  map.on('move', () => {
+    if (cameraSaveTimeout) clearTimeout(cameraSaveTimeout);
+    cameraSaveTimeout = setTimeout(persistCamera, 400);
+  });
+
+  window.addEventListener('beforeunload', persistCamera);
+
+  const dateSelector = new DateSelector(dateSelectorMount, savedState.date || '2026-06-21', () => {
+    updateDateState(dateSelector.getDate());
     triggerSimulation();
   });
 
@@ -242,15 +288,26 @@ if (appContainer) {
     if (selection && selection.bbox) {
       currentBbox = selection.bbox;
       currentPolygon = selection.polygon || null;
+      updateSelectionState({
+        bbox: selection.bbox,
+        polygon: selection.polygon,
+        shapeType: selection.shapeType || (selection.isRectangle ? 'rectangle' : 'polygon')
+      });
       triggerSimulation();
     } else {
       currentBbox = null;
       currentPolygon = null;
+      updateSelectionState(null);
       shadowCanvasLayer.clear();
       currentSimulationData = null;
       solarDashboard.setSimulationData(null);
     }
   });
+
+  // Restore saved rectangle/oblong shape on initial startup if persisted
+  if (savedState.selection) {
+    boxDrawer.setSelection(savedState.selection);
+  }
 
   new SavedViewsPanel({
     map,
@@ -269,6 +326,7 @@ if (appContainer) {
 
       if (view.date) {
         dateSelector.setDate(view.date, false);
+        updateDateState(view.date);
       }
 
       if (view.polygon || view.bbox) {
@@ -284,5 +342,10 @@ if (appContainer) {
     showToast
   });
 
-  new LayerToggle(map, topRightControls);
+  new LayerToggle(map, topRightControls, {
+    initialLayer: savedState.layer,
+    onLayerChange: (layerId) => {
+      updateLayerState(layerId);
+    }
+  });
 }

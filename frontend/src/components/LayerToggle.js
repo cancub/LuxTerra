@@ -4,10 +4,11 @@
  */
 
 export class LayerToggle {
-  constructor(map, container) {
+  constructor(map, container, options = {}) {
     this.map = map;
     this.container = container;
-    this.activeLayer = 'osm'; // 'osm' or 'esri'
+    this.activeLayer = options.initialLayer === 'esri' ? 'esri' : 'osm';
+    this.onLayerChange = options.onLayerChange || (() => {});
     this.render();
   }
 
@@ -60,12 +61,25 @@ export class LayerToggle {
     this.activeLayer = layerId;
     this.updateButtonUI();
 
-    if (layerId === 'osm') {
-      this.map.setLayoutProperty('osm-layer', 'visibility', 'visible');
-      this.map.setLayoutProperty('esri-layer', 'visibility', 'none');
-    } else {
-      this.map.setLayoutProperty('esri-layer', 'visibility', 'visible');
-      this.map.setLayoutProperty('osm-layer', 'visibility', 'none');
-    }
+    const apply = () => {
+      if (!this.map.isStyleLoaded()) {
+        this.map.once('load', apply);
+        return;
+      }
+      try {
+        if (layerId === 'osm') {
+          this.map.setLayoutProperty('osm-layer', 'visibility', 'visible');
+          this.map.setLayoutProperty('esri-layer', 'visibility', 'none');
+        } else {
+          this.map.setLayoutProperty('esri-layer', 'visibility', 'visible');
+          this.map.setLayoutProperty('osm-layer', 'visibility', 'none');
+        }
+      } catch (err) {
+        console.warn('Error applying layer visibility:', err);
+      }
+    };
+    apply();
+
+    this.onLayerChange(this.activeLayer);
   }
 }
