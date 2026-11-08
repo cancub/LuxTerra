@@ -113,6 +113,7 @@ class TimestepMetric(BaseModel):
     power_kw: float
     unshaded_power_kw: float = Field(default=0.0, description="Clear-sky unshaded power in kW without terrain or canopy shadows")
     canopy_loss_kw: float = Field(default=0.0, description="Power lost specifically to vegetative tree canopy shade in kW")
+    geological_loss_kw: float = Field(default=0.0, description="Power lost specifically to geological/terrain shadows in kW")
     percent_shaded: float
     canopy_shaded_pct: float = Field(default=0.0, description="Percentage of patch shaded by tree canopy")
     is_daylight: bool

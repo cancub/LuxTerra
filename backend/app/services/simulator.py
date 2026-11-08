@@ -230,9 +230,25 @@ class SimulationOrchestrator:
                     3
                 )
 
-                canopy_shaded_cells = int(round(total_active_cells * (canopy_shaded_pct / 100.0)))
+                if canopy_m is not None:
+                    if polygon_mask is not None:
+                        t_unshaded = (mask > 0) & polygon_mask
+                        c_shaded = t_unshaded & (~(canopy_m > 0))
+                    else:
+                        t_unshaded = mask > 0
+                        c_shaded = t_unshaded & (~(canopy_m > 0))
+                    canopy_shaded_cells = int(np.count_nonzero(c_shaded))
+                else:
+                    canopy_shaded_cells = 0
+
                 canopy_loss_kw = round(
                     canopy_shaded_cells * (1.0 - canopy_transmittance) * irradiance.poa_direct_w_m2 * conv_factor,
+                    3
+                )
+
+                # Geological shade loss is the exact potential loss attributable to terrain shadow
+                geological_loss_kw = round(
+                    max(0.0, unshaded_power_kw - canopy_loss_kw - power_kw),
                     3
                 )
 
@@ -248,6 +264,7 @@ class SimulationOrchestrator:
                         power_kw=power_kw,
                         unshaded_power_kw=unshaded_power_kw,
                         canopy_loss_kw=canopy_loss_kw,
+                        geological_loss_kw=geological_loss_kw,
                         percent_shaded=percent_shaded,
                         canopy_shaded_pct=canopy_shaded_pct,
                         is_daylight=True,
@@ -265,6 +282,7 @@ class SimulationOrchestrator:
                         power_kw=0.0,
                         unshaded_power_kw=0.0,
                         canopy_loss_kw=0.0,
+                        geological_loss_kw=0.0,
                         percent_shaded=100.0,
                         canopy_shaded_pct=0.0,
                         is_daylight=False,

@@ -126,6 +126,13 @@ async def test_simulate_montreal_full_day():
         assert len(night_steps) > 0
         assert all(s["power_kw"] == 0.0 for s in night_steps)
         assert all(s["percent_shaded"] == 100.0 for s in night_steps)
+        assert all(s["geological_loss_kw"] == 0.0 for s in night_steps)
+        
+        # Verify stacked subtraction identity: unshaded - geological - canopy ≈ power_kw
+        for s in daylight_steps:
+            assert "geological_loss_kw" in s
+            reconstructed_power = s["unshaded_power_kw"] - s["geological_loss_kw"] - s["canopy_loss_kw"]
+            assert pytest.approx(reconstructed_power, abs=0.2) == s["power_kw"]
 
         # 4. Mask decoding checks
         masks = data["masks"]
