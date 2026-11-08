@@ -2,8 +2,10 @@
 FastAPI application entrypoint for LuxTerra.
 """
 
+from pathlib import Path
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .config import AppConfig, get_config
 from .services.occlusion.factory import is_gpu_available
@@ -53,3 +55,9 @@ def health_check(app_cfg: AppConfig = Depends(get_config)):
         "max_patch_area_m2": app_cfg.max_patch_area_m2,
         "default_buffer_meters": app_cfg.default_buffer_meters
     }
+
+
+# Serve production frontend static assets if built
+FRONTEND_DIST_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if FRONTEND_DIST_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST_DIR), html=True), name="frontend")

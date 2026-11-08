@@ -48,3 +48,11 @@ Open `http://127.0.0.1:5173` in your browser.
 cd frontend
 npm test
 ```
+
+## Container & Kubernetes Deployment (`webapps` Namespace)
+Build the multi-stage container image, push it to the local k3s registry (`127.0.0.1:30500`), and deploy to the `webapps` namespace with NVIDIA GPU runtime access, Let's Encrypt TLS (`cert-manager`), and Google OAuth forwardAuth (`oauth2-proxy`):
+```bash
+./scripts/deploy.sh
+```
+- **External URL:** `https://luxterra.alfok.ca`
+- **Local LAN URL:** `http://luxterra.local`

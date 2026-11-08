@@ -27,6 +27,17 @@ class LocalGeoTIFFProvider(ElevationProvider):
     def __init__(self, cache_manager: Optional[TileCacheManager] = None):
         self.cache_manager = cache_manager or TileCacheManager()
 
+    def _resolve_tile_path(self, tile: Dict[str, Any]) -> Path:
+        """
+        Resolves a tile's path relative to cache_dir first for container portability,
+        falling back to the absolute path stored in the manifest.
+        """
+        if "filename" in tile:
+            candidate = self.cache_manager.cache_dir / tile["filename"]
+            if candidate.exists():
+                return candidate
+        return Path(tile["path"])
+
     def find_covering_tile(self, min_lon: float, min_lat: float, max_lon: float, max_lat: float) -> Optional[Path]:
         """
         Finds the best local GeoTIFF tile that intersects the requested bounding box.
@@ -37,7 +48,7 @@ class LocalGeoTIFFProvider(ElevationProvider):
         for tile in manifest.get("tiles", []):
             tile_wgs84 = box(*tile["bounds_wgs84"])
             if tile_wgs84.intersects(patch_box):
-                tile_path = Path(tile["path"])
+                tile_path = self._resolve_tile_path(tile)
                 if tile_path.exists():
                     return tile_path
 
@@ -46,7 +57,7 @@ class LocalGeoTIFFProvider(ElevationProvider):
         for tile in manifest.get("tiles", []):
             tile_wgs84 = box(*tile["bounds_wgs84"])
             if tile_wgs84.intersects(patch_box):
-                tile_path = Path(tile["path"])
+                tile_path = self._resolve_tile_path(tile)
                 if tile_path.exists():
                     return tile_path
 

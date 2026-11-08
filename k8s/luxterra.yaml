@@ -1,0 +1,150 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: luxterra
+  namespace: webapps
+  labels:
+    app: luxterra
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: luxterra
+  template:
+    metadata:
+      labels:
+        app: luxterra
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: delores
+      runtimeClassName: nvidia
+      containers:
+        - name: luxterra
+          image: 127.0.0.1:30500/luxterra:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "all"
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "compute,utility"
+          volumeMounts:
+            - name: dtm-cache
+              mountPath: /app/data/dtm
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: 4000m
+              memory: 4Gi
+      volumes:
+        - name: dtm-cache
+          hostPath:
+            path: /home/alf/Code/dsh-sandbox/workspace/LuxTerra/data/dtm
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: luxterra
+  namespace: webapps
+  labels:
+    app: luxterra
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app: luxterra
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: luxterra-ingress
+  namespace: webapps
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.middlewares: webapps-oauth-errors@kubernetescrd,webapps-oauth-auth@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - luxterra.alfok.ca
+      secretName: luxterra-tls
+  rules:
+    - host: luxterra.alfok.ca
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: luxterra
+                port:
+                  number: 80
+    - host: luxterra.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: luxterra
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: luxterra-oauth2-bypass-ingress
+  namespace: webapps
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - luxterra.alfok.ca
+      secretName: luxterra-tls
+  rules:
+    - host: luxterra.alfok.ca
+      http:
+        paths:
+          - path: /oauth2
+            pathType: Prefix
+            backend:
+              service:
+                name: oauth2-proxy
+                port:
+                  number: 4180
+    - host: luxterra.local
+      http:
+        paths:
+          - path: /oauth2
+            pathType: Prefix
+            backend:
+              service:
+                name: oauth2-proxy
+                port:
+                  number: 4180
