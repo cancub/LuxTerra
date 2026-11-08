@@ -230,3 +230,57 @@ def test_preset_tiles_pre_cached_dtm_and_dsm():
         assert np.all(res["dsm"] >= res["dtm"] - 1e-4)
         assert np.max(res["chm"]) > 0.0, f"Preset {preset_key} should have elevated structures/trees"
 
+
+def test_get_tile_pair_prioritizes_dsm_over_dtm_only(tmp_path):
+    """
+    Ensures that when multiple candidate tiles intersect a requested patch,
+    get_tile_pair prioritizes candidates with paired DSM canopy data over DTM-only tiles.
+    """
+    cache_dtm = tmp_path / "dtm"
+    cache_dsm = tmp_path / "dsm"
+    cache_dtm.mkdir()
+    cache_dsm.mkdir()
+
+    # Create dummy DTM 1 (no DSM)
+    t1_dtm = cache_dtm / "dtm_alpha.tif"
+    t1_dtm.write_bytes(b"dummy")
+
+    # Create dummy DTM 2 (has paired DSM)
+    t2_dtm = cache_dtm / "dtm_beta.tif"
+    t2_dtm.write_bytes(b"dummy")
+    t2_dsm = cache_dsm / "dsm_beta.tif"
+    t2_dsm.write_bytes(b"dummy")
+
+    cache = TileCacheManager(cache_dir=cache_dtm, dsm_dir=cache_dsm)
+    manifest = {
+        "tiles": [
+            {
+                "filename": "dtm_alpha.tif",
+                "path": str(t1_dtm),
+                "bounds_wgs84": [-73.60, 45.50, -73.55, 45.55],
+                "has_dsm": False,
+                "dsm_filename": None,
+                "dsm_path": None
+            },
+            {
+                "filename": "dtm_beta.tif",
+                "path": str(t2_dtm),
+                "bounds_wgs84": [-73.60, 45.50, -73.55, 45.55],
+                "has_dsm": True,
+                "dsm_filename": "dsm_beta.tif",
+                "dsm_path": str(t2_dsm)
+            }
+        ]
+    }
+    import json
+    with open(cache.manifest_path, "w") as f:
+        json.dump(manifest, f)
+
+    # get_tile_pair should return dtm_beta and dsm_beta even though dtm_alpha is listed first
+    dtm_res, dsm_res = cache.get_tile_pair(-73.58, 45.52, -73.57, 45.53)
+    assert dtm_res is not None
+    assert dtm_res.name == "dtm_beta.tif"
+    assert dsm_res is not None
+    assert dsm_res.name == "dsm_beta.tif"
+
+

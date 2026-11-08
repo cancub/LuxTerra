@@ -1,8 +1,92 @@
 {
   "tiles": [
     {
+      "filename": "dtm_auto_45.510_-73.593.tif",
+      "path": "/app/data/dtm/dtm_auto_45.510_-73.593.tif",
+      "crs": "EPSG:3979",
+      "width": 1914,
+      "height": 1917,
+      "resolution": [
+        1.0,
+        1.0
+      ],
+      "bounds_native": [
+        1665103.6939601544,
+        -108679.56506667765,
+        1667017.6939601544,
+        -106762.56506667765
+      ],
+      "bounds_wgs84": [
+        -73.60797002515794,
+        45.4996550133339,
+        -73.57721057751857,
+        45.52129824497654
+      ],
+      "nodata": -32767.0,
+      "filesize_bytes": 14973783,
+      "has_dsm": true,
+      "dsm_filename": "dsm_auto_45.510_-73.593.tif",
+      "dsm_path": "/app/data/dsm/dsm_auto_45.510_-73.593.tif"
+    },
+    {
+      "filename": "dtm_auto_45.514_-73.583.tif",
+      "path": "/app/data/dtm/dtm_auto_45.514_-73.583.tif",
+      "crs": "EPSG:3979",
+      "width": 1976,
+      "height": 1998,
+      "resolution": [
+        1.0,
+        1.0
+      ],
+      "bounds_native": [
+        1665702.4858273512,
+        -108115.40401996227,
+        1667678.4858273512,
+        -106117.40401996227
+      ],
+      "bounds_wgs84": [
+        -73.59849657784046,
+        45.50243951043131,
+        -73.56665730071659,
+        45.52494399936896
+      ],
+      "nodata": -32767.0,
+      "filesize_bytes": 16106543,
+      "has_dsm": true,
+      "dsm_filename": "dsm_auto_45.514_-73.583.tif",
+      "dsm_path": "/app/data/dsm/dsm_auto_45.514_-73.583.tif"
+    },
+    {
+      "filename": "dtm_auto_45.521_-73.594.tif",
+      "path": "/app/data/dtm/dtm_auto_45.521_-73.594.tif",
+      "crs": "EPSG:3979",
+      "width": 1925,
+      "height": 1904,
+      "resolution": [
+        1.0,
+        1.0
+      ],
+      "bounds_native": [
+        1664615.652744589,
+        -107532.62319789271,
+        1666540.652744589,
+        -105628.62319789271
+      ],
+      "bounds_wgs84": [
+        -73.60900640576695,
+        45.51064810823852,
+        -73.57816285341153,
+        45.53221566049904
+      ],
+      "nodata": -32767.0,
+      "filesize_bytes": 14442302,
+      "has_dsm": true,
+      "dsm_filename": "dsm_auto_45.521_-73.594.tif",
+      "dsm_path": "/app/data/dsm/dsm_auto_45.521_-73.594.tif"
+    },
+    {
       "filename": "dtm_auto_45.557_-73.720.tif",
-      "path": "/home/alf/Code/dsh-sandbox/workspace/LuxTerra/data/dtm/dtm_auto_45.557_-73.720.tif",
+      "path": "/app/data/dtm/dtm_auto_45.557_-73.720.tif",
       "crs": "EPSG:3979",
       "width": 2145,
       "height": 2138,
@@ -26,11 +110,11 @@
       "filesize_bytes": 18149082,
       "has_dsm": true,
       "dsm_filename": "dsm_auto_45.557_-73.720.tif",
-      "dsm_path": "/home/alf/Code/dsh-sandbox/workspace/LuxTerra/data/dsm/dsm_auto_45.557_-73.720.tif"
+      "dsm_path": "/app/data/dsm/dsm_auto_45.557_-73.720.tif"
     },
     {
       "filename": "dtm_auto_46.111_-74.193.tif",
-      "path": "/home/alf/Code/dsh-sandbox/workspace/LuxTerra/data/dtm/dtm_auto_46.111_-74.193.tif",
+      "path": "/app/data/dtm/dtm_auto_46.111_-74.193.tif",
       "crs": "EPSG:3979",
       "width": 1912,
       "height": 1868,
@@ -52,13 +136,13 @@
       ],
       "nodata": -32767.0,
       "filesize_bytes": 13292265,
-      "has_dsm": false,
-      "dsm_filename": null,
-      "dsm_path": null
+      "has_dsm": true,
+      "dsm_filename": "dsm_auto_46.111_-74.193.tif",
+      "dsm_path": "/app/data/dsm/dsm_auto_46.111_-74.193.tif"
     },
     {
       "filename": "dtm_montreal_edouard_montpetit.tif",
-      "path": "/home/alf/Code/dsh-sandbox/workspace/LuxTerra/data/dtm/dtm_montreal_edouard_montpetit.tif",
+      "path": "/app/data/dtm/dtm_montreal_edouard_montpetit.tif",
       "crs": "EPSG:32618",
       "width": 2614,
       "height": 2490,
@@ -82,11 +166,11 @@
       "filesize_bytes": 22520998,
       "has_dsm": true,
       "dsm_filename": "dsm_montreal_edouard_montpetit.tif",
-      "dsm_path": "/home/alf/Code/dsh-sandbox/workspace/LuxTerra/data/dsm/dsm_montreal_edouard_montpetit.tif"
+      "dsm_path": "/app/data/dsm/dsm_montreal_edouard_montpetit.tif"
     },
     {
       "filename": "dtm_sainte_lucie_laurentides.tif",
-      "path": "/home/alf/Code/dsh-sandbox/workspace/LuxTerra/data/dtm/dtm_sainte_lucie_laurentides.tif",
+      "path": "/app/data/dtm/dtm_sainte_lucie_laurentides.tif",
       "crs": "EPSG:3979",
       "width": 3386,
       "height": 3411,
@@ -110,7 +194,7 @@
       "filesize_bytes": 45145442,
       "has_dsm": true,
       "dsm_filename": "dsm_sainte_lucie_laurentides.tif",
-      "dsm_path": "/home/alf/Code/dsh-sandbox/workspace/LuxTerra/data/dsm/dsm_sainte_lucie_laurentides.tif"
+      "dsm_path": "/app/data/dsm/dsm_sainte_lucie_laurentides.tif"
     }
   ]
 }

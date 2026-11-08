@@ -167,10 +167,13 @@ class TileCacheManager:
     ) -> Tuple[Optional[Path], Optional[Path]]:
         """
         Locates the cached DTM and DSM tile pair intersecting the bounding box.
-        Returns (dtm_path, dsm_path). If DSM is missing, returns (dtm_path, None).
+        Prioritizes candidate tile pairs that have a valid surface/canopy DSM.
+        Returns (dtm_path, dsm_path). If DSM is missing across all candidates, returns (dtm_path, None).
         """
         manifest = self.load_manifest()
         patch_box = box(min_lon, min_lat, max_lon, max_lat)
+
+        matching_candidates: List[Tuple[Path, Optional[Path]]] = []
 
         for tile in manifest.get("tiles", []):
             tile_wgs84 = box(*tile["bounds_wgs84"])
@@ -196,7 +199,14 @@ class TileCacheManager:
                         if dsm_p.exists():
                             dsm_candidate = dsm_p
 
-                    return (dtm_candidate, dsm_candidate)
+                    # If this candidate has a verified DSM on disk, return it immediately as the best match!
+                    if dsm_candidate is not None and dsm_candidate.exists():
+                        return (dtm_candidate, dsm_candidate)
+
+                    matching_candidates.append((dtm_candidate, dsm_candidate))
+
+        if matching_candidates:
+            return matching_candidates[0]
 
         return (None, None)
 
@@ -231,9 +241,12 @@ class TileCacheManager:
                             has_dsm = True
                             break
 
+                    dsm_rel_path = f"/app/data/dsm/{dsm_filename}" if dsm_filename else None
+                    dtm_rel_path = f"/app/data/dtm/{tif_file.name}"
+
                     tile_info = {
                         "filename": tif_file.name,
-                        "path": str(tif_file),
+                        "path": dtm_rel_path,
                         "crs": src_crs_str,
                         "width": src.width,
                         "height": src.height,
@@ -244,7 +257,7 @@ class TileCacheManager:
                         "filesize_bytes": tif_file.stat().st_size,
                         "has_dsm": has_dsm,
                         "dsm_filename": dsm_filename,
-                        "dsm_path": dsm_path
+                        "dsm_path": dsm_rel_path
                     }
                     manifest["tiles"].append(tile_info)
             except Exception as e:

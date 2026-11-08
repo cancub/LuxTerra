@@ -105,14 +105,21 @@ class LocalGeoTIFFProvider(ElevationProvider):
 
         patch_box = box(min_lon, min_lat, max_lon, max_lat)
         manifest = self.cache_manager.load_manifest()
+        matching_tiles: List[Tuple[Path, Optional[Path]]] = []
+
         for tile in manifest.get("tiles", []):
             tile_wgs84 = box(*tile["bounds_wgs84"])
             if tile_wgs84.intersects(patch_box):
                 tile_path = self._resolve_tile_path(tile)
                 if tile_path.exists():
                     candidate_dsm = self.cache_manager.dsm_dir / tile_path.name.replace("dtm", "dsm")
-                    dsm_p = candidate_dsm if candidate_dsm.exists() else None
-                    return (tile_path, dsm_p)
+                    dsm_p = candidate_dsm if (candidate_dsm.exists() and candidate_dsm.stat().st_size > 0) else None
+                    if dsm_p is not None:
+                        return (tile_path, dsm_p)
+                    matching_tiles.append((tile_path, dsm_p))
+
+        if matching_tiles:
+            return matching_tiles[0]
 
         return (None, None)
 
@@ -230,9 +237,16 @@ class LocalGeoTIFFProvider(ElevationProvider):
         target_crs = geo_info["target_crs"]
 
         dtm_path, dsm_path = self.find_covering_tile_pair(min_lon, min_lat, max_lon, max_lat)
-        if not dtm_path:
-            logger.info(f"No local tile covers [{min_lon:.4f}, {min_lat:.4f}, {max_lon:.4f}, {max_lat:.4f}]. Attempting on-demand acquisition...")
-            dtm_path, dsm_path = self.acquire_covering_tile_pair(min_lon, min_lat, max_lon, max_lat, buffer_meters=buffer_meters)
+        if not dtm_path or not dsm_path:
+            logger.info(
+                f"Local elevation coverage incomplete (dtm={dtm_path is not None}, dsm={dsm_path is not None}) "
+                f"for [{min_lon:.4f}, {min_lat:.4f}, {max_lon:.4f}, {max_lat:.4f}]. Attempting on-demand acquisition..."
+            )
+            acq_dtm, acq_dsm = self.acquire_covering_tile_pair(min_lon, min_lat, max_lon, max_lat, buffer_meters=buffer_meters)
+            if not dtm_path and acq_dtm:
+                dtm_path = acq_dtm
+            if not dsm_path and acq_dsm:
+                dsm_path = acq_dsm
 
         if not dtm_path:
             raise FileNotFoundError(
