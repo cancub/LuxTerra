@@ -123,37 +123,39 @@ class LocalGeoTIFFProvider(ElevationProvider):
         dtm_path, _ = self.find_covering_tile_pair(min_lon, min_lat, max_lon, max_lat)
         return dtm_path
 
-    def acquire_covering_tile(
+    def acquire_covering_tile_pair(
         self,
         min_lon: float,
         min_lat: float,
         max_lon: float,
         max_lat: float,
         buffer_meters: float = 500.0
-    ) -> Optional[Path]:
+    ) -> Tuple[Optional[Path], Optional[Path]]:
         """
-        Dynamically discovers and acquires a 1m LiDAR DTM raster from official NRCan STAC & S3 COG catalog
+        Dynamically discovers and acquires a 1m LiDAR DTM and paired DSM raster from official NRCan STAC & S3 COG catalog
         covering the requested bounding box and perimeter buffer.
         """
         try:
             from .nrcan_client import NRCanClient
             client = NRCanClient(timeout=20)
 
-            logger.info(f"Querying NRCan STAC for LiDAR DTM covering [{min_lon:.4f}, {min_lat:.4f}, {max_lon:.4f}, {max_lat:.4f}]...")
+            logger.info(f"Querying NRCan STAC for LiDAR DTM/DSM covering [{min_lon:.4f}, {min_lat:.4f}, {max_lon:.4f}, {max_lat:.4f}]...")
             tiles = client.query_tiles_by_bbox(min_lon, min_lat, max_lon, max_lat, limit=5)
             if not tiles:
                 logger.warning(f"No NRCan LiDAR tiles found for bbox [{min_lon}, {min_lat}, {max_lon}, {max_lat}]")
-                return None
+                return (None, None)
 
             dtm_url = None
+            dsm_url = None
             for t in tiles:
                 if t.get("dtm_url"):
                     dtm_url = t["dtm_url"]
+                    dsm_url = t.get("dsm_url")
                     break
 
             if not dtm_url:
                 logger.warning("No DTM asset URL found in matching NRCan STAC records")
-                return None
+                return (None, None)
 
             # Calculate buffered bounds to ensure full raymarching search radius is contained (+200m margin)
             geo_info = buffer_bounding_box_meters(
@@ -163,18 +165,48 @@ class LocalGeoTIFFProvider(ElevationProvider):
 
             center_lon = (min_lon + max_lon) / 2.0
             center_lat = (min_lat + max_lat) / 2.0
-            filename = f"dtm_auto_{center_lat:.3f}_{center_lon:.3f}.tif"
+            dtm_filename = f"dtm_auto_{center_lat:.3f}_{center_lon:.3f}.tif"
+            dsm_filename = f"dsm_auto_{center_lat:.3f}_{center_lon:.3f}.tif"
 
             logger.info(f"Extracting on-demand LiDAR DTM window for [{center_lat:.4f}, {center_lon:.4f}] from {dtm_url}...")
-            cached_path = self.cache_manager.extract_cog_window(
+            cached_dtm = self.cache_manager.extract_cog_window(
                 cog_url=dtm_url,
                 wgs84_bbox=list(wgs84_buffered),
-                filename=filename
+                filename=dtm_filename,
+                layer="dtm"
             )
-            return cached_path
+
+            cached_dsm = None
+            if dsm_url:
+                try:
+                    logger.info(f"Extracting on-demand LiDAR DSM window for [{center_lat:.4f}, {center_lon:.4f}] from {dsm_url}...")
+                    cached_dsm = self.cache_manager.extract_cog_window(
+                        cog_url=dsm_url,
+                        wgs84_bbox=list(wgs84_buffered),
+                        filename=dsm_filename,
+                        layer="dsm"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to extract on-demand DSM window ({e}). Proceeding with bare DTM.")
+
+            return (cached_dtm, cached_dsm)
         except Exception as e:
             logger.error(f"On-demand elevation acquisition failed: {e}", exc_info=True)
-            return None
+            return (None, None)
+
+    def acquire_covering_tile(
+        self,
+        min_lon: float,
+        min_lat: float,
+        max_lon: float,
+        max_lat: float,
+        buffer_meters: float = 500.0
+    ) -> Optional[Path]:
+        """
+        Dynamically discovers and acquires a 1m LiDAR DTM raster from official NRCan STAC & S3 COG catalog.
+        """
+        dtm_path, _ = self.acquire_covering_tile_pair(min_lon, min_lat, max_lon, max_lat, buffer_meters=buffer_meters)
+        return dtm_path
 
     def get_elevation_window(
         self,
@@ -200,7 +232,7 @@ class LocalGeoTIFFProvider(ElevationProvider):
         dtm_path, dsm_path = self.find_covering_tile_pair(min_lon, min_lat, max_lon, max_lat)
         if not dtm_path:
             logger.info(f"No local tile covers [{min_lon:.4f}, {min_lat:.4f}, {max_lon:.4f}, {max_lat:.4f}]. Attempting on-demand acquisition...")
-            dtm_path = self.acquire_covering_tile(min_lon, min_lat, max_lon, max_lat, buffer_meters=buffer_meters)
+            dtm_path, dsm_path = self.acquire_covering_tile_pair(min_lon, min_lat, max_lon, max_lat, buffer_meters=buffer_meters)
 
         if not dtm_path:
             raise FileNotFoundError(
