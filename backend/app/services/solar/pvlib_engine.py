@@ -11,6 +11,7 @@ import pvlib
 
 from ...interfaces.solar_engine import SolarEngine
 from ...schemas.domain import SolarAngles, IrradianceComponents
+from ...constants import DEFAULT_TIMEZONE
 from .geometry import compute_solar_angles
 
 
@@ -39,8 +40,11 @@ class PvlibSolarEngine(SolarEngine):
         """
         Vectorized computation of solar angles across a DatetimeIndex in a single C/Fortran pass.
         """
+        if len(timestamps) == 0:
+            return []
+
         if timestamps.tz is None:
-            times = timestamps.tz_localize("America/Toronto")
+            times = timestamps.tz_localize(DEFAULT_TIMEZONE)
         else:
             times = timestamps
 
@@ -62,18 +66,16 @@ class PvlibSolarEngine(SolarEngine):
         )
         aoi_vals = np.where(day_mask, np.asarray(aoi_series, dtype=np.float64), 90.0)
 
-        results = []
-        for az, el, zen, tilt, inc in zip(azimuths, elevations, zeniths, optimal_tilts, aoi_vals):
-            results.append(
-                SolarAngles(
-                    azimuth_deg=float(az),
-                    elevation_deg=float(el),
-                    zenith_deg=float(zen),
-                    optimal_tilt_deg=float(tilt),
-                    incident_angle_deg=float(inc)
-                )
+        return [
+            SolarAngles(
+                azimuth_deg=float(az),
+                elevation_deg=float(el),
+                zenith_deg=float(zen),
+                optimal_tilt_deg=float(tilt),
+                incident_angle_deg=float(inc)
             )
-        return results
+            for az, el, zen, tilt, inc in zip(azimuths, elevations, zeniths, optimal_tilts, aoi_vals)
+        ]
 
     def calculate_irradiance(
         self,
@@ -85,6 +87,7 @@ class PvlibSolarEngine(SolarEngine):
     ) -> IrradianceComponents:
         """
         Calculates clear-sky DNI, DHI, and unshaded Plane-of-Array (POA) irradiance for a single timestamp.
+        Delegates to the vectorized series engine.
         """
         if angles.elevation_deg <= 0.0:
             return IrradianceComponents(
@@ -95,34 +98,14 @@ class PvlibSolarEngine(SolarEngine):
                 poa_global_w_m2=0.0
             )
 
-        if timestamp.tzinfo is None:
-            tz_timestamp = pd.Timestamp(timestamp, tz="America/Toronto")
-        else:
-            tz_timestamp = pd.Timestamp(timestamp)
-
-        times = pd.DatetimeIndex([tz_timestamp])
-        location = pvlib.location.Location(latitude, longitude, altitude=altitude_m, tz="America/Toronto")
-        
-        cs = location.get_clearsky(times, model="ineichen")
-        dni = float(cs["dni"].iloc[0])
-        dhi = float(cs["dhi"].iloc[0])
-
-        cos_inc = max(0.0, np.cos(np.radians(angles.incident_angle_deg)))
-        poa_direct = float(dni * cos_inc)
-
-        tilt_rad = np.radians(angles.optimal_tilt_deg)
-        sky_view_factor = float((1.0 + np.cos(tilt_rad)) / 2.0)
-        poa_diffuse = float(dhi * sky_view_factor)
-
-        poa_global = float(poa_direct + poa_diffuse)
-
-        return IrradianceComponents(
-            dni_w_m2=dni,
-            dhi_w_m2=dhi,
-            poa_direct_w_m2=poa_direct,
-            poa_diffuse_w_m2=poa_diffuse,
-            poa_global_w_m2=poa_global
-        )
+        tz_timestamp = pd.Timestamp(timestamp, tz=DEFAULT_TIMEZONE) if timestamp.tzinfo is None else pd.Timestamp(timestamp)
+        return self.calculate_irradiance_series(
+            pd.DatetimeIndex([tz_timestamp]),
+            latitude,
+            longitude,
+            [angles],
+            altitude_m=altitude_m
+        )[0]
 
     def calculate_irradiance_series(
         self,
@@ -133,52 +116,47 @@ class PvlibSolarEngine(SolarEngine):
         altitude_m: float = 0.0
     ) -> List[IrradianceComponents]:
         """
-        Vectorized computation of clear-sky Ineichen irradiance across an entire DatetimeIndex in one pass.
+        Vectorized computation of clear-sky Ineichen irradiance and POA trigonometry across a DatetimeIndex.
         """
         if len(timestamps) == 0:
             return []
 
         if timestamps.tz is None:
-            times = timestamps.tz_localize("America/Toronto")
+            times = timestamps.tz_localize(DEFAULT_TIMEZONE)
         else:
             times = timestamps
 
-        location = pvlib.location.Location(latitude, longitude, altitude=altitude_m, tz="America/Toronto")
+        location = pvlib.location.Location(latitude, longitude, altitude=altitude_m, tz=DEFAULT_TIMEZONE)
         cs = location.get_clearsky(times, model="ineichen")
 
         dni_arr = cs["dni"].to_numpy(dtype=np.float64)
         dhi_arr = cs["dhi"].to_numpy(dtype=np.float64)
 
-        results = []
-        for dni, dhi, angles in zip(dni_arr, dhi_arr, angles_list):
-            if angles.elevation_deg <= 0.0:
-                results.append(
-                    IrradianceComponents(
-                        dni_w_m2=0.0,
-                        dhi_w_m2=0.0,
-                        poa_direct_w_m2=0.0,
-                        poa_diffuse_w_m2=0.0,
-                        poa_global_w_m2=0.0
-                    )
-                )
-                continue
+        elevs = np.array([a.elevation_deg for a in angles_list], dtype=np.float64)
+        inc_rads = np.radians([a.incident_angle_deg for a in angles_list])
+        tilt_rads = np.radians([a.optimal_tilt_deg for a in angles_list])
 
-            cos_inc = max(0.0, np.cos(np.radians(angles.incident_angle_deg)))
-            poa_direct = float(dni * cos_inc)
+        day_mask = elevs > 0.0
+        cos_inc = np.maximum(0.0, np.cos(inc_rads))
+        poa_direct_arr = np.where(day_mask, dni_arr * cos_inc, 0.0)
 
-            tilt_rad = np.radians(angles.optimal_tilt_deg)
-            sky_view_factor = float((1.0 + np.cos(tilt_rad)) / 2.0)
-            poa_diffuse = float(dhi * sky_view_factor)
-            poa_global = float(poa_direct + poa_diffuse)
+        # Unobstructed Sky View Factor (SVF = 1.0) on tilted panel: (1 + cos(tilt)) / 2
+        svf_arr = (1.0 + np.cos(tilt_rads)) / 2.0
+        poa_diffuse_arr = np.where(day_mask, dhi_arr * svf_arr, 0.0)
+        poa_global_arr = poa_direct_arr + poa_diffuse_arr
 
-            results.append(
-                IrradianceComponents(
-                    dni_w_m2=float(dni),
-                    dhi_w_m2=float(dhi),
-                    poa_direct_w_m2=poa_direct,
-                    poa_diffuse_w_m2=poa_diffuse,
-                    poa_global_w_m2=poa_global
-                )
+        dni_clean = np.where(day_mask, dni_arr, 0.0)
+        dhi_clean = np.where(day_mask, dhi_arr, 0.0)
+
+        return [
+            IrradianceComponents(
+                dni_w_m2=float(dni),
+                dhi_w_m2=float(dhi),
+                poa_direct_w_m2=float(p_dir),
+                poa_diffuse_w_m2=float(p_dif),
+                poa_global_w_m2=float(p_glob)
             )
-
-        return results
+            for dni, dhi, p_dir, p_dif, p_glob in zip(
+                dni_clean, dhi_clean, poa_direct_arr, poa_diffuse_arr, poa_global_arr
+            )
+        ]

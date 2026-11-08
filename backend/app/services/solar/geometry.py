@@ -8,6 +8,7 @@ import pandas as pd
 import pvlib
 
 from ...schemas.domain import SolarAngles
+from ...constants import DEFAULT_TIMEZONE
 
 
 def compute_solar_angles(
@@ -22,7 +23,7 @@ def compute_solar_angles(
     # Ensure pandas DatetimeIndex with timezone awareness
     if timestamp.tzinfo is None:
         # Default to Quebec / Eastern timezone if none provided
-        tz_timestamp = pd.Timestamp(timestamp, tz="America/Toronto")
+        tz_timestamp = pd.Timestamp(timestamp, tz=DEFAULT_TIMEZONE)
     else:
         tz_timestamp = pd.Timestamp(timestamp)
 
