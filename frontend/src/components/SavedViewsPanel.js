@@ -143,16 +143,11 @@ export class SavedViewsPanel {
       <div class="panel-body">
         <!-- Section 1: City Locator -->
         <div class="panel-section">
-          <div class="panel-section-title">City / Address Locator</div>
           <div class="geocoder-slot"></div>
         </div>
 
         <!-- Section 2: Shape Selection Type -->
         <div class="panel-section">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <div class="panel-section-title" style="margin-bottom: 0;">Shape Selection Type</div>
-            <span class="shape-status-pill">No shape active</span>
-          </div>
           <div class="shape-type-buttons">
             <button class="btn btn-sm btn-shape-type btn-polygon" title="Draw multi-point oblong area. Hold Shift or click #1 to close, Enter to finish.">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -179,9 +174,8 @@ export class SavedViewsPanel {
 
         <!-- Section 3: Save Current View & Shape -->
         <div class="panel-section">
-          <div class="panel-section-title">Save Current View + Shape</div>
           <div class="save-view-row">
-            <input type="text" class="save-view-input" placeholder="Name combo (e.g. Laval Campus)..." />
+            <input type="text" class="save-view-input" placeholder="New shape name" />
             <button class="btn btn-sm btn-accent save-view-btn" title="Save current camera position & shape combo">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
@@ -214,7 +208,6 @@ export class SavedViewsPanel {
     this.btnPolygon = this.element.querySelector('.btn-polygon');
     this.btnRectangle = this.element.querySelector('.btn-rectangle');
     this.btnClear = this.element.querySelector('.btn-shape-clear');
-    this.shapeStatusPill = this.element.querySelector('.shape-status-pill');
 
     this.saveInput = this.element.querySelector('.save-view-input');
     this.saveBtn = this.element.querySelector('.save-view-btn');
@@ -316,21 +309,11 @@ export class SavedViewsPanel {
       this.btnRectangle.classList.remove('active');
     }
 
-    // 2. Clear button & status pill
+    // 2. Clear button
     if (state.hasShape && state.dimensions) {
-      const areaStr = Math.round(state.dimensions.areaM2).toLocaleString('en-US');
-      if (state.shapeType === 'rectangle' || state.isRectangle) {
-        this.shapeStatusPill.textContent = `⬛ Rect (${areaStr} m²)`;
-        this.shapeStatusPill.style.color = 'var(--accent-solar)';
-      } else {
-        this.shapeStatusPill.textContent = `🔷 Oblong (${areaStr} m²)`;
-        this.shapeStatusPill.style.color = 'var(--accent-solar)';
-      }
       this.btnClear.disabled = false;
       this.btnClear.style.opacity = '1';
     } else {
-      this.shapeStatusPill.textContent = 'No shape active';
-      this.shapeStatusPill.style.color = 'var(--text-muted)';
       this.btnClear.disabled = true;
       this.btnClear.style.opacity = '0.35';
     }
@@ -420,7 +403,6 @@ export class SavedViewsPanel {
           <div class="view-item-detail">${view.detail || 'View & Shape'}</div>
         </div>
         <div class="view-item-actions">
-          <button class="btn btn-xs btn-restore-view" title="Restore view & simulate">Fly</button>
           <button class="btn-delete-view" title="Delete saved view">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -439,7 +421,6 @@ export class SavedViewsPanel {
       };
 
       item.addEventListener('click', triggerRestore);
-      item.querySelector('.btn-restore-view').addEventListener('click', triggerRestore);
 
       // Delete action
       item.querySelector('.btn-delete-view').addEventListener('click', (e) => {
