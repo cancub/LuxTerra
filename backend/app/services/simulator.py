@@ -64,7 +64,7 @@ class SimulationOrchestrator:
 
         dtm_grid = elev_data.get("dtm", elev_data["buffered_elevation"])
         dsm_grid = elev_data.get("dsm", dtm_grid)
-        has_canopy = bool(elev_data.get("has_canopy", False)) and request.include_tree_canopy
+        has_canopy = bool(elev_data.get("has_canopy", False)) and request.include_tree_canopy and (request.canopy_mode != "bare_terrain")
         dsm_tile_source = elev_data.get("dsm_tile_source")
 
         patch_slice_y = elev_data["patch_slice_y"]
@@ -134,29 +134,21 @@ class SimulationOrchestrator:
 
         # 4. Batch compute occlusion masks for daytime frames (single VRAM upload)
         if daylight_angle_pairs:
-            if has_canopy:
-                is_rooftop = (request.deployment_mode == DeploymentMode.ROOFTOP)
-                daylight_masks, daylight_canopy_masks = self.occlusion_engine.compute_dual_shadow_masks_batch(
-                    dtm_grid=dtm_grid,
-                    dsm_grid=dsm_grid,
-                    patch_slice_y=patch_slice_y,
-                    patch_slice_x=patch_slice_x,
-                    sun_angles=daylight_angle_pairs,
-                    resolution_m=request.resolution_m,
-                    max_search_radius_m=request.buffer_meters,
-                    is_rooftop=is_rooftop,
-                    ground_stand_height_m=1.5
-                )
-            else:
-                daylight_masks = self.occlusion_engine.compute_shadow_masks_batch(
-                    elevation_grid=dtm_grid,
-                    patch_slice_y=patch_slice_y,
-                    patch_slice_x=patch_slice_x,
-                    sun_angles=daylight_angle_pairs,
-                    resolution_m=request.resolution_m,
-                    max_search_radius_m=request.buffer_meters
-                )
-                daylight_canopy_masks = [np.ones_like(m) for m in daylight_masks]
+            is_rooftop = (request.deployment_mode == DeploymentMode.ROOFTOP)
+            stand_height = 0.0 if is_rooftop else 1.5
+            active_dsm = dsm_grid if has_canopy else dtm_grid
+
+            daylight_masks, daylight_canopy_masks = self.occlusion_engine.compute_dual_shadow_masks_batch(
+                dtm_grid=dtm_grid,
+                dsm_grid=active_dsm,
+                patch_slice_y=patch_slice_y,
+                patch_slice_x=patch_slice_x,
+                sun_angles=daylight_angle_pairs,
+                resolution_m=request.resolution_m,
+                max_search_radius_m=request.buffer_meters,
+                is_rooftop=is_rooftop,
+                ground_stand_height_m=stand_height
+            )
 
             # Vectorized calculation of clear-sky irradiance for all daytime frames
             daylight_times = timestamps[daylight_indices]
