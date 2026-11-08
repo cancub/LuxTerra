@@ -64,7 +64,7 @@ export class DateSelector {
       </div>
 
       <!-- Solstice Presets Dropdown -->
-      <select class="solstice-dropdown sleek-presets-select" title="Astronomical Presets" style="height: 28px; box-sizing: border-box; display: inline-flex; align-items: center; margin-left: 2px;">
+      <select class="solstice-dropdown sleek-presets-select" title="Astronomical Presets" style="height: 28px; min-width: 175px; box-sizing: border-box; display: inline-flex; align-items: center; margin-left: 2px;">
         <option value="" disabled selected>Solstice & Equinox...</option>
         <option value="2026-06-21">Summer Solstice (Jun 21)</option>
         <option value="2026-09-22">Fall Equinox (Sep 22)</option>

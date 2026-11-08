@@ -21,7 +21,7 @@ export class TimeScrubber {
     this.element.style.flexDirection = 'column';
     this.element.style.gap = '8px';
     this.element.style.width = '100%';
-    this.element.style.maxWidth = '570px';
+    this.element.style.maxWidth = '660px';
     this.element.style.boxSizing = 'border-box';
 
     this.element.innerHTML = `
