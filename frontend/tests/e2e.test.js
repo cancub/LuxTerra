@@ -198,3 +198,71 @@ test('E2E: Instantaneous PV Scaling (Rooftop 100% GCR vs Ground-Mount 45% GCR)',
   const canopyData = await canopyRes.json();
   assert.ok(canopyData.daily_summary.total_daily_kwh < groundKwh, 'Canopy shade should reduce ground mount yield');
 });
+
+test('E2E: Tree Canopy Shading Dual Bitmasks and Phenology Mode', async () => {
+  const payload = {
+    bbox: {
+      min_lon: -73.619,
+      min_lat: 45.502,
+      max_lon: -73.617,
+      max_lat: 45.504
+    },
+    date: '2026-06-21',
+    time_step_minutes: 30,
+    include_tree_canopy: true,
+    canopy_mode: 'seasonal',
+    deployment_mode: 'ground_mount'
+  };
+
+  const res = await fetch(`${SERVER_URL}/api/simulate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  assert.equal(res.status, 200);
+  const data = await res.json();
+
+  assert.equal(data.metadata.include_tree_canopy, true);
+  assert.equal(data.metadata.canopy_mode, 'seasonal');
+  assert.equal(data.metadata.has_canopy_data, true);
+  assert.ok(Array.isArray(data.masks) && data.masks.length > 0);
+  assert.ok(Array.isArray(data.canopy_masks) && data.canopy_masks.length === data.masks.length);
+  assert.equal(data.canopy_transmittance, 0.15); // Summer solstice = 0.15
+  assert.ok(data.daily_summary.avg_canopy_shaded_pct >= 0.0);
+});
+
+test('E2E: Foliage Mode Overrides (leaf_on vs leaf_off)', async () => {
+  const base = {
+    bbox: {
+      min_lon: -73.619,
+      min_lat: 45.502,
+      max_lon: -73.617,
+      max_lat: 45.504
+    },
+    date: '2026-06-21',
+    time_step_minutes: 30,
+    include_tree_canopy: true,
+    deployment_mode: 'ground_mount'
+  };
+
+  const resSummer = await fetch(`${SERVER_URL}/api/simulate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...base, canopy_mode: 'leaf_on' })
+  });
+  const dataSummer = await resSummer.json();
+
+  const resWinter = await fetch(`${SERVER_URL}/api/simulate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...base, canopy_mode: 'leaf_off' })
+  });
+  const dataWinter = await resWinter.json();
+
+  assert.equal(dataSummer.canopy_transmittance, 0.15);
+  assert.equal(dataWinter.canopy_transmittance, 0.60);
+  assert.ok(
+    dataWinter.daily_summary.total_daily_kwh > dataSummer.daily_summary.total_daily_kwh,
+    'Bare branches in winter mode should permit more sunlight than dense summer foliage'
+  );
+});

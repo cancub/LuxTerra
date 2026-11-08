@@ -377,3 +377,74 @@ async def test_simulate_tree_canopy_dual_masks():
         assert first_daylight["canopy_shaded_pct"] >= 0.0
 
 
+@pytest.mark.asyncio
+async def test_simulate_urban_forest_seasonal_leaf_on_vs_leaf_off():
+    """
+    Test urban forest canopy shading under summer leaf-on vs winter leaf-off phenology.
+    Verifies that bare branches (leaf-off, tau=0.60) transmit more solar irradiance
+    than dense summer foliage (leaf-on, tau=0.15) for identical solar geometry.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        base_payload = {
+            "bbox": {
+                "min_lon": -73.619,
+                "min_lat": 45.502,
+                "max_lon": -73.617,
+                "max_lat": 45.504
+            },
+            "date": "2026-06-21",
+            "time_step_minutes": 15,
+            "include_tree_canopy": True,
+            "deployment_mode": "ground_mount"
+        }
+
+        # Summer leaf-on
+        res_summer = await client.post("/api/simulate", json={**base_payload, "canopy_mode": "leaf_on"})
+        assert res_summer.status_code == 200
+        data_summer = res_summer.json()
+        assert data_summer["canopy_transmittance"] == 0.15
+
+        # Winter leaf-off override on same summer day (to isolate phenology transmission from solar elevation)
+        res_winter = await client.post("/api/simulate", json={**base_payload, "canopy_mode": "leaf_off"})
+        assert res_winter.status_code == 200
+        data_winter = res_winter.json()
+        assert data_winter["canopy_transmittance"] == 0.60
+
+        # Bare branches must yield higher daily power than full summer foliage
+        kwh_summer = data_summer["daily_summary"]["total_daily_kwh"]
+        kwh_winter = data_winter["daily_summary"]["total_daily_kwh"]
+        assert kwh_winter > kwh_summer, f"Winter bare branches ({kwh_winter} kWh) should exceed summer leaf-on ({kwh_summer} kWh)"
+
+
+@pytest.mark.asyncio
+async def test_simulate_canopy_performance_benchmark():
+    """
+    Benchmark full 24-hour simulation latency with dual-surface GPU ray-marching enabled.
+    Ensures total execution time stays well below 600ms for a 15-minute resolution day.
+    """
+    import time
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        payload = {
+            "bbox": {
+                "min_lon": -73.619,
+                "min_lat": 45.502,
+                "max_lon": -73.617,
+                "max_lat": 45.504
+            },
+            "date": "2026-06-21",
+            "time_step_minutes": 15,
+            "include_tree_canopy": True,
+            "deployment_mode": "rooftop"
+        }
+
+        start = time.perf_counter()
+        response = await client.post("/api/simulate", json=payload)
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+
+        assert response.status_code == 200
+        assert elapsed_ms < 600.0, f"Simulation latency {elapsed_ms:.1f}ms exceeds 600ms threshold"
+
+
+
