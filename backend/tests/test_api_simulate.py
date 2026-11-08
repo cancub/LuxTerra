@@ -57,6 +57,19 @@ async def test_elevation_manifest_endpoint():
 
 
 @pytest.mark.asyncio
+async def test_elevation_status_endpoint():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/elevation/status")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ready"
+        assert data["cached_tile_count"] >= 2
+        assert len(data["locations"]) == 2
+        assert len(data["tiles"]) >= 2
+
+
+@pytest.mark.asyncio
 async def test_simulate_montreal_full_day():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

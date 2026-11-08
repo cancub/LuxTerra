@@ -49,3 +49,13 @@ class ElevationManifestResponse(BaseModel):
     Response schema for GET /api/elevation/manifest.
     """
     tiles: List[ElevationTileInfo]
+
+
+class ElevationStatusResponse(BaseModel):
+    """
+    Response schema for GET /api/elevation/status.
+    """
+    status: str = "ready"
+    cached_tile_count: int
+    locations: List[LocationPreset]
+    tiles: List[ElevationTileInfo]

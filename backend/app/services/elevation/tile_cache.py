@@ -29,12 +29,21 @@ class TileCacheManager:
         self.cache_dir = Path(cache_dir) if cache_dir else DEFAULT_CACHE_DIR
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.manifest_path = self.cache_dir / "manifest.json"
+        self._manifest_cache: Optional[Dict[str, Any]] = None
+        self._manifest_mtime: Optional[float] = None
 
     def is_tile_cached(self, filename: str) -> bool:
         """Check if a tile exists on disk and is a valid readable GeoTIFF."""
         filepath = self.cache_dir / filename
-        if not filepath.exists():
+        if not filepath.exists() or filepath.stat().st_size == 0:
             return False
+
+        # Fast-path: check if already verified in the manifest
+        if self._manifest_cache:
+            for tile in self._manifest_cache.get("tiles", []):
+                if tile.get("filename") == filename and tile.get("width", 0) > 0:
+                    return True
+
         try:
             with rasterio.open(filepath) as src:
                 return src.width > 0 and src.height > 0
@@ -159,14 +168,24 @@ class TileCacheManager:
         with open(self.manifest_path, "w") as f:
             json.dump(manifest, f, indent=2)
 
+        self._manifest_cache = manifest
+        self._manifest_mtime = self.manifest_path.stat().st_mtime
         return manifest
 
     def load_manifest(self) -> Dict[str, Any]:
-        """Load manifest.json, or build it if missing."""
+        """Load manifest.json with in-memory mtime caching, or build it if missing."""
         if not self.manifest_path.exists():
             return self.update_manifest()
+
         try:
+            current_mtime = self.manifest_path.stat().st_mtime
+            if self._manifest_cache is not None and self._manifest_mtime == current_mtime:
+                return self._manifest_cache
+
             with open(self.manifest_path, "r") as f:
-                return json.load(f)
+                manifest = json.load(f)
+            self._manifest_cache = manifest
+            self._manifest_mtime = current_mtime
+            return manifest
         except Exception:
             return self.update_manifest()
