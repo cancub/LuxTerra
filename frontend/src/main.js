@@ -52,7 +52,6 @@ if (appContainer) {
     <!-- Floating Right Sidebar Dock -->
     <div class="right-dock" id="right-dock">
       <div id="solar-dashboard-mount"></div>
-      <div id="pv-config-mount"></div>
     </div>
 
     <!-- Bottom Timeline Dock -->
@@ -73,7 +72,6 @@ if (appContainer) {
   const playbackControlsMount = document.getElementById('playback-controls-mount');
   const timelineScrubberMount = document.getElementById('timeline-scrubber-mount');
   const solarDashboardMount = document.getElementById('solar-dashboard-mount');
-  const pvConfigMount = document.getElementById('pv-config-mount');
 
   const shadowCanvasLayer = new ShadowCanvasLayer(map);
 
@@ -87,6 +85,17 @@ if (appContainer) {
 
   const solarDashboard = new SolarDashboard(solarDashboardMount, (seekIndex) => {
     timeScrubber.setStep(seekIndex);
+  });
+
+  const pvConfigPanel = new PVConfigPanel(solarDashboard.getPVConfigMount(), (newConfig) => {
+    if (!currentSimulationData) return;
+    // Real-time instantaneous local power recalculation without server roundtrip
+    const gcrRatio = newConfig.gcr / baseSimulationConfig.gcr;
+    const effRatio = newConfig.moduleEfficiency / baseSimulationConfig.moduleEfficiency;
+    const prRatio = newConfig.systemDerate / baseSimulationConfig.systemDerate;
+    const scaleFactor = gcrRatio * effRatio * prRatio;
+
+    solarDashboard.setScaleFactor(scaleFactor);
   });
 
   const timeScrubber = new TimeScrubber(timelineScrubberMount, (index, metric) => {
@@ -111,17 +120,6 @@ if (appContainer) {
 
   const playbackEngine = new PlaybackEngine(playbackControlsMount, (stepIndex) => {
     timeScrubber.setStep(stepIndex);
-  });
-
-  const pvConfigPanel = new PVConfigPanel(pvConfigMount, (newConfig) => {
-    if (!currentSimulationData) return;
-    // Real-time instantaneous local power recalculation without server roundtrip
-    const gcrRatio = newConfig.gcr / baseSimulationConfig.gcr;
-    const effRatio = newConfig.moduleEfficiency / baseSimulationConfig.moduleEfficiency;
-    const prRatio = newConfig.systemDerate / baseSimulationConfig.systemDerate;
-    const scaleFactor = gcrRatio * effRatio * prRatio;
-
-    solarDashboard.setScaleFactor(scaleFactor);
   });
 
   const toastContainer = document.getElementById('toast-container');
