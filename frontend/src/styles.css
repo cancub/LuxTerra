@@ -65,7 +65,7 @@ body, html {
   position: absolute;
   top: 16px;
   left: 16px;
-  right: 16px;
+  right: 64px;
   z-index: 10;
   display: flex;
   align-items: center;
@@ -90,6 +90,63 @@ body, html {
   gap: 10px;
 }
 
+/* MapLibre Controls Dark Theme Styling & Alignment */
+.maplibregl-ctrl-top-right {
+  top: 16px !important;
+  right: 16px !important;
+  z-index: 10;
+}
+
+.maplibregl-ctrl-top-right .maplibregl-ctrl {
+  margin: 0 !important;
+}
+
+.maplibregl-ctrl-group {
+  background: var(--panel-bg) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+  overflow: hidden;
+}
+
+.maplibregl-ctrl-group:not(:empty) {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+}
+
+.maplibregl-ctrl-group button {
+  width: 36px !important;
+  height: 36px !important;
+  background-color: transparent !important;
+  transition: background-color 0.2s ease;
+}
+
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--border-color) !important;
+}
+
+.maplibregl-ctrl-group button:hover {
+  background-color: var(--panel-bg-hover) !important;
+}
+
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(1) brightness(1.2);
+}
+
+.maplibregl-ctrl-scale {
+  background-color: rgba(15, 23, 42, 0.8) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--border-color) !important;
+  border-top: none !important;
+  color: var(--text-secondary) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 11px !important;
+  padding: 2px 6px !important;
+  border-radius: 0 0 4px 4px !important;
+}
+
 /* Bottom Timeline Dock */
 .bottom-dock {
   position: absolute;
@@ -111,13 +168,13 @@ body, html {
 /* Right Sidebar Dock */
 .right-dock {
   position: absolute;
-  top: 72px;
+  top: 138px;
   right: 16px;
   z-index: 10;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: calc(100vh - 180px);
+  max-height: calc(100vh - 230px);
   overflow-y: auto;
   pointer-events: none;
 }
