@@ -59,23 +59,46 @@ class NumPyOcclusionEngine(OcclusionEngine):
 
         unshaded_mask = np.ones((patch_H, patch_W), dtype=bool)
 
+        r0_f = r0.astype(np.float32)
+        c0_f = c0.astype(np.float32)
+        s_dr = np.float32(ray_params.step_dr)
+        s_dc = np.float32(ray_params.step_dc)
+        t_alpha = np.float32(ray_params.tan_alpha)
+        s_dist = np.float32(ray_params.step_dist)
+
         for s in range(1, ray_params.max_steps + 1):
             if not np.any(unshaded_mask):
                 break
 
-            r_f = r0 + (s * ray_params.step_dr)
-            c_f = c0 + (s * ray_params.step_dc)
+            r_f = r0_f + (np.float32(s) * s_dr)
+            c_f = c0_f + (np.float32(s) * s_dc)
 
-            r = np.rint(r_f).astype(np.int32)
-            c = np.rint(c_f).astype(np.int32)
-
-            in_bounds = (r >= 0) & (r < H) & (c >= 0) & (c < W) & unshaded_mask
+            in_bounds = (r_f >= 0.0) & (r_f < float(H - 1)) & (c_f >= 0.0) & (c_f < float(W - 1)) & unshaded_mask
 
             if not np.any(in_bounds):
                 continue
 
-            z_ray = z0[in_bounds] + (s * ray_params.step_dist * ray_params.tan_alpha)
-            z_terrain = elevation_grid[r[in_bounds], c[in_bounds]]
+            rf_ib = r_f[in_bounds]
+            cf_ib = c_f[in_bounds]
+
+            r0_i = np.floor(rf_ib).astype(np.int32)
+            c0_i = np.floor(cf_ib).astype(np.int32)
+            r1_i = r0_i + 1
+            c1_i = c0_i + 1
+
+            dr = rf_ib - r0_i.astype(np.float32)
+            dc = cf_ib - c0_i.astype(np.float32)
+
+            z00 = elevation_grid[r0_i, c0_i]
+            z01 = elevation_grid[r0_i, c1_i]
+            z10 = elevation_grid[r1_i, c0_i]
+            z11 = elevation_grid[r1_i, c1_i]
+
+            z_top = (1.0 - dc) * z00 + dc * z01
+            z_bottom = (1.0 - dc) * z10 + dc * z11
+            z_terrain = (1.0 - dr) * z_top + dr * z_bottom
+
+            z_ray = z0[in_bounds] + (np.float32(s) * s_dist * t_alpha)
 
             occluded = z_terrain > z_ray
             if np.any(occluded):

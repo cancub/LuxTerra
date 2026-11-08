@@ -30,15 +30,28 @@ void raymarch_terrain_kernel(
         float r_f = (float)r0 + (float)s * step_dr;
         float c_f = (float)c0 + (float)s * step_dc;
 
-        int r = (int)(r_f >= 0.0f ? r_f + 0.5f : r_f - 0.5f);
-        int c = (int)(c_f >= 0.0f ? c_f + 0.5f : c_f - 0.5f);
-
-        if (r < 0 || r >= H || c < 0 || c >= W) {
+        if (r_f < 0.0f || r_f >= (float)(H - 1) || c_f < 0.0f || c_f >= (float)(W - 1)) {
             break; // Ray traveled outside buffered grid
         }
 
+        int r0_i = (int)floorf(r_f);
+        int c0_i = (int)floorf(c_f);
+        int r1_i = r0_i + 1;
+        int c1_i = c0_i + 1;
+
+        float dr = r_f - (float)r0_i;
+        float dc = c_f - (float)c0_i;
+
+        float z00 = elevation[r0_i * W + c0_i];
+        float z01 = elevation[r0_i * W + c1_i];
+        float z10 = elevation[r1_i * W + c0_i];
+        float z11 = elevation[r1_i * W + c1_i];
+
+        float z_top = (1.0f - dc) * z00 + dc * z01;
+        float z_bottom = (1.0f - dc) * z10 + dc * z11;
+        float z_terrain = (1.0f - dr) * z_top + dr * z_bottom;
+
         float z_ray = z0 + ((float)s * step_dist) * tan_alpha;
-        float z_terrain = elevation[r * W + c];
 
         if (z_terrain > z_ray) {
             is_unshaded = 0; // Occluded by terrain

@@ -65,6 +65,8 @@ def test_gpu_cpu_bit_for_bit_equivalence(flat_terrain_with_ridge):
         (90.0, 25.0),
         (135.0, 50.0),
         (180.0, 65.0),
+        (209.9, 15.3),
+        (210.1, 15.2),
         (225.0, 45.0),
         (270.0, 15.0),
     ]
