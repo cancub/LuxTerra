@@ -277,3 +277,17 @@ def test_gpu_cpu_dual_surface_bit_for_bit_equivalence():
 
             assert np.array_equal(t_gpu, t_cpu), f"Terrain mismatch: roof={is_roof}, az={az}, el={el}"
             assert np.array_equal(c_gpu, c_cpu), f"Canopy mismatch: roof={is_roof}, az={az}, el={el}"
+
+    # Also verify batch equality
+    t_batch_gpu, c_batch_gpu = gpu_engine.compute_dual_shadow_masks_batch(
+        dtm, dsm, patch_y, patch_x, angles, is_rooftop=True
+    )
+    t_batch_cpu, c_batch_cpu = cpu_engine.compute_dual_shadow_masks_batch(
+        dtm, dsm, patch_y, patch_x, angles, is_rooftop=True
+    )
+    assert len(t_batch_gpu) == len(t_batch_cpu) == len(angles)
+    assert len(c_batch_gpu) == len(c_batch_cpu) == len(angles)
+    for idx in range(len(angles)):
+        assert np.array_equal(t_batch_gpu[idx], t_batch_cpu[idx])
+        assert np.array_equal(c_batch_gpu[idx], c_batch_cpu[idx])
+

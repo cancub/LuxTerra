@@ -7,7 +7,7 @@ from typing import List, Tuple
 import numpy as np
 
 from ...interfaces.occlusion_engine import OcclusionEngine
-from .ray_math import calculate_ray_step
+from .ray_math import calculate_ray_step, compute_receiver_altitude_grid
 
 
 class NumPyOcclusionEngine(OcclusionEngine):
@@ -158,11 +158,9 @@ class NumPyOcclusionEngine(OcclusionEngine):
 
         z_dtm_0 = dtm_grid[r0, c0]
         z_dsm_0 = dsm_grid[r0, c0]
-
-        if is_rooftop:
-            z0 = np.maximum(z_dtm_0, z_dsm_0)
-        else:
-            z0 = z_dtm_0 + float(ground_stand_height_m)
+        z0 = compute_receiver_altitude_grid(
+            z_dtm_0, z_dsm_0, is_rooftop=is_rooftop, ground_stand_height_m=ground_stand_height_m
+        )
 
         terrain_unshaded = np.ones((patch_H, patch_W), dtype=bool)
         canopy_unshaded = np.ones((patch_H, patch_W), dtype=bool)
