@@ -116,17 +116,6 @@ export class SparklineChart {
             </div>
           </div>
         </div>
-
-        <!-- Time Axis matching scrubber ticks -->
-        <div style="display: flex; justify-content: space-between; font-size: 0.65rem; font-family: var(--font-mono); color: var(--text-muted); margin-top: 2px; padding: 0 2px;">
-          <span>00:00</span>
-          <span>04:00</span>
-          <span>08:00</span>
-          <span>12:00</span>
-          <span>16:00</span>
-          <span>20:00</span>
-          <span>24:00</span>
-        </div>
       </div>
     `;
 
