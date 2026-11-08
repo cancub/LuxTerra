@@ -35,12 +35,9 @@ export class SolarDashboard {
     this.element.innerHTML = `
       <!-- Daily Energy Card (Moved to left dock, loss not mentioned) -->
       <div class="daily-energy-card" style="background: rgba(0,0,0,0.25); border-radius: 8px; padding: 8px 12px; border: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: space-between; align-items: baseline;">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Daily Energy</span>
-          <span class="patch-size-pill pill" style="font-size: 0.65rem; font-family: var(--font-mono); color: var(--text-muted); background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 4px;">-- m²</span>
-        </div>
-        <div style="font-family: var(--font-mono); font-weight: 700; color: #10b981; font-size: 1.25rem; line-height: 1;">
-          <span class="kwh-total">0.0</span> <span style="font-size: 0.75rem; font-weight: 500; color: var(--text-secondary);">kWh</span>
+        <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Daily Energy</span>
+        <div style="display: flex; align-items: baseline; gap: 4px; white-space: nowrap; font-family: var(--font-mono); font-weight: 700; color: #10b981; font-size: 1.25rem; line-height: 1;">
+          <span class="kwh-total">0.0</span> <span style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-left: 2px;">kWh</span>
         </div>
       </div>
 
@@ -92,7 +89,6 @@ export class SolarDashboard {
       <div class="pv-config-internal-mount" style="display: none;"></div>
     `;
 
-    this.patchSizePill = this.element.querySelector('.patch-size-pill');
     this.kwhTotal = this.element.querySelector('.kwh-total');
     this.subClearSkyVal = this.element.querySelector('.sub-clearsky-val');
     this.subGeoShadeVal = this.element.querySelector('.sub-geoshade-val');
@@ -121,7 +117,6 @@ export class SolarDashboard {
       if (this.subGeoShadeVal) this.subGeoShadeVal.textContent = '0.0 kW';
       if (this.subTreeShadeVal) this.subTreeShadeVal.textContent = '0.0 kW';
       if (this.subAcPowerVal) this.subAcPowerVal.textContent = '0.0 kW';
-      if (this.patchSizePill) this.patchSizePill.textContent = '-- m²';
       this.chart.setData([], 1.0);
       return;
     }
@@ -129,10 +124,6 @@ export class SolarDashboard {
     this.dailySummary = data.daily_summary || {};
     this.currentScaleFactor = scaleFactor;
     this.canopyTransmittance = data.canopy_transmittance !== undefined ? data.canopy_transmittance : 0.15;
-
-    if (data.metadata && this.patchSizePill) {
-      this.patchSizePill.textContent = `${data.metadata.patch_area_m2.toLocaleString('en-US', { maximumFractionDigits: 0 })} m²`;
-    }
 
     this.updateDailyMetrics();
     this.chart.setData(this.timeseries, this.currentScaleFactor);
