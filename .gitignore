@@ -53,9 +53,7 @@ data/dsm/tmp/
 
 # IDE & OS
 .vscode/
-.idea/**
-!.idea/plan*.md
-!.idea/phase_*.md
+.idea/
 *.swp
 *.swo
 *~
