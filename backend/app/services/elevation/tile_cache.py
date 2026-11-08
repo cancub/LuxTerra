@@ -107,30 +107,31 @@ class TileCacheManager:
         vsi_url = f"/vsicurl/{cog_url}" if not cog_url.startswith("/vsi") else cog_url
         
         logger.info(f"Streaming windowed extraction from COG: {cog_url} for bbox {wgs84_bbox}...")
-        with rasterio.open(vsi_url) as src:
-            src_crs_str = src.crs.to_string() if hasattr(src.crs, 'to_string') else str(src.crs)
-            patch_wgs84 = box(min_lon, min_lat, max_lon, max_lat)
-            patch_native = transform_geometry(patch_wgs84, "EPSG:4326", src_crs_str)
-            
-            window = from_bounds(*patch_native.bounds, src.transform)
-            data = src.read(1, window=window)
-            window_transform = rasterio.windows.transform(window, src.transform)
-            
-            temp_path = self.cache_dir / f"{filename}.tmp"
-            with rasterio.open(
-                temp_path,
-                'w',
-                driver='GTiff',
-                height=data.shape[0],
-                width=data.shape[1],
-                count=1,
-                dtype=data.dtype,
-                crs=src.crs,
-                transform=window_transform,
-                nodata=src.nodata if src.nodata is not None else -9999.0,
-                compress='lzw'
-            ) as dst:
-                dst.write(data, 1)
+        with rasterio.Env(CPL_VSIL_CURL_ALLOWED_EXTENSIONS=".tif", GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR"):
+            with rasterio.open(vsi_url) as src:
+                src_crs_str = src.crs.to_string() if hasattr(src.crs, 'to_string') else str(src.crs)
+                patch_wgs84 = box(min_lon, min_lat, max_lon, max_lat)
+                patch_native = transform_geometry(patch_wgs84, "EPSG:4326", src_crs_str)
+                
+                window = from_bounds(*patch_native.bounds, src.transform)
+                data = src.read(1, window=window)
+                window_transform = rasterio.windows.transform(window, src.transform)
+                
+                temp_path = self.cache_dir / f"{filename}.tmp"
+                with rasterio.open(
+                    temp_path,
+                    'w',
+                    driver='GTiff',
+                    height=data.shape[0],
+                    width=data.shape[1],
+                    count=1,
+                    dtype=data.dtype,
+                    crs=src.crs,
+                    transform=window_transform,
+                    nodata=src.nodata if src.nodata is not None else -9999.0,
+                    compress='lzw'
+                ) as dst:
+                    dst.write(data, 1)
 
         temp_path.replace(final_path)
         logger.info(f"Extracted and saved local COG tile: {final_path} ({data.shape[1]}x{data.shape[0]})")

@@ -189,19 +189,45 @@ async def test_simulate_area_limit_rejection():
 async def test_simulate_missing_coverage_returns_404():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # Valid small area in Quebec City (~8,500 m²) where no local raster is loaded yet
+        # Location outside Canadian LiDAR coverage (~10,689 m²)
         payload = {
             "bbox": {
-                "min_lon": -71.20,
-                "min_lat": 46.80,
-                "max_lon": -71.199,
-                "max_lat": 46.801
+                "min_lon": -50.001,
+                "min_lat": 30.001,
+                "max_lon": -50.0,
+                "max_lat": 30.002
             },
             "date": "2026-06-21"
         }
         response = await client.post("/api/simulate", json=payload)
         assert response.status_code == 404
-        assert "No local elevation raster covers" in response.text
+        assert "outside official NRCan HRDEM LiDAR coverage" in response.text
+
+
+@pytest.mark.asyncio
+async def test_simulate_on_demand_laval_acquisition():
+    """
+    Test dynamic on-demand acquisition of 1m LiDAR data for Laval via NRCan STAC and COG streaming.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Laval: Montmorency area (~52,000 m²)
+        payload = {
+            "bbox": {
+                "min_lon": -73.722,
+                "min_lat": 45.556,
+                "max_lon": -73.719,
+                "max_lat": 45.558
+            },
+            "date": "2026-06-21"
+        }
+        response = await client.post("/api/simulate", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["metadata"]["patch_area_m2"] > 0
+        assert "dtm" in data["metadata"]["tile_source"]
+        assert len(data["timeseries"]) == 1440
+        assert data["daily_summary"]["total_daily_kwh"] > 0
 
 
 @pytest.mark.asyncio

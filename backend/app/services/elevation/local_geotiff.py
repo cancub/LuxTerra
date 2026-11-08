@@ -62,6 +62,59 @@ class LocalGeoTIFFProvider(ElevationProvider):
 
         return None
 
+    def acquire_covering_tile(
+        self,
+        min_lon: float,
+        min_lat: float,
+        max_lon: float,
+        max_lat: float,
+        buffer_meters: float = 500.0
+    ) -> Optional[Path]:
+        """
+        Dynamically discovers and acquires a 1m LiDAR DTM raster from official NRCan STAC & S3 COG catalog
+        covering the requested bounding box and perimeter buffer.
+        """
+        try:
+            from .nrcan_client import NRCanClient
+            client = NRCanClient(timeout=20)
+
+            logger.info(f"Querying NRCan STAC for LiDAR DTM covering [{min_lon:.4f}, {min_lat:.4f}, {max_lon:.4f}, {max_lat:.4f}]...")
+            tiles = client.query_tiles_by_bbox(min_lon, min_lat, max_lon, max_lat, limit=5)
+            if not tiles:
+                logger.warning(f"No NRCan LiDAR tiles found for bbox [{min_lon}, {min_lat}, {max_lon}, {max_lat}]")
+                return None
+
+            dtm_url = None
+            for t in tiles:
+                if t.get("dtm_url"):
+                    dtm_url = t["dtm_url"]
+                    break
+
+            if not dtm_url:
+                logger.warning("No DTM asset URL found in matching NRCan STAC records")
+                return None
+
+            # Calculate buffered bounds to ensure full raymarching search radius is contained (+200m margin)
+            geo_info = buffer_bounding_box_meters(
+                min_lon, min_lat, max_lon, max_lat, buffer_meters=buffer_meters + 200.0
+            )
+            wgs84_buffered = geo_info["buffered_bounds_wgs84"]
+
+            center_lon = (min_lon + max_lon) / 2.0
+            center_lat = (min_lat + max_lat) / 2.0
+            filename = f"dtm_auto_{center_lat:.3f}_{center_lon:.3f}.tif"
+
+            logger.info(f"Extracting on-demand LiDAR DTM window for [{center_lat:.4f}, {center_lon:.4f}] from {dtm_url}...")
+            cached_path = self.cache_manager.extract_cog_window(
+                cog_url=dtm_url,
+                wgs84_bbox=list(wgs84_buffered),
+                filename=filename
+            )
+            return cached_path
+        except Exception as e:
+            logger.error(f"On-demand elevation acquisition failed: {e}", exc_info=True)
+            return None
+
     def get_elevation_window(
         self,
         min_lon: float,
@@ -85,10 +138,14 @@ class LocalGeoTIFFProvider(ElevationProvider):
 
         tile_path = self.find_covering_tile(min_lon, min_lat, max_lon, max_lat)
         if not tile_path:
+            logger.info(f"No local tile covers [{min_lon:.4f}, {min_lat:.4f}, {max_lon:.4f}, {max_lat:.4f}]. Attempting on-demand acquisition...")
+            tile_path = self.acquire_covering_tile(min_lon, min_lat, max_lon, max_lat, buffer_meters=buffer_meters)
+
+        if not tile_path:
             raise FileNotFoundError(
-                f"No local elevation raster covers the requested location "
+                f"No elevation raster available for the requested location "
                 f"[{min_lon:.4f}, {min_lat:.4f}, {max_lon:.4f}, {max_lat:.4f}]. "
-                f"Please run scripts/fetch_test_dtm.py to acquire coverage."
+                f"Location is outside official NRCan HRDEM LiDAR coverage."
             )
 
         b_min_x, b_min_y, b_max_x, b_max_y = geo_info["buffered_bounds_metric"]
