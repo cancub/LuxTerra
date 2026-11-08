@@ -21,7 +21,7 @@ export class TimeScrubber {
     this.element.style.flexDirection = 'column';
     this.element.style.gap = '8px';
     this.element.style.width = '100%';
-    this.element.style.maxWidth = '760px';
+    this.element.style.maxWidth = '520px';
 
     this.element.innerHTML = `
       <div class="timeline-header" style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem;">
