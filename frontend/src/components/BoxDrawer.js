@@ -59,6 +59,11 @@ export class BoxDrawer {
     this.rectStartLngLat = null;
     this.justFinishedDrag = false;
 
+    // Oblong vertex modification & line hover state
+    this.hoveredHandleId = null;
+    this.hoveredVertexIndex = null;
+    this.activeMidpoint = null;
+
     // Legacy compatibility dictionary
     this.handles = { nw: null, ne: null, se: null, sw: null };
 
@@ -122,6 +127,64 @@ export class BoxDrawer {
       }
     });
 
+    // Invisible hit stroke layer for detecting hover & clicks along polygon line segments
+    this.map.addLayer({
+      id: 'draw-box-stroke-hit',
+      type: 'line',
+      source: 'draw-box-source',
+      filter: ['==', ['geometry-type'], 'Polygon'],
+      paint: {
+        'line-width': 22,
+        'line-color': '#000000',
+        'line-opacity': 0.001
+      }
+    });
+
+    // Native WebGL-rendered midpoint layer for adding points along oblong edges
+    if (!this.map.getSource('draw-midpoint-source')) {
+      this.map.addSource('draw-midpoint-source', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: []
+        }
+      });
+
+      this.map.addLayer({
+        id: 'draw-midpoint-glow',
+        type: 'circle',
+        source: 'draw-midpoint-source',
+        paint: {
+          'circle-radius': 11,
+          'circle-color': 'rgba(56, 189, 248, 0.35)',
+          'circle-blur': 0.35
+        }
+      });
+
+      this.map.addLayer({
+        id: 'draw-midpoint-core',
+        type: 'circle',
+        source: 'draw-midpoint-source',
+        paint: {
+          'circle-radius': 5.5,
+          'circle-color': 'rgba(255, 255, 255, 0.75)',
+          'circle-stroke-width': 2,
+          'circle-stroke-color': 'rgba(56, 189, 248, 0.85)'
+        }
+      });
+
+      this.map.addLayer({
+        id: 'draw-midpoint-hit',
+        type: 'circle',
+        source: 'draw-midpoint-source',
+        paint: {
+          'circle-radius': 18,
+          'circle-color': '#000000',
+          'circle-opacity': 0.001
+        }
+      });
+    }
+
     // Native WebGL-rendered interactive handle layers (zero lag during map pan/zoom)
     if (!this.map.getSource('draw-handles-source')) {
       this.map.addSource('draw-handles-source', {
@@ -147,6 +210,8 @@ export class BoxDrawer {
           ],
           'circle-color': [
             'case',
+            ['boolean', ['feature-state', 'deleteHover'], false],
+            'rgba(239, 68, 68, 0.5)',
             ['boolean', ['feature-state', 'clamped'], false],
             'rgba(239, 68, 68, 0.5)',
             'rgba(56, 189, 248, 0.5)'
@@ -170,6 +235,8 @@ export class BoxDrawer {
           ],
           'circle-color': [
             'case',
+            ['boolean', ['feature-state', 'deleteHover'], false],
+            '#fee2e2',
             ['boolean', ['feature-state', 'snapped'], false],
             '#38bdf8',
             '#ffffff'
@@ -177,6 +244,8 @@ export class BoxDrawer {
           'circle-stroke-width': 2.5,
           'circle-stroke-color': [
             'case',
+            ['boolean', ['feature-state', 'deleteHover'], false],
+            '#ef4444',
             ['boolean', ['feature-state', 'clamped'], false],
             '#ef4444',
             '#38bdf8'
@@ -432,10 +501,19 @@ export class BoxDrawer {
 
   bindKeyboardEvents() {
     window.addEventListener('keydown', (e) => {
+      if (e.key === 'Shift') {
+        this.isShiftHeld = true;
+        if (this.hoveredHandleId !== null && this.shapeType === 'polygon' && this.currentPolygon) {
+          this.map.setFeatureState(
+            { source: 'draw-handles-source', id: this.hoveredHandleId },
+            { deleteHover: true }
+          );
+        }
+      }
+
       if (!this.isDrawingActive) return;
 
       if (e.key === 'Shift') {
-        this.isShiftHeld = true;
         if (this.points.length >= 3 && this.lastMouseLngLat) {
           this.updateDrawingPreview(this.lastMouseLngLat, this.lastMousePoint);
         }
@@ -458,6 +536,12 @@ export class BoxDrawer {
     window.addEventListener('keyup', (e) => {
       if (e.key === 'Shift') {
         this.isShiftHeld = false;
+        if (this.hoveredHandleId !== null) {
+          this.map.setFeatureState(
+            { source: 'draw-handles-source', id: this.hoveredHandleId },
+            { deleteHover: false }
+          );
+        }
         if (this.isDrawingActive && this.lastMouseLngLat) {
           this.updateDrawingPreview(this.lastMouseLngLat, this.lastMousePoint);
         }
@@ -500,7 +584,19 @@ export class BoxDrawer {
       this.lastMousePoint = e.point;
       this.lastMouseLngLat = e.lngLat;
 
-      if (!this.isDrawingActive) return;
+      if (!this.isDrawingActive) {
+        if (!this.isResizing && this.shapeType === 'polygon' && this.currentPolygon && !this.hoveredHandleId) {
+          const segData = this.findClosestSegment(e.point);
+          if (segData && segData.distancePx <= 18) {
+            this.showMidpoint(segData.segmentIndex, segData.midpoint);
+          } else {
+            this.clearMidpoint();
+          }
+        } else if (this.activeMidpoint && this.hoveredHandleId) {
+          this.clearMidpoint();
+        }
+        return;
+      }
 
       if (this.drawMode === 'rectangle') {
         if (this.isRectMouseDown && (this.rectState === 'idle' || this.rectState === 'dragging')) {
@@ -665,50 +761,129 @@ export class BoxDrawer {
     });
 
     // 6. Interactive WebGL Handle Events (zero DOM lag during scroll or zoom)
-    let hoveredHandleId = null;
-
     this.map.on('mouseenter', 'draw-handles-hit', (e) => {
       if (this.isDrawingActive || this.isDragging || this.isResizing) return;
       if (e.features && e.features.length > 0) {
         const feat = e.features[0];
-        hoveredHandleId = feat.id;
-        this.map.getCanvas().style.cursor = feat.properties.cursor || 'pointer';
+        this.hoveredHandleId = feat.id;
+        this.hoveredVertexIndex = feat.properties.vertexIndex;
+        this.clearMidpoint();
+
+        const isDelete = this.isShiftHeld && this.shapeType === 'polygon';
+        this.map.getCanvas().style.cursor = isDelete ? 'pointer' : (feat.properties.cursor || 'pointer');
         this.map.setFeatureState(
-          { source: 'draw-handles-source', id: hoveredHandleId },
-          { hover: true }
+          { source: 'draw-handles-source', id: this.hoveredHandleId },
+          { hover: true, deleteHover: isDelete }
         );
+
+        if (this.shapeType === 'polygon' && this.currentPolygon) {
+          const clientX = e.originalEvent ? e.originalEvent.clientX : 0;
+          const clientY = e.originalEvent ? e.originalEvent.clientY : 0;
+          const count = this.getUniqueVertexCount();
+          if (count > 3) {
+            this.showTooltip(clientX, clientY, '<span style="color:#f87171; font-weight:600;">Shift + Click</span> to delete point');
+          } else {
+            this.showTooltip(clientX, clientY, 'Point (min 3 points required)');
+          }
+        }
       }
     });
 
     this.map.on('mouseleave', 'draw-handles-hit', () => {
-      if (hoveredHandleId !== null) {
+      if (this.hoveredHandleId !== null) {
         this.map.setFeatureState(
-          { source: 'draw-handles-source', id: hoveredHandleId },
-          { hover: false }
+          { source: 'draw-handles-source', id: this.hoveredHandleId },
+          { hover: false, deleteHover: false }
         );
-        hoveredHandleId = null;
+        this.hoveredHandleId = null;
+        this.hoveredVertexIndex = null;
       }
       if (!this.isDrawingActive && !this.isResizing) {
         this.map.getCanvas().style.cursor = '';
+        this.hideTooltip();
       }
     });
 
     this.map.on('mousedown', 'draw-handles-hit', (e) => {
       if (this.isDrawingActive) return;
       if (typeof e.preventDefault === 'function') e.preventDefault();
-      if (e.features && e.features.length > 0) {
-        const feat = e.features[0];
-        this.startVertexDrag(feat.properties.vertexIndex, feat.properties.cornerId, feat.properties.cursor);
+      if (!e.features || e.features.length === 0) return;
+
+      const feat = e.features[0];
+      const isShift = (e.originalEvent && e.originalEvent.shiftKey) || this.isShiftHeld;
+
+      if (isShift && this.shapeType === 'polygon' && this.currentPolygon) {
+        this.deletePolygonVertex(feat.properties.vertexIndex);
+        return;
       }
+
+      this.startVertexDrag(feat.properties.vertexIndex, feat.properties.cornerId, feat.properties.cursor);
     });
 
     this.map.on('touchstart', 'draw-handles-hit', (e) => {
       if (this.isDrawingActive) return;
       if (e.points && e.points.length !== 1) return;
       if (typeof e.preventDefault === 'function') e.preventDefault();
-      if (e.features && e.features.length > 0) {
+      if (!e.features || e.features.length === 0) return;
+
+      const feat = e.features[0];
+      const isShift = (e.originalEvent && e.originalEvent.shiftKey) || this.isShiftHeld;
+
+      if (isShift && this.shapeType === 'polygon' && this.currentPolygon) {
+        this.deletePolygonVertex(feat.properties.vertexIndex);
+        return;
+      }
+
+      this.startVertexDrag(feat.properties.vertexIndex, feat.properties.cornerId, feat.properties.cursor);
+    });
+
+    // 7. Interactive Midpoint Handle & Stroke Events for adding vertices
+    this.map.on('mouseenter', 'draw-midpoint-hit', (e) => {
+      if (this.isDrawingActive || this.isDragging || this.isResizing) return;
+      this.map.getCanvas().style.cursor = 'pointer';
+      const clientX = e.originalEvent ? e.originalEvent.clientX : 0;
+      const clientY = e.originalEvent ? e.originalEvent.clientY : 0;
+      this.showTooltip(clientX, clientY, '<span style="color:#38bdf8; font-weight:600;">Click & drag</span> to add point');
+    });
+
+    this.map.on('mouseleave', 'draw-midpoint-hit', () => {
+      if (!this.isDrawingActive && !this.isResizing) {
+        this.map.getCanvas().style.cursor = '';
+        this.hideTooltip();
+      }
+    });
+
+    this.map.on('mousedown', 'draw-midpoint-hit', (e) => {
+      if (this.isDrawingActive || this.isResizing) return;
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (this.activeMidpoint) {
+        this.insertVertexAndStartDrag(this.activeMidpoint.segmentIndex, this.activeMidpoint.coordinates);
+      } else if (e.features && e.features.length > 0) {
         const feat = e.features[0];
-        this.startVertexDrag(feat.properties.vertexIndex, feat.properties.cornerId, feat.properties.cursor);
+        this.insertVertexAndStartDrag(feat.properties.segmentIndex, feat.geometry.coordinates);
+      }
+    });
+
+    this.map.on('touchstart', 'draw-midpoint-hit', (e) => {
+      if (this.isDrawingActive || this.isResizing) return;
+      if (e.points && e.points.length !== 1) return;
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (this.activeMidpoint) {
+        this.insertVertexAndStartDrag(this.activeMidpoint.segmentIndex, this.activeMidpoint.coordinates);
+      } else if (e.features && e.features.length > 0) {
+        const feat = e.features[0];
+        this.insertVertexAndStartDrag(feat.properties.segmentIndex, feat.geometry.coordinates);
+      }
+    });
+
+    this.map.on('mousedown', 'draw-box-stroke-hit', (e) => {
+      if (this.isDrawingActive || this.isResizing) return;
+      if (this.shapeType !== 'polygon' || !this.currentPolygon) return;
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+
+      const segData = this.findClosestSegment(e.point);
+      if (segData && segData.distancePx <= 22) {
+        this.insertVertexAndStartDrag(segData.segmentIndex, segData.midpoint);
       }
     });
   }
@@ -860,6 +1035,194 @@ export class BoxDrawer {
     });
   }
 
+  getUniqueVertexCount() {
+    if (!this.currentPolygon || !Array.isArray(this.currentPolygon)) return 0;
+    const n = this.currentPolygon.length;
+    if (
+      n > 3 &&
+      this.currentPolygon[0][0] === this.currentPolygon[n - 1][0] &&
+      this.currentPolygon[0][1] === this.currentPolygon[n - 1][1]
+    ) {
+      return n - 1;
+    }
+    return n;
+  }
+
+  deletePolygonVertex(index) {
+    if (!this.currentPolygon || this.shapeType !== 'polygon') return;
+
+    let pts = [...this.currentPolygon];
+    if (
+      pts.length > 3 &&
+      pts[0][0] === pts[pts.length - 1][0] &&
+      pts[0][1] === pts[pts.length - 1][1]
+    ) {
+      pts.pop();
+    }
+
+    if (pts.length <= 3) {
+      if (this.lastMousePoint) {
+        this.showTooltip(
+          this.lastMousePoint.x,
+          this.lastMousePoint.y,
+          '<span style="color:#f87171;">Cannot delete point: oblong shape requires at least 3 points</span>'
+        );
+        setTimeout(() => this.hideTooltip(), 1800);
+      }
+      return;
+    }
+
+    if (index < 0 || index >= pts.length) return;
+
+    // Delete vertex and close ring connecting adjacent points
+    pts.splice(index, 1);
+    const closedPts = [...pts, [pts[0][0], pts[0][1]]];
+
+    let dims = computePolygonDimensions(closedPts);
+    let isClamped = dims.areaM2 > MAX_PATCH_AREA_M2;
+    let finalPts = closedPts;
+    if (isClamped) {
+      const clamped = clampPolygonToMaxArea(closedPts, MAX_PATCH_AREA_M2);
+      finalPts = clamped.coordinates;
+      dims = computePolygonDimensions(finalPts);
+    }
+
+    this.currentPolygon = finalPts;
+    this.currentBbox = dims.bbox;
+
+    this.clearMidpoint();
+    this.renderFinalShape(finalPts, isClamped);
+    this.updateHandles(finalPts, isClamped);
+    this.hideTooltip();
+    this.notifyState();
+
+    this.onSelectionComplete({
+      bbox: dims.bbox,
+      polygon: finalPts,
+      dimensions: dims,
+      shapeType: 'polygon',
+      isPolygon: true
+    });
+  }
+
+  insertVertexAndStartDrag(segmentIndex, initialCoords) {
+    if (this.shapeType !== 'polygon' || !this.currentPolygon) return;
+
+    let pts = [...this.currentPolygon];
+    if (
+      pts.length > 3 &&
+      pts[0][0] === pts[pts.length - 1][0] &&
+      pts[0][1] === pts[pts.length - 1][1]
+    ) {
+      pts.pop();
+    }
+
+    if (segmentIndex < 0 || segmentIndex >= pts.length) return;
+
+    const newIdx = segmentIndex + 1;
+    pts.splice(newIdx, 0, [initialCoords[0], initialCoords[1]]);
+
+    const closedPts = [...pts, [pts[0][0], pts[0][1]]];
+    this.currentPolygon = closedPts;
+
+    this.clearMidpoint();
+    this.renderFinalShape(closedPts, false);
+    this.updateHandles(closedPts, false);
+
+    // Immediately start dragging this new vertex
+    this.startVertexDrag(newIdx, null, 'grabbing');
+  }
+
+  findClosestSegment(screenPoint) {
+    if (!this.currentPolygon || this.currentPolygon.length < 3 || !screenPoint) return null;
+
+    let pts = [...this.currentPolygon];
+    if (
+      pts.length > 3 &&
+      pts[0][0] === pts[pts.length - 1][0] &&
+      pts[0][1] === pts[pts.length - 1][1]
+    ) {
+      pts.pop();
+    }
+
+    const n = pts.length;
+    let minDistance = Infinity;
+    let bestSegmentIndex = -1;
+    let bestMidpoint = null;
+
+    for (let i = 0; i < n; i++) {
+      const p1 = pts[i];
+      const p2 = pts[(i + 1) % n];
+
+      const s1 = this.map.project(p1);
+      const s2 = this.map.project(p2);
+
+      const dx = s2.x - s1.x;
+      const dy = s2.y - s1.y;
+      const lenSq = dx * dx + dy * dy;
+
+      if (lenSq < 1e-4) continue;
+
+      const t = Math.max(0, Math.min(1, ((screenPoint.x - s1.x) * dx + (screenPoint.y - s1.y) * dy) / lenSq));
+      const projX = s1.x + t * dx;
+      const projY = s1.y + t * dy;
+
+      const dist = Math.hypot(screenPoint.x - projX, screenPoint.y - projY);
+      if (dist < minDistance) {
+        minDistance = dist;
+        bestSegmentIndex = i;
+        bestMidpoint = [
+          (p1[0] + p2[0]) / 2.0,
+          (p1[1] + p2[1]) / 2.0
+        ];
+      }
+    }
+
+    if (bestSegmentIndex >= 0) {
+      return {
+        segmentIndex: bestSegmentIndex,
+        distancePx: minDistance,
+        midpoint: bestMidpoint
+      };
+    }
+    return null;
+  }
+
+  showMidpoint(segmentIndex, midpointCoords) {
+    const source = this.map.getSource('draw-midpoint-source');
+    if (!source) return;
+
+    this.activeMidpoint = { segmentIndex, coordinates: midpointCoords };
+    source.setData({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          id: 1,
+          properties: {
+            segmentIndex,
+            isMidpoint: true
+          },
+          geometry: {
+            type: 'Point',
+            coordinates: midpointCoords
+          }
+        }
+      ]
+    });
+  }
+
+  clearMidpoint() {
+    this.activeMidpoint = null;
+    const source = this.map.getSource('draw-midpoint-source');
+    if (source) {
+      source.setData({
+        type: 'FeatureCollection',
+        features: []
+      });
+    }
+  }
+
   startVertexDrag(vertexIndex, cornerId, cursor) {
     this.isResizing = true;
     this.activeVertexIndex = vertexIndex;
@@ -993,6 +1356,9 @@ export class BoxDrawer {
   }
 
   onVertexDragEnd() {
+    this.isResizing = false;
+    this.activeVertexIndex = null;
+    this.activeCornerId = null;
     this.hideTooltip();
     if (this.currentPolygon) {
       const dims = computePolygonDimensions(this.currentPolygon);
@@ -1179,6 +1545,7 @@ export class BoxDrawer {
     this.shapeType = null;
     this.points = [];
     this.clearSource();
+    this.clearMidpoint();
     this.hideTooltip();
     this.notifyState();
   }
@@ -1199,6 +1566,7 @@ export class BoxDrawer {
         features: []
       });
     }
+    this.clearMidpoint();
   }
 
   updateHandles(target, isClamped = false) {

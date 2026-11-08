@@ -217,3 +217,138 @@ test('BoxDrawer follows map orientation under rotated bearing (bearing 45)', () 
   // Left edge: x coordinates match (vertical)
   assert.ok(Math.abs(screenCorners[3].x - screenCorners[0].x) < 0.01, 'Left edge is strictly vertical on screen');
 });
+
+test('BoxDrawer oblong shape: delete vertex connects points on either side', () => {
+  const map = createMockMap(0);
+  let selectionResult = null;
+  const drawer = new BoxDrawer(map, null, (sel) => {
+    selectionResult = sel;
+  });
+
+  // Setup initial 4-point oblong quadrilateral: A -> B -> C -> D -> A
+  // Kept within MAX_PATCH_AREA_M2 (~34,000 m2) so clamping is not triggered
+  const pA = [-73.619, 45.502];
+  const pB = [-73.617, 45.502];
+  const pC = [-73.617, 45.504];
+  const pD = [-73.619, 45.504];
+  drawer.setPolygon([pA, pB, pC, pD, pA], 'polygon');
+
+  assert.equal(drawer.shapeType, 'polygon');
+  assert.equal(drawer.currentPolygon.length, 5); // 4 unique + closed
+
+  // Delete vertex 1 (point B)
+  drawer.deletePolygonVertex(1);
+
+  assert.equal(drawer.currentPolygon.length, 4); // 3 unique + closed: A -> C -> D -> A
+  assert.deepEqual(drawer.currentPolygon[0], pA);
+  assert.deepEqual(drawer.currentPolygon[1], pC); // Point A now directly connects to Point C!
+  assert.deepEqual(drawer.currentPolygon[2], pD);
+  assert.deepEqual(drawer.currentPolygon[3], pA); // Closed ring
+  assert.equal(selectionResult.shapeType, 'polygon');
+  assert.equal(selectionResult.polygon.length, 4);
+});
+
+test('BoxDrawer oblong shape: enforces minimum of 3 points for deletion', () => {
+  const map = createMockMap(0);
+  const drawer = new BoxDrawer(map);
+
+  // Setup 3-point triangle: A -> B -> C -> A
+  const triangle = [
+    [-73.619, 45.502],
+    [-73.617, 45.502],
+    [-73.618, 45.504],
+    [-73.619, 45.502]
+  ];
+  drawer.setPolygon(triangle, 'polygon');
+  assert.equal(drawer.getUniqueVertexCount(), 3);
+
+  // Attempt to delete vertex 0 from 3-point triangle
+  drawer.deletePolygonVertex(0);
+
+  // Polygon must remain untouched (still 3 unique points)
+  assert.equal(drawer.getUniqueVertexCount(), 3);
+  assert.equal(drawer.currentPolygon.length, 4);
+});
+
+test('BoxDrawer oblong shape: hovering line displays semi-opaque midpoint', () => {
+  const map = createMockMap(0);
+  const drawer = new BoxDrawer(map);
+
+  const pA = [-73.619, 45.502];
+  const pB = [-73.617, 45.502];
+  const pC = [-73.618, 45.504];
+  drawer.setPolygon([pA, pB, pC, pA], 'polygon');
+
+  // Compute screen coordinate of segment 0 (A -> B) midpoint
+  const sA = map.project(pA);
+  const sB = map.project(pB);
+  const screenMidpoint = {
+    x: (sA.x + sB.x) / 2,
+    y: (sA.y + sB.y) / 2
+  };
+
+  // Find closest segment near the midpoint
+  const segData = drawer.findClosestSegment(screenMidpoint);
+  assert.ok(segData !== null);
+  assert.equal(segData.segmentIndex, 0);
+  assert.ok(segData.distancePx < 1.0);
+
+  // Trigger showMidpoint
+  drawer.showMidpoint(segData.segmentIndex, segData.midpoint);
+  assert.ok(drawer.activeMidpoint !== null);
+  assert.equal(drawer.activeMidpoint.segmentIndex, 0);
+
+  const midpointSource = map.getSource('draw-midpoint-source');
+  assert.ok(midpointSource);
+  assert.equal(midpointSource.data.features.length, 1);
+  assert.equal(midpointSource.data.features[0].properties.isMidpoint, true);
+});
+
+test('BoxDrawer oblong shape: click & drag midpoint adds new vertex and supports subsequent delete', () => {
+  const map = createMockMap(0);
+  let selectionResult = null;
+  const drawer = new BoxDrawer(map, null, (sel) => {
+    selectionResult = sel;
+  });
+
+  const pA = [-73.619, 45.502];
+  const pB = [-73.617, 45.502];
+  const pC = [-73.618, 45.504];
+  drawer.setPolygon([pA, pB, pC, pA], 'polygon');
+  assert.equal(drawer.getUniqueVertexCount(), 3);
+
+  // Midpoint of segment 0 (A -> B)
+  const midAB = [
+    (pA[0] + pB[0]) / 2,
+    (pA[1] + pB[1]) / 2
+  ];
+
+  // Insert vertex at segment 0 and start dragging
+  drawer.insertVertexAndStartDrag(0, midAB);
+
+  // Polygon now has 4 unique vertices (inserted at index 1 between A and B)
+  assert.equal(drawer.getUniqueVertexCount(), 4);
+  assert.equal(drawer.isResizing, true);
+  assert.equal(drawer.activeVertexIndex, 1);
+
+  // Drag the newly inserted vertex to a new position
+  const draggedLngLat = { lng: -73.618, lat: 45.501 };
+  drawer.onVertexDrag(draggedLngLat);
+  assert.deepEqual(drawer.currentPolygon[1], [-73.618, 45.501]);
+
+  // Finish dragging
+  drawer.onVertexDragEnd();
+  assert.equal(drawer.isResizing, false);
+  assert.equal(drawer.activeVertexIndex, null);
+  assert.equal(selectionResult.polygon.length, 5); // 4 unique + closed
+  assert.deepEqual(selectionResult.polygon[1], [-73.618, 45.501]);
+
+  // Now delete this newly added vertex with Shift + Click
+  drawer.deletePolygonVertex(1);
+  assert.equal(drawer.getUniqueVertexCount(), 3);
+  assert.deepEqual(drawer.currentPolygon[0], pA);
+  assert.deepEqual(drawer.currentPolygon[1], pB);
+  assert.deepEqual(drawer.currentPolygon[2], pC);
+  assert.deepEqual(drawer.currentPolygon[3], pA);
+});
+
