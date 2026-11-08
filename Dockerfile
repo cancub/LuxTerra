@@ -29,6 +29,7 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY backend/ ./backend/
 COPY scripts/ ./scripts/
 COPY data/dtm/ ./data/dtm/
+COPY data/dsm/ ./data/dsm/
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 EXPOSE 8000
