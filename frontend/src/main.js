@@ -46,6 +46,9 @@ if (appContainer) {
       <div class="top-right-controls" id="top-right-controls"></div>
     </div>
 
+    <!-- Notification Toasts -->
+    <div class="toast-container" id="toast-container"></div>
+
     <!-- Floating Right Sidebar Dock -->
     <div class="right-dock" id="right-dock">
       <div id="solar-dashboard-mount"></div>
@@ -116,10 +119,37 @@ if (appContainer) {
     solarDashboard.setScaleFactor(scaleFactor);
   });
 
+  const toastContainer = document.getElementById('toast-container');
+  const statusPill = document.querySelector('.brand-badge .pill');
+
+  function showToast(message, type = 'warning', durationMs = 5000) {
+    if (!toastContainer) return;
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+      <span>${message}</span>
+    `;
+    toastContainer.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transition = 'opacity 0.3s ease';
+      setTimeout(() => toast.remove(), 300);
+    }, durationMs);
+  }
+
   async function triggerSimulation() {
     if (!currentBbox) return;
     const pvConfig = pvConfigPanel.getConfig();
     const date = dateSelector.getDate();
+
+    if (statusPill) {
+      statusPill.innerHTML = `<span class="spinner" style="display: inline-block; vertical-align: middle; margin-right: 4px;"></span> Ray-marching...`;
+    }
 
     try {
       const payload = {
@@ -151,6 +181,11 @@ if (appContainer) {
       playbackEngine.setSimulationContext(data.timeseries.length, data.metadata.time_step_minutes);
     } catch (err) {
       console.warn('Simulation execution error:', err);
+      showToast(err.message, 'warning');
+    } finally {
+      if (statusPill) {
+        statusPill.textContent = 'QC Solar 1m';
+      }
     }
   }
 

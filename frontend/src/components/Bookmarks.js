@@ -3,6 +3,8 @@
  * Provides one-click camera navigation to benchmark Quebec test locations.
  */
 
+import { fetchLocations } from '../services/api.js';
+
 export const PRESET_LOCATIONS = [
   {
     id: 'montreal',
@@ -32,7 +34,28 @@ export class Bookmarks {
     this.container = container;
     this.onSelect = onSelect || (() => {});
     this.activeId = null;
+    this.locations = [...PRESET_LOCATIONS];
     this.render();
+    this.syncWithBackend();
+  }
+
+  async syncWithBackend() {
+    try {
+      const data = await fetchLocations();
+      if (data && Array.isArray(data.locations)) {
+        data.locations.forEach(serverLoc => {
+          const match = this.locations.find(l => l.id === serverLoc.id);
+          if (match) {
+            match.is_cached = serverLoc.is_cached;
+            if (serverLoc.bbox && !match.sampleBbox) {
+              match.sampleBbox = serverLoc.bbox;
+            }
+          }
+        });
+      }
+    } catch (_) {
+      // Offline fallback: keep default PRESET_LOCATIONS
+    }
   }
 
   render() {

@@ -73,6 +73,17 @@ export class TimeScrubber {
       }
     });
 
+    window.addEventListener('keydown', (e) => {
+      if (document.activeElement && (document.activeElement.tagName === 'INPUT' && document.activeElement.type === 'text')) {
+        return; // Don't intercept when user is typing in geocoder input
+      }
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const delta = e.key === 'ArrowRight' ? 1 : -1;
+        this.setStep(this.currentIndex + delta);
+      }
+    });
+
     this.container.appendChild(this.element);
   }
 
