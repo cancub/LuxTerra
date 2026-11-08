@@ -6,6 +6,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import './styles.css';
 import { initMap } from './components/MapViewer.js';
 import { LayerToggle } from './components/LayerToggle.js';
+import { Bookmarks } from './components/Bookmarks.js';
 
 const appContainer = document.getElementById('app');
 if (appContainer) {
@@ -33,6 +34,11 @@ if (appContainer) {
   `;
 
   const map = initMap('map');
+  const topCenterControls = document.getElementById('top-center-controls');
   const topRightControls = document.getElementById('top-right-controls');
+
+  new Bookmarks(map, topCenterControls, (preset) => {
+    console.log('Selected preset:', preset.name);
+  });
   new LayerToggle(map, topRightControls);
 }
