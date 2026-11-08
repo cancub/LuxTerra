@@ -50,6 +50,7 @@ data/dtm/tmp/
 .vscode/
 .idea/**
 !.idea/plan*.md
+!.idea/phase_*.md
 *.swp
 *.swo
 *~
