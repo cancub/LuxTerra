@@ -25,6 +25,7 @@ from ..interfaces.occlusion_engine import OcclusionEngine
 from ..interfaces.pv_model import PVSystemModel
 from .elevation.geo_utils import transform_geometry
 from .serializer import encode_masks_batch, encode_mask_bitmask
+from .solar.phenology import calculate_canopy_transmittance
 
 TZ_QUEBEC = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
 
@@ -50,7 +51,7 @@ class SimulationOrchestrator:
         """
         Executes a 24-hour simulation for the requested bounding box and date.
         """
-        # 1. Extract elevation window
+        # 1. Extract elevation window (co-registered DTM, DSM, and CHM)
         bbox = request.bbox
         elev_data = self.elevation_provider.get_elevation_window(
             min_lon=bbox.min_lon,
@@ -61,7 +62,11 @@ class SimulationOrchestrator:
             target_resolution_m=request.resolution_m
         )
 
-        elevation_grid = elev_data["buffered_elevation"]
+        dtm_grid = elev_data.get("dtm", elev_data["buffered_elevation"])
+        dsm_grid = elev_data.get("dsm", dtm_grid)
+        has_canopy = bool(elev_data.get("has_canopy", False)) and request.include_tree_canopy
+        dsm_tile_source = elev_data.get("dsm_tile_source")
+
         patch_slice_y = elev_data["patch_slice_y"]
         patch_slice_x = elev_data["patch_slice_x"]
         median_elev = elev_data["median_elevation_m"]
@@ -70,6 +75,10 @@ class SimulationOrchestrator:
         patch_h = patch_slice_y.stop - patch_slice_y.start
         patch_w = patch_slice_x.stop - patch_slice_x.start
         cell_area_m2 = request.resolution_m * request.resolution_m
+
+        # Compute seasonal canopy transmittance
+        transmittance = calculate_canopy_transmittance(request.date, mode=request.canopy_mode)
+        canopy_transmittance = transmittance.direct
 
         # 1b. Rasterize polygon inclusion mask if an oblong/custom shape was requested
         polygon_mask = None
@@ -125,14 +134,30 @@ class SimulationOrchestrator:
 
         # 4. Batch compute occlusion masks for daytime frames (single VRAM upload)
         if daylight_angle_pairs:
-            daylight_masks = self.occlusion_engine.compute_shadow_masks_batch(
-                elevation_grid=elevation_grid,
-                patch_slice_y=patch_slice_y,
-                patch_slice_x=patch_slice_x,
-                sun_angles=daylight_angle_pairs,
-                resolution_m=request.resolution_m,
-                max_search_radius_m=request.buffer_meters
-            )
+            if has_canopy:
+                is_rooftop = (request.deployment_mode == DeploymentMode.ROOFTOP)
+                daylight_masks, daylight_canopy_masks = self.occlusion_engine.compute_dual_shadow_masks_batch(
+                    dtm_grid=dtm_grid,
+                    dsm_grid=dsm_grid,
+                    patch_slice_y=patch_slice_y,
+                    patch_slice_x=patch_slice_x,
+                    sun_angles=daylight_angle_pairs,
+                    resolution_m=request.resolution_m,
+                    max_search_radius_m=request.buffer_meters,
+                    is_rooftop=is_rooftop,
+                    ground_stand_height_m=1.5
+                )
+            else:
+                daylight_masks = self.occlusion_engine.compute_shadow_masks_batch(
+                    elevation_grid=dtm_grid,
+                    patch_slice_y=patch_slice_y,
+                    patch_slice_x=patch_slice_x,
+                    sun_angles=daylight_angle_pairs,
+                    resolution_m=request.resolution_m,
+                    max_search_radius_m=request.buffer_meters
+                )
+                daylight_canopy_masks = [np.ones_like(m) for m in daylight_masks]
+
             # Vectorized calculation of clear-sky irradiance for all daytime frames
             daylight_times = timestamps[daylight_indices]
             daylight_irradiance = self.solar_engine.calculate_irradiance_series(
@@ -140,6 +165,7 @@ class SimulationOrchestrator:
             )
         else:
             daylight_masks = []
+            daylight_canopy_masks = []
             daylight_irradiance = []
 
         # 5. PV System Configuration (incorporating overrides without duplicating schema defaults)
@@ -161,6 +187,7 @@ class SimulationOrchestrator:
         sunrise_time = None
         sunset_time = None
         shaded_pct_list = []
+        canopy_shaded_pct_list = []
 
         for idx, ts in enumerate(timestamps):
             py_dt = ts.to_pydatetime()
@@ -173,17 +200,27 @@ class SimulationOrchestrator:
                 sunset_time = ts_str
 
                 mask = daylight_masks[daylight_counter]
+                canopy_m = daylight_canopy_masks[daylight_counter] if has_canopy else None
                 irradiance = daylight_irradiance[daylight_counter]
 
-                power_kw, percent_shaded = self.pv_model.calculate_power_kw(
+                pv_res = self.pv_model.calculate_power_kw(
                     shadow_mask=mask,
                     irradiance=irradiance,
                     cell_area_m2=cell_area_m2,
                     config=pv_cfg,
-                    inclusion_mask=polygon_mask
+                    inclusion_mask=polygon_mask,
+                    canopy_mask=canopy_m,
+                    canopy_transmittance=canopy_transmittance
                 )
 
+                if len(pv_res) == 3:
+                    power_kw, percent_shaded, canopy_shaded_pct = pv_res
+                else:
+                    power_kw, percent_shaded = pv_res
+                    canopy_shaded_pct = 0.0
+
                 shaded_pct_list.append(percent_shaded)
+                canopy_shaded_pct_list.append(canopy_shaded_pct)
 
                 if power_kw > peak_power_kw:
                     peak_power_kw = power_kw
@@ -196,6 +233,7 @@ class SimulationOrchestrator:
                         solar_elevation_deg=round(angles.elevation_deg, 2),
                         power_kw=power_kw,
                         percent_shaded=percent_shaded,
+                        canopy_shaded_pct=canopy_shaded_pct,
                         is_daylight=True,
                         mask_index=daylight_counter
                     )
@@ -210,6 +248,7 @@ class SimulationOrchestrator:
                         solar_elevation_deg=round(angles.elevation_deg, 2),
                         power_kw=0.0,
                         percent_shaded=100.0,
+                        canopy_shaded_pct=0.0,
                         is_daylight=False,
                         mask_index=None
                     )
@@ -222,23 +261,33 @@ class SimulationOrchestrator:
         # 7. Encode daytime masks (masking out non-polygon cells as transparent/unshaded)
         if polygon_mask is not None and daylight_masks:
             export_masks = []
-            for m in daylight_masks:
+            export_canopy_masks = []
+            for m, cm in zip(daylight_masks, daylight_canopy_masks):
                 em = m.copy()
                 em[~polygon_mask] = 1 # 1 = transparent in UI canvas
                 export_masks.append(em)
+                ecm = cm.copy()
+                ecm[~polygon_mask] = 1
+                export_canopy_masks.append(ecm)
             encoded_masks = encode_masks_batch(export_masks)
+            encoded_canopy_masks = encode_masks_batch(export_canopy_masks)
         else:
             encoded_masks = encode_masks_batch(daylight_masks)
+            encoded_canopy_masks = encode_masks_batch(daylight_canopy_masks)
 
-        # Encode nighttime mask (0 = shaded inside shape, 1 = transparent outside)
+        # Encode nighttime masks (0 = shaded inside shape, 1 = transparent outside)
         night_grid = np.zeros((patch_h, patch_w), dtype=np.uint8)
+        night_canopy_grid = np.ones((patch_h, patch_w), dtype=np.uint8)
         if polygon_mask is not None:
             night_grid[~polygon_mask] = 1
+            night_canopy_grid[~polygon_mask] = 1
         encoded_night_mask = encode_mask_bitmask(night_grid)
+        encoded_night_canopy_mask = encode_mask_bitmask(night_canopy_grid)
 
         # 8. Daily Summary
         daylight_hours = round(len(daylight_indices) * (step_min / 60.0), 2)
         avg_shaded = round(float(np.mean(shaded_pct_list)), 2) if shaded_pct_list else 0.0
+        avg_canopy_shaded = round(float(np.mean(canopy_shaded_pct_list)), 2) if canopy_shaded_pct_list else 0.0
 
         daily_summary = DailySummary(
             total_daily_kwh=round(total_daily_kwh, 2),
@@ -247,7 +296,8 @@ class SimulationOrchestrator:
             sunrise_time=sunrise_time,
             sunset_time=sunset_time,
             daylight_hours=daylight_hours,
-            avg_shaded_pct=avg_shaded
+            avg_shaded_pct=avg_shaded,
+            avg_canopy_shaded_pct=avg_canopy_shaded
         )
 
         effective_area = polygon_area_m2 if polygon_area_m2 is not None else geo_info["patch_area_m2"]
@@ -262,6 +312,10 @@ class SimulationOrchestrator:
             median_elevation_m=round(median_elev, 2),
             crs=elev_data["crs"],
             tile_source=elev_data["tile_source"],
+            dsm_tile_source=dsm_tile_source,
+            has_canopy_data=has_canopy,
+            include_tree_canopy=request.include_tree_canopy,
+            canopy_mode=request.canopy_mode,
             date=request.date,
             time_step_minutes=step_min,
             buffer_meters=request.buffer_meters,
@@ -278,5 +332,8 @@ class SimulationOrchestrator:
             timeseries=timeseries_metrics,
             mask_encoding="bitmask_base64",
             masks=encoded_masks,
-            night_mask=encoded_night_mask
+            canopy_masks=encoded_canopy_masks,
+            canopy_transmittance=canopy_transmittance,
+            night_mask=encoded_night_mask,
+            night_canopy_mask=encoded_night_canopy_mask
         )

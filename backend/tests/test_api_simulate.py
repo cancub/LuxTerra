@@ -149,7 +149,8 @@ async def test_simulate_rooftop_vs_ground_gcr_scaling():
                 "max_lat": 45.504
             },
             "date": "2026-06-21",
-            "time_step_minutes": 30
+            "time_step_minutes": 30,
+            "include_tree_canopy": False
         }
 
         # Rooftop (GCR = 1.0)
@@ -162,8 +163,14 @@ async def test_simulate_rooftop_vs_ground_gcr_scaling():
         assert res_ground.status_code == 200
         kwh_ground = res_ground.json()["daily_summary"]["total_daily_kwh"]
 
-        # Ground mount should produce exactly 45% of rooftop output
+        # Bare-terrain ground mount should produce exactly 45% of rooftop output
         assert pytest.approx(kwh_ground / kwh_rooftop, abs=0.01) == 0.45
+
+        # With canopy enabled, ground-mount suffers additional structure/canopy shade compared to rooftop
+        res_canopy_ground = await client.post("/api/simulate", json={**base_payload, "include_tree_canopy": True, "deployment_mode": "ground_mount"})
+        assert res_canopy_ground.status_code == 200
+        kwh_canopy_ground = res_canopy_ground.json()["daily_summary"]["total_daily_kwh"]
+        assert kwh_canopy_ground < kwh_ground
 
 
 @pytest.mark.asyncio
@@ -313,4 +320,60 @@ async def test_simulate_oblong_polygon_shape():
         assert "night_mask" in data
         assert data["night_mask"] is not None
         assert len(data["night_mask"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_simulate_tree_canopy_dual_masks():
+    """
+    Test simulation with tree canopy enabled.
+    Verifies that dual-channel masks (masks + canopy_masks), phenology transmittance,
+    and canopy summary metrics are present and populated.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        payload = {
+            "bbox": {
+                "min_lon": -73.619,
+                "min_lat": 45.502,
+                "max_lon": -73.617,
+                "max_lat": 45.504
+            },
+            "date": "2026-06-21",
+            "time_step_minutes": 15,
+            "include_tree_canopy": True,
+            "canopy_mode": "seasonal",
+            "deployment_mode": "ground_mount"
+        }
+        response = await client.post("/api/simulate", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+
+        # Check metadata
+        meta = data["metadata"]
+        assert meta["include_tree_canopy"] is True
+        assert meta["canopy_mode"] == "seasonal"
+        assert meta["has_canopy_data"] is True
+        assert meta["dsm_tile_source"] is not None
+
+        # Check dual mask arrays
+        assert "masks" in data
+        assert "canopy_masks" in data
+        assert len(data["masks"]) == len(data["canopy_masks"])
+        assert len(data["masks"]) > 0
+
+        # Check phenology transmittance (summer = 0.15)
+        assert data["canopy_transmittance"] == 0.15
+        assert "night_canopy_mask" in data
+        assert data["night_canopy_mask"] is not None
+
+        # Check daily summary
+        summary = data["daily_summary"]
+        assert "avg_canopy_shaded_pct" in summary
+        assert summary["avg_canopy_shaded_pct"] >= 0.0
+
+        # Check timeseries metric fields
+        first_daylight = next(m for m in data["timeseries"] if m["is_daylight"])
+        assert "canopy_shaded_pct" in first_daylight
+        assert first_daylight["canopy_shaded_pct"] >= 0.0
+
 
