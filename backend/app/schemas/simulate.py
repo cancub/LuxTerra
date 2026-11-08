@@ -114,3 +114,4 @@ class SimulateResponse(BaseModel):
     timeseries: List[TimestepMetric]
     mask_encoding: str = Field(default="bitmask_base64", description="Encoding format for 2D shadow masks")
     masks: List[str] = Field(default_factory=list, description="Base64 encoded bit-packed binary masks for daytime frames")
+    night_mask: Optional[str] = Field(default=None, description="Base64 bitmask for nighttime frames (shaded inside shape, transparent outside)")

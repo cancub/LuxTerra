@@ -91,15 +91,15 @@ export class ShadowCanvasLayer {
   }
 
   /**
-   * Renders 100% full shadow across the entire patch (used for nighttime).
+   * Renders 100% full shadow across the active shape (used for nighttime).
    */
-  renderFullShade(rows, cols) {
+  renderFullShade(rows, cols, polygonCoords = null, patchBounds = null) {
     if (rows <= 0 || cols <= 0) {
       this.clear();
       return;
     }
 
-    this.shadowRenderer.renderFullShade(rows, cols);
+    this.shadowRenderer.renderFullShade(rows, cols, polygonCoords, patchBounds || this.currentBounds);
 
     const source = this.map.getSource(this.sourceId);
     if (source && typeof source.play === 'function') {

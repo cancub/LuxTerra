@@ -310,4 +310,7 @@ async def test_simulate_oblong_polygon_shape():
         meta = data["metadata"]
         assert meta["patch_area_m2"] < 25000.0 # Triangle is ~8,000 m², well below 35,000 m² bbox
         assert data["daily_summary"]["total_daily_kwh"] > 0.0
+        assert "night_mask" in data
+        assert data["night_mask"] is not None
+        assert len(data["night_mask"]) > 0
 

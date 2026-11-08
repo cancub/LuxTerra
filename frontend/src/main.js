@@ -107,9 +107,12 @@ if (appContainer) {
       if (metric.is_daylight && metric.mask_index !== null && currentSimulationData.masks) {
         const maskStr = currentSimulationData.masks[metric.mask_index];
         shadowCanvasLayer.renderFrame(maskStr, meta.grid_rows, meta.grid_cols);
+      } else if (currentSimulationData.night_mask) {
+        // Nighttime: render 100% shade inside the user's selected shape (polygon or rectangle)
+        shadowCanvasLayer.renderFrame(currentSimulationData.night_mask, meta.grid_rows, meta.grid_cols);
       } else {
-        // Nighttime or sun below horizon: no terrain shadow is cast
-        shadowCanvasLayer.clear();
+        // Fallback: render shade masked to active polygon geometry
+        shadowCanvasLayer.renderFullShade(meta.grid_rows, meta.grid_cols, currentPolygon, meta.patch_bounds_wgs84);
       }
     } else {
       shadowCanvasLayer.clear();

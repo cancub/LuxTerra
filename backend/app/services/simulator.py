@@ -24,7 +24,7 @@ from ..interfaces.solar_engine import SolarEngine
 from ..interfaces.occlusion_engine import OcclusionEngine
 from ..interfaces.pv_model import PVSystemModel
 from .elevation.geo_utils import transform_geometry
-from .serializer import encode_masks_batch
+from .serializer import encode_masks_batch, encode_mask_bitmask
 
 TZ_QUEBEC = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
 
@@ -230,6 +230,12 @@ class SimulationOrchestrator:
         else:
             encoded_masks = encode_masks_batch(daylight_masks)
 
+        # Encode nighttime mask (0 = shaded inside shape, 1 = transparent outside)
+        night_grid = np.zeros((patch_h, patch_w), dtype=np.uint8)
+        if polygon_mask is not None:
+            night_grid[~polygon_mask] = 1
+        encoded_night_mask = encode_mask_bitmask(night_grid)
+
         # 8. Daily Summary
         daylight_hours = round(len(daylight_indices) * (step_min / 60.0), 2)
         avg_shaded = round(float(np.mean(shaded_pct_list)), 2) if shaded_pct_list else 0.0
@@ -271,5 +277,6 @@ class SimulationOrchestrator:
             daily_summary=daily_summary,
             timeseries=timeseries_metrics,
             mask_encoding="bitmask_base64",
-            masks=encoded_masks
+            masks=encoded_masks,
+            night_mask=encoded_night_mask
         )
