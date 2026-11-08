@@ -108,8 +108,8 @@ if (appContainer) {
         const maskStr = currentSimulationData.masks[metric.mask_index];
         shadowCanvasLayer.renderFrame(maskStr, meta.grid_rows, meta.grid_cols);
       } else {
-        // Nighttime or sun below horizon: 100% full shade across the entire selected rectangle
-        shadowCanvasLayer.renderFullShade(meta.grid_rows, meta.grid_cols);
+        // Nighttime or sun below horizon: no terrain shadow is cast
+        shadowCanvasLayer.clear();
       }
     } else {
       shadowCanvasLayer.clear();
