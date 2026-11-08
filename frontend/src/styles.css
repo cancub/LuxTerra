@@ -437,6 +437,20 @@ input:focus, select:focus {
   color: #f8fafc;
 }
 
+/* Interactive Rectangle Resize Corner Handles */
+.box-corner-handle {
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.box-corner-handle:hover {
+  transform: scale(1.35);
+  box-shadow: 0 0 14px rgba(56, 189, 248, 1) !important;
+}
+
+.box-corner-handle:active {
+  transform: scale(1.5);
+}
+
 /* Bookmark Buttons High Contrast */
 .bookmark-btn {
   background: rgba(30, 41, 59, 0.9) !important;
