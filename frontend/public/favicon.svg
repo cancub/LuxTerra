@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="64" height="64">
+  <defs>
+    <radialGradient id="sunGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </radialGradient>
+  </defs>
+  <!-- Background disc for contrast against light or dark browser tab bars -->
+  <circle cx="12" cy="12" r="11.5" fill="#090d16" />
+  <!-- Radiant Sun App Logo -->
+  <g fill="none" stroke="url(#sunGlow)" stroke-width="2" stroke-linecap="round">
+    <circle cx="12" cy="12" r="4.5" fill="#f59e0b" />
+    <line x1="12" y1="1.5" x2="12" y2="3.5" />
+    <line x1="12" y1="20.5" x2="12" y2="22.5" />
+    <line x1="4.57" y1="4.57" x2="6.0" y2="6.0" />
+    <line x1="18.0" y1="18.0" x2="19.43" y2="19.43" />
+    <line x1="1.5" y1="12" x2="3.5" y2="12" />
+    <line x1="20.5" y1="12" x2="22.5" y2="12" />
+    <line x1="4.57" y1="19.43" x2="6.0" y2="18.0" />
+    <line x1="18.0" y1="6.0" x2="19.43" y2="4.57" />
+  </g>
+</svg>
