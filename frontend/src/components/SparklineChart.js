@@ -109,6 +109,10 @@ export class SparklineChart {
                 <span style="width: 8px; height: 8px; background: rgba(16, 185, 129, 0.35); border: 1px solid #10b981; border-radius: 2px; display: inline-block;"></span>
                 <span style="color: #34d399; font-weight: 600;">Canopy Loss</span>
               </span>
+              <span class="legend-selfshade" style="display: none; align-items: center; gap: 5px;">
+                <span style="width: 8px; height: 8px; background: rgba(129, 140, 248, 0.35); border: 1px solid #818cf8; border-radius: 2px; display: inline-block;"></span>
+                <span style="color: #a5b4fc; font-weight: 600;">Self-Shade</span>
+              </span>
               <span class="legend-potential" style="display: none; align-items: center; gap: 5px;">
                 <span style="width: 8px; height: 2px; background: #f59e0b; border-bottom: 1px dashed #f59e0b; display: inline-block;"></span>
                 <span style="color: #f59e0b; font-weight: 600;">Clear-Sky</span>
@@ -138,6 +142,7 @@ export class SparklineChart {
     this.legendItems = this.element.querySelector('.legend-items');
     this.legendChevron = this.element.querySelector('.legend-chevron');
     this.legendCanopy = this.element.querySelector('.legend-canopy');
+    this.legendSelfShade = this.element.querySelector('.legend-selfshade');
     this.legendPotential = this.element.querySelector('.legend-potential');
 
     this.curveHeader.addEventListener('click', () => {
@@ -205,8 +210,11 @@ export class SparklineChart {
       return (rawPot || 0.0) * scaleFactor;
     });
     const canopyLosses = this.timeseries.map((d) => (d.canopy_loss_kw || 0.0) * scaleFactor);
+    const selfLosses = this.timeseries.map((d) => (d.self_shading_loss_kw || 0.0) * scaleFactor);
 
     this.hasCanopyLoss = canopyLosses.some((loss) => loss > 0.05);
+    this.hasSelfShadeLoss = selfLosses.some((loss) => loss > 0.05);
+    const hasAnyLoss = this.hasCanopyLoss || this.hasSelfShadeLoss;
 
     this.maxPowerKw = Math.max(1.0, ...potentials, ...powers);
 
@@ -248,7 +256,7 @@ export class SparklineChart {
     const potLineStr = potentialPoints.join(' ');
     if (this.potentialLine) {
       this.potentialLine.setAttribute('points', potLineStr);
-      this.potentialLine.style.display = this.hasCanopyLoss ? 'block' : 'none';
+      this.potentialLine.style.display = hasAnyLoss ? 'block' : 'none';
     }
 
     // Canopy loss shaded area between canopy top and actual power (canopy - geological)
@@ -268,8 +276,11 @@ export class SparklineChart {
     if (this.legendCanopy) {
       this.legendCanopy.style.display = this.hasCanopyLoss ? 'flex' : 'none';
     }
+    if (this.legendSelfShade) {
+      this.legendSelfShade.style.display = this.hasSelfShadeLoss ? 'flex' : 'none';
+    }
     if (this.legendPotential) {
-      this.legendPotential.style.display = this.hasCanopyLoss ? 'flex' : 'none';
+      this.legendPotential.style.display = hasAnyLoss ? 'flex' : 'none';
     }
 
     this.playheadLine.style.display = 'block';
@@ -288,6 +299,7 @@ export class SparklineChart {
     const power = (m.power_kw || 0) * scaleFactor;
     const potential = ((m.unshaded_power_kw !== undefined ? m.unshaded_power_kw : m.power_kw) || 0) * scaleFactor;
     const canopyLoss = (m.canopy_loss_kw || 0) * scaleFactor;
+    const selfLoss = (m.self_shading_loss_kw || 0) * scaleFactor;
 
     const padTop = 6;
     const padBottom = 6;
@@ -305,7 +317,7 @@ export class SparklineChart {
     this.playheadDot.setAttribute('cx', x.toFixed(1));
     this.playheadDot.setAttribute('cy', yActual.toFixed(1));
 
-    if (canopyLoss > 0.05 && this.playheadPotentialDot && this.playheadDropLine) {
+    if ((canopyLoss > 0.05 || selfLoss > 0.05) && this.playheadPotentialDot && this.playheadDropLine) {
       this.playheadPotentialDot.style.display = 'block';
       this.playheadPotentialDot.setAttribute('cx', x.toFixed(1));
       this.playheadPotentialDot.setAttribute('cy', yPot.toFixed(1));

@@ -125,10 +125,11 @@ test('SolarDashboard: telemetry correctly populates stacked subtraction and 3-pa
   // Update telemetry for daylight frame (11:36)
   dashboard.updateTelemetry(mockSimulationData.timeseries[0], 0);
 
-  // Stacked subtraction: Clear-Sky (81.9) - Geological Shade (0.0) - Tree Shade (28.8) = AC Power (53.1)
+  // Stacked subtraction: Clear-Sky (81.9) - Geological Shade (0.0) - Tree Shade (28.8) - Panel Self-Shade (0.0) = AC Power (53.1)
   assert.equal(dashboard.subClearSkyVal.textContent, '81.9 kW');
   assert.equal(dashboard.subGeoShadeVal.textContent, '0.0 kW');
   assert.equal(dashboard.subTreeShadeVal.textContent, '28.8 kW');
+  assert.equal(dashboard.subSelfShadeVal.textContent, '0.0 kW');
   assert.equal(dashboard.subAcPowerVal.textContent, '53.1 kW');
   assert.equal(dashboard.kwGauge.textContent, '53.1 kW');
   assert.equal(dashboard.diffuseOnlyOverlay.style.display, 'none');

@@ -94,6 +94,15 @@ export class SolarDashboard {
               </span>
               <span class="sub-treeshade-val" style="font-weight: 600; color: #22c55e;">0.0 kW</span>
             </div>
+            <!-- Panel Self-Shade Loss -->
+            <div class="subtraction-row panel-shade-row" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-secondary);">
+              <span style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-weight: 700; color: #818cf8; width: 8px; text-align: center;">−</span>
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: #6366f1;"></span>
+                <span>Panel Self-Shade</span>
+              </span>
+              <span class="sub-selfshade-val" style="font-weight: 600; color: #a5b4fc;">0.0 kW</span>
+            </div>
 
             <!-- Diffuse Only Overlay Badge with Layperson Hover Tooltip -->
             <div class="diffuse-only-overlay">
@@ -146,6 +155,7 @@ export class SolarDashboard {
     this.subClearSkyVal = this.element.querySelector('.sub-clearsky-val');
     this.subGeoShadeVal = this.element.querySelector('.sub-geoshade-val');
     this.subTreeShadeVal = this.element.querySelector('.sub-treeshade-val');
+    this.subSelfShadeVal = this.element.querySelector('.sub-selfshade-val');
     this.subAcPowerVal = this.element.querySelector('.sub-acpower-val');
     this.kwGauge = this.subAcPowerVal;
 
@@ -172,6 +182,7 @@ export class SolarDashboard {
       if (this.subClearSkyVal) this.subClearSkyVal.textContent = '0.0 kW';
       if (this.subGeoShadeVal) this.subGeoShadeVal.textContent = '0.0 kW';
       if (this.subTreeShadeVal) this.subTreeShadeVal.textContent = '0.0 kW';
+      if (this.subSelfShadeVal) this.subSelfShadeVal.textContent = '0.0 kW';
       if (this.subAcPowerVal) this.subAcPowerVal.textContent = '0.0 kW';
       this.chart.setData([], 1.0);
       return;
@@ -244,15 +255,19 @@ export class SolarDashboard {
     const rawUnshadedKw = metric.unshaded_power_kw !== undefined ? metric.unshaded_power_kw : metric.power_kw;
     const unshadedKw = (rawUnshadedKw || 0.0) * this.currentScaleFactor;
     const canopyLossKw = (metric.canopy_loss_kw || 0.0) * this.currentScaleFactor;
+    const selfLossKw = (metric.self_shading_loss_kw || 0.0) * this.currentScaleFactor;
     const rawGeoLossKw = metric.geological_loss_kw !== undefined
       ? metric.geological_loss_kw
-      : Math.max(0.0, rawUnshadedKw - (metric.canopy_loss_kw || 0.0) - (metric.power_kw || 0.0));
+      : Math.max(0.0, rawUnshadedKw - (metric.canopy_loss_kw || 0.0) - (metric.self_shading_loss_kw || 0.0) - (metric.power_kw || 0.0));
     const geoLossKw = (rawGeoLossKw || 0.0) * this.currentScaleFactor;
 
-    // Stacked subtraction values: Clear-Sky − Geological Shade − Tree Shade = AC Power
+    // Stacked subtraction values: Clear-Sky − Geological Shade − Tree Shade − Panel Self-Shade = AC Power
     this.subClearSkyVal.textContent = `${unshadedKw.toFixed(1)} kW`;
     this.subGeoShadeVal.textContent = `${geoLossKw.toFixed(1)} kW`;
     this.subTreeShadeVal.textContent = `${canopyLossKw.toFixed(1)} kW`;
+    if (this.subSelfShadeVal) {
+      this.subSelfShadeVal.textContent = `${selfLossKw.toFixed(1)} kW`;
+    }
     this.subAcPowerVal.textContent = `${currentKw.toFixed(1)} kW`;
 
     // Overlay 'Diffuse Only' badge when direct beam is blocked by racking tilt or past direct cutoff
