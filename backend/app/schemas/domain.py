@@ -58,7 +58,7 @@ class SolarAngles(BaseModel):
     azimuth_deg: float = Field(..., description="Solar azimuth in degrees (180° = True South)")
     elevation_deg: float = Field(..., description="Solar elevation angle above horizon in degrees")
     zenith_deg: float = Field(..., description="Solar zenith angle from vertical in degrees")
-    optimal_tilt_deg: float = Field(..., description="Optimal panel tilt matching solar zenith")
+    optimal_tilt_deg: float = Field(..., description="Fixed seasonal optimal panel tilt matching solar noon zenith")
     incident_angle_deg: float = Field(..., description="Angle between panel normal and solar ray")
 
 

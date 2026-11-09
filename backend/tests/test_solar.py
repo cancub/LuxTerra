@@ -20,7 +20,7 @@ def test_solar_angles_summer_solstice():
     assert 60.0 <= angles.elevation_deg <= 70.0
     assert 160.0 <= angles.azimuth_deg <= 200.0
     assert pytest.approx(angles.zenith_deg + angles.elevation_deg, abs=0.1) == 90.0
-    assert angles.optimal_tilt_deg == angles.zenith_deg
+    assert pytest.approx(angles.optimal_tilt_deg, abs=0.1) == angles.zenith_deg
     assert angles.incident_angle_deg < 15.0
 
 
@@ -71,6 +71,27 @@ def test_altitude_increases_clear_sky_dni():
     irr_mountain = engine.calculate_irradiance(dt, 46.136, -74.195, angles, altitude_m=500.0)
 
     assert irr_mountain.dni_w_m2 > irr_sea_level.dni_w_m2
+
+
+def test_fixed_seasonal_tilt_across_day():
+    """
+    Seasonal optimal tilt must remain constant across all frames of the day,
+    ensuring afternoon/evening sun facing a south-oriented panel is not artificially
+    zeroed out by near-vertical tilts.
+    """
+    engine = PvlibSolarEngine()
+    import pandas as pd
+    times = pd.date_range("2026-06-21 06:00", "2026-06-21 20:00", freq="1h", tz=TZ_QC)
+    angles_list = engine.calculate_solar_angles_series(times, 46.136, -74.195)
+    
+    first_tilt = angles_list[0].optimal_tilt_deg
+    assert 20.0 <= first_tilt <= 25.0
+    for a in angles_list:
+        assert a.optimal_tilt_deg == first_tilt
+    
+    # At 18:27 (or 18:00), AOI should be < 90° so direct irradiance reaches the front face
+    angle_1800 = next(a for a, t in zip(angles_list, times) if t.hour == 18)
+    assert angle_1800.incident_angle_deg < 90.0
 
 
 def test_night_irradiance_zero():

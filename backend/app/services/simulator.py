@@ -121,6 +121,7 @@ class SimulationOrchestrator:
 
         # 3. Vectorized calculation of all solar positions
         all_angles = self.solar_engine.calculate_solar_angles_series(timestamps, center_lat, center_lon)
+        seasonal_tilt = round(all_angles[0].optimal_tilt_deg, 1) if all_angles else round(center_lat, 1)
 
         daylight_indices = []
         daylight_angle_pairs = []
@@ -248,6 +249,8 @@ class SimulationOrchestrator:
                     peak_power_kw = power_kw
                     peak_time = ts_str
 
+                is_diffuse_only = bool(angles.elevation_deg > 0.0 and irradiance.poa_direct_w_m2 <= 0.001 and unshaded_power_kw > 0.0)
+
                 timeseries_metrics.append(
                     TimestepMetric(
                         timestamp=ts_str,
@@ -260,7 +263,9 @@ class SimulationOrchestrator:
                         percent_shaded=percent_shaded,
                         canopy_shaded_pct=canopy_shaded_pct,
                         is_daylight=True,
-                        mask_index=daylight_counter
+                        mask_index=daylight_counter,
+                        optimal_tilt_deg=seasonal_tilt,
+                        is_diffuse_only=is_diffuse_only
                     )
                 )
                 daylight_counter += 1
@@ -278,7 +283,9 @@ class SimulationOrchestrator:
                         percent_shaded=100.0,
                         canopy_shaded_pct=0.0,
                         is_daylight=False,
-                        mask_index=None
+                        mask_index=None,
+                        optimal_tilt_deg=seasonal_tilt,
+                        is_diffuse_only=False
                     )
                 )
 
@@ -336,7 +343,8 @@ class SimulationOrchestrator:
             sunset_time=sunset_time,
             daylight_hours=daylight_hours,
             avg_shaded_pct=avg_shaded,
-            avg_canopy_shaded_pct=avg_canopy_shaded
+            avg_canopy_shaded_pct=avg_canopy_shaded,
+            optimal_tilt_deg=seasonal_tilt
         )
 
         effective_area = polygon_area_m2 if polygon_area_m2 is not None else geo_info["patch_area_m2"]
@@ -362,7 +370,8 @@ class SimulationOrchestrator:
             deployment_mode=pv_cfg.deployment_mode.value,
             effective_gcr=pv_cfg.effective_gcr,
             module_efficiency=pv_cfg.module_efficiency,
-            system_derate=pv_cfg.system_derate
+            system_derate=pv_cfg.system_derate,
+            optimal_tilt_deg=seasonal_tilt
         )
 
         return SimulateResponse(

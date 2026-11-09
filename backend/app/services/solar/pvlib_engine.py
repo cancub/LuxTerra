@@ -12,7 +12,7 @@ import pvlib
 from ...interfaces.solar_engine import SolarEngine
 from ...schemas.domain import SolarAngles, IrradianceComponents
 from ...constants import DEFAULT_TIMEZONE
-from .geometry import compute_solar_angles
+from .geometry import compute_solar_angles, compute_seasonal_optimal_tilt
 
 
 class PvlibSolarEngine(SolarEngine):
@@ -53,9 +53,13 @@ class PvlibSolarEngine(SolarEngine):
         elevations = solpos['elevation'].to_numpy(dtype=np.float64)
         zeniths = solpos['zenith'].to_numpy(dtype=np.float64)
 
-        # Vectorized optimal tilt: clamped zenith during daytime, latitude at night
+        # Fixed seasonal optimal tilt: solar noon zenith across the entire day
         day_mask = elevations > 0.0
-        optimal_tilts = np.where(day_mask, np.clip(zeniths, 0.0, 90.0), np.clip(latitude, 0.0, 90.0))
+        if len(times) > 1 and np.any(day_mask):
+            seasonal_tilt = float(np.clip(np.min(zeniths[day_mask]), 0.0, 90.0))
+        else:
+            seasonal_tilt = compute_seasonal_optimal_tilt(times[0].to_pydatetime(), latitude, longitude)
+        optimal_tilts = np.full_like(zeniths, seasonal_tilt)
 
         # Vectorized angle of incidence (AOI) facing true south (azimuth = 180.0)
         aoi_series = pvlib.irradiance.aoi(

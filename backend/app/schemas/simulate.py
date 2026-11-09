@@ -83,6 +83,7 @@ class SimulateMetadata(BaseModel):
     effective_gcr: float
     module_efficiency: float
     system_derate: float
+    optimal_tilt_deg: Optional[float] = Field(default=None, description="Computed fixed seasonal optimal panel tilt in degrees")
 
 
 class DailySummary(BaseModel):
@@ -101,6 +102,7 @@ class DailySummary(BaseModel):
     daylight_hours: float = Field(..., description="Total hours of daylight")
     avg_shaded_pct: float = Field(..., description="Average percentage of patch shaded during daylight")
     avg_canopy_shaded_pct: float = Field(default=0.0, description="Average percentage of patch shaded by canopy during daylight")
+    optimal_tilt_deg: Optional[float] = Field(default=None, description="Computed fixed seasonal optimal panel tilt in degrees")
 
 
 class TimestepMetric(BaseModel):
@@ -118,6 +120,8 @@ class TimestepMetric(BaseModel):
     canopy_shaded_pct: float = Field(default=0.0, description="Percentage of patch shaded by tree canopy")
     is_daylight: bool
     mask_index: Optional[int] = Field(None, description="Index in masks list if daylight, null if night")
+    optimal_tilt_deg: Optional[float] = Field(default=None, description="Computed fixed seasonal optimal panel tilt in degrees")
+    is_diffuse_only: bool = Field(default=False, description="True if sun is up but panel direct beam is 0, so power is pure diffuse")
 
 
 class SimulateResponse(BaseModel):

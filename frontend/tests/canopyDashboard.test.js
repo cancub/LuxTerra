@@ -76,7 +76,8 @@ test('SolarDashboard: telemetry correctly populates stacked subtraction and 3-pa
       canopy_loss_kwh: 105.4,
       canopy_loss_pct: 31.2,
       peak_power_kw: 54.4,
-      unshaded_peak_kw: 82.1
+      unshaded_peak_kw: 82.1,
+      optimal_tilt_deg: 69.6
     },
     timeseries: [
       {
@@ -87,7 +88,19 @@ test('SolarDashboard: telemetry correctly populates stacked subtraction and 3-pa
         geological_loss_kw: 0.0,
         percent_shaded: 0.0,
         canopy_shaded_pct: 92.1,
-        is_daylight: true
+        is_daylight: true,
+        is_diffuse_only: false
+      },
+      {
+        timestamp: '2026-12-21T16:15:00-05:00',
+        power_kw: 1.2,
+        unshaded_power_kw: 1.2,
+        canopy_loss_kw: 0.0,
+        geological_loss_kw: 0.0,
+        percent_shaded: 0.0,
+        canopy_shaded_pct: 0.0,
+        is_daylight: true,
+        is_diffuse_only: true
       },
       {
         timestamp: '2026-12-21T22:00:00-05:00',
@@ -97,15 +110,17 @@ test('SolarDashboard: telemetry correctly populates stacked subtraction and 3-pa
         geological_loss_kw: 0.0,
         percent_shaded: 100.0,
         canopy_shaded_pct: 0.0,
-        is_daylight: false
+        is_daylight: false,
+        is_diffuse_only: false
       }
     ]
   };
 
   dashboard.setSimulationData(mockSimulationData);
 
-  // Daily energy is displayed at top without loss mention
+  // Daily energy is displayed at top without loss mention, and seasonal optimal tilt is shown
   assert.equal(dashboard.kwhTotal.textContent, '231.9');
+  assert.equal(dashboard.tiltVal.textContent, '69.6°');
 
   // Update telemetry for daylight frame (11:36)
   dashboard.updateTelemetry(mockSimulationData.timeseries[0], 0);
@@ -116,10 +131,18 @@ test('SolarDashboard: telemetry correctly populates stacked subtraction and 3-pa
   assert.equal(dashboard.subTreeShadeVal.textContent, '28.8 kW');
   assert.equal(dashboard.subAcPowerVal.textContent, '53.1 kW');
   assert.equal(dashboard.kwGauge.textContent, '53.1 kW');
+  assert.equal(dashboard.diffuseOnlyOverlay.style.display, 'none');
+
+  // Update telemetry for diffuse-only twilight frame (16:15)
+  dashboard.updateTelemetry(mockSimulationData.timeseries[1], 1);
+  assert.equal(dashboard.subClearSkyVal.textContent, '1.2 kW');
+  assert.equal(dashboard.subAcPowerVal.textContent, '1.2 kW');
+  assert.equal(dashboard.diffuseOnlyOverlay.style.display, 'flex');
 
   // Update telemetry for nighttime frame
-  dashboard.updateTelemetry(mockSimulationData.timeseries[1], 1);
+  dashboard.updateTelemetry(mockSimulationData.timeseries[2], 2);
   assert.equal(dashboard.subAcPowerVal.textContent, '0.0 kW');
+  assert.equal(dashboard.diffuseOnlyOverlay.style.display, 'none');
 });
 
 test('PVConfigPanel: collapsible by default and toggles expand/collapse', (t, done) => {
