@@ -164,9 +164,9 @@
       ],
       "nodata": -32767.0,
       "filesize_bytes": 42426288,
-      "has_dsm": false,
-      "dsm_filename": null,
-      "dsm_path": null
+      "has_dsm": true,
+      "dsm_filename": "dsm_auto_45.757_-71.949.tif",
+      "dsm_path": "/app/data/dsm/dsm_auto_45.757_-71.949.tif"
     },
     {
       "filename": "dtm_auto_46.038_-74.153.tif",

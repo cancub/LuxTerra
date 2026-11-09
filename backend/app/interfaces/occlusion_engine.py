@@ -81,3 +81,24 @@ class OcclusionEngine(ABC):
         Batch computes dual shadow masks across multiple sun angles.
         """
         pass
+
+    def compute_sky_view_factor(
+        self,
+        dtm_grid: np.ndarray,
+        dsm_grid: np.ndarray,
+        patch_slice_y: slice,
+        patch_slice_x: slice,
+        resolution_m: float = 1.0,
+        max_search_radius_m: float = 500.0,
+        num_azimuths: int = 32,
+        is_rooftop: bool = False,
+        ground_stand_height_m: float = 1.5,
+        include_tree_canopy: bool = True,
+        canopy_transmittance: float = 0.15
+    ) -> np.ndarray:
+        """
+        Computes a 2D Sky View Factor (SVF) ambient occlusion map in [0.0, 1.0]
+        across the target patch slice by integrating horizon elevation angles
+        over 360 degrees for both solid terrain (DTM) and semi-transparent canopy (DSM).
+        """
+        pass

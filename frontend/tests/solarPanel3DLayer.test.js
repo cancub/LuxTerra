@@ -465,3 +465,65 @@ test('SolarPanel3DLayer: opaque self-shading supersedes semi-transparent tree ca
   assert.equal(Math.round(breakdownB.acPowerW), 405);
   assert.equal(Math.round(breakdownB.incidentW - breakdownB.totalShadeW + breakdownB.diffuseW), Math.round(breakdownB.acPowerW));
 });
+
+test('SolarPanel3DLayer: per-panel 3D Sky View Factor (SVF) scales individual panel diffuse power while preserving array total', () => {
+  const layer = new SolarPanel3DLayer();
+
+  const mockLayout = {
+    total_panels: 4,
+    total_tables: 1,
+    row_pitch_m: 10.57,
+    tables: [
+      {
+        table_id: 0,
+        row_index: 0,
+        panel_count: 4,
+        corners_wgs84: [
+          [-73.5000, 45.5000],
+          [-73.4980, 45.5000],
+          [-73.4980, 45.5010],
+          [-73.5000, 45.5010]
+        ],
+        center_wgs84: [-73.4990, 45.5005],
+        tilt_deg: 30.0,
+        stand_height_m: 1.0,
+        slant_height_m: 4.56,
+        // Panel 0 ( near wall/trees ): SVF = 0.60, Panel 1: 0.80, Panel 2: 0.90, Panel 3: 1.00 (avg = 0.825)
+        module_svf: [0.60, 0.80, 0.90, 1.00]
+      }
+    ]
+  };
+
+  layer.setLayout(mockLayout);
+
+  const mockMetric = {
+    is_daylight: true,
+    solar_azimuth_deg: 180.0,
+    solar_elevation_deg: 45.0,
+    incident_power_kw: 1.60, // 400 W per panel
+    diffuse_power_kw: 0.33,  // 330 W total diffuse across 4 panels (82.5 W average)
+    unshaded_power_kw: 1.93,
+    power_kw: 1.93
+  };
+
+  layer.updateSunPosition(180.0, 45.0, true, Buffer.from([0xFF]).toString('base64'), null, [-73.501, 45.499, -73.497, 45.502], 2, 2, mockMetric);
+
+  const panels = layer.getPanels();
+  assert.equal(panels.length, 4);
+
+  const b0 = layer.computePanelBreakdown(panels[0]);
+  const b1 = layer.computePanelBreakdown(panels[1]);
+  const b2 = layer.computePanelBreakdown(panels[2]);
+  const b3 = layer.computePanelBreakdown(panels[3]);
+
+  // Panel 0 (SVF 0.60) receives 60 W diffuse; Panel 3 (SVF 1.00) receives 100 W diffuse
+  assert.equal(Math.round(b0.diffuseW), 60);
+  assert.equal(Math.round(b1.diffuseW), 80);
+  assert.equal(Math.round(b2.diffuseW), 90);
+  assert.equal(Math.round(b3.diffuseW), 100);
+
+  // Sum of per-panel diffuse across all 4 panels equals array diffuse_power_kw (330 W)
+  const sumDiffuseW = b0.diffuseW + b1.diffuseW + b2.diffuseW + b3.diffuseW;
+  assert.equal(Math.round(sumDiffuseW), 330);
+});
+

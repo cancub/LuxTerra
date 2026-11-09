@@ -27,7 +27,11 @@ from .elevation.geo_utils import transform_geometry
 from .serializer import encode_masks_batch, encode_mask_bitmask
 from .solar.phenology import calculate_canopy_transmittance
 from .pv.packing_engine import PVPackingEngine
-from .pv.self_shading import calculate_array_self_shading_fraction, calculate_row_self_shading_fraction
+from .pv.self_shading import (
+    calculate_array_self_shading_fraction,
+    calculate_row_self_shading_fraction,
+    calculate_module_rack_sky_view_factor
+)
 
 TZ_QUEBEC = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
 
@@ -184,7 +188,29 @@ class SimulationOrchestrator:
             pv_kwargs["gcr"] = request.gcr
         pv_cfg = PVConfig(**pv_kwargs)
 
-        # 5b. Precompute discrete module locations for ground-mount polygon layouts
+        # 5b. Precompute 360-degree 3D local Sky View Factor (SVF) grid for diffuse sky radiation
+        is_rooftop_mode = (request.deployment_mode == DeploymentMode.ROOFTOP)
+        svf_grid = None
+        if hasattr(self.occlusion_engine, "compute_sky_view_factor"):
+            res_svf = self.occlusion_engine.compute_sky_view_factor(
+                dtm_grid=dtm_grid,
+                dsm_grid=dsm_grid,
+                patch_slice_y=patch_slice_y,
+                patch_slice_x=patch_slice_x,
+                resolution_m=request.resolution_m,
+                max_search_radius_m=min(request.buffer_meters, 500.0),
+                num_azimuths=32,
+                is_rooftop=is_rooftop_mode,
+                ground_stand_height_m=1.5,
+                include_tree_canopy=has_canopy,
+                canopy_transmittance=canopy_transmittance
+            )
+            if isinstance(res_svf, np.ndarray) and res_svf.shape == (patch_h, patch_w):
+                svf_grid = res_svf
+        if svf_grid is None:
+            svf_grid = np.ones((patch_h, patch_w), dtype=np.float32)
+
+        # 5c. Precompute discrete module locations and per-module Sky View Factors (terrain + canopy + front-rack occlusion)
         use_discrete_panels = bool(
             request.polygon
             and len(request.polygon) >= 3
@@ -195,7 +221,7 @@ class SimulationOrchestrator:
 
         discrete_modules = []
         module_conv = 0.0
-        if use_discrete_panels:
+        if layout is not None and layout.tables:
             min_lon, min_lat, max_lon, max_lat = geo_info["patch_bounds_wgs84"]
             lon_span = max_lon - min_lon
             lat_span = max_lat - min_lat
@@ -221,6 +247,8 @@ class SimulationOrchestrator:
                 panel_count = tbl.panel_count or 4
                 num_pairs = max(1, panel_count // 2)
                 south_tables = tables_by_row.get(tbl.row_index - 1, [])
+                is_front_row = (tbl.row_index == min_row_index)
+                table_svfs = []
 
                 for k in range(num_pairs):
                     t_mid = (k + 0.5) / float(num_pairs)
@@ -241,28 +269,76 @@ class SimulationOrchestrator:
                     col_t = min(patch_w - 1, max(0, int(((c_lon_t - min_lon) / lon_span) * patch_w))) if lon_span > 0 else 0
                     row_t = min(patch_h - 1, max(0, int(((max_lat - c_lat_t) / lat_span) * patch_h))) if lat_span > 0 else 0
 
-                    discrete_modules.append({
-                        "row_idx": row_b,
-                        "col_idx": col_b,
-                        "is_front_row": (tbl.row_index == min_row_index),
-                        "is_top": False,
-                        "center_lon": c_lon_b,
-                        "center_lat": c_lat_b,
-                        "south_tables": south_tables,
-                        "tilt_deg": tbl.tilt_deg or 30.0,
-                        "slant_h": tbl.slant_height_m or 4.56
-                    })
-                    discrete_modules.append({
-                        "row_idx": row_t,
-                        "col_idx": col_t,
-                        "is_front_row": (tbl.row_index == min_row_index),
-                        "is_top": True,
-                        "center_lon": c_lon_t,
-                        "center_lat": c_lat_t,
-                        "south_tables": south_tables,
-                        "tilt_deg": tbl.tilt_deg or 30.0,
-                        "slant_h": tbl.slant_height_m or 4.56
-                    })
+                    has_south_rack = False
+                    if not is_front_row and south_tables:
+                        for st in south_tables:
+                            sc = st.corners_wgs84
+                            if not sc or len(sc) < 4:
+                                continue
+                            st_min = min(sc[0][0], sc[3][0])
+                            st_max = max(sc[1][0], sc[2][0])
+                            if st_min <= c_lon_b <= st_max:
+                                has_south_rack = True
+                                break
+
+                    rack_svf_b = calculate_module_rack_sky_view_factor(
+                        row_pitch_m=layout.row_pitch_m,
+                        slant_height_m=tbl.slant_height_m or 4.56,
+                        tilt_deg=tbl.tilt_deg or 30.0,
+                        is_top_module=False,
+                        has_south_obstruction=has_south_rack
+                    )
+                    rack_svf_t = calculate_module_rack_sky_view_factor(
+                        row_pitch_m=layout.row_pitch_m,
+                        slant_height_m=tbl.slant_height_m or 4.56,
+                        tilt_deg=tbl.tilt_deg or 30.0,
+                        is_top_module=True,
+                        has_south_obstruction=has_south_rack
+                    )
+
+                    svf_b = float(np.clip(float(svf_grid[row_b, col_b]) * rack_svf_b, 0.05, 1.0))
+                    svf_t = float(np.clip(float(svf_grid[row_t, col_t]) * rack_svf_t, 0.05, 1.0))
+
+                    table_svfs.append(round(svf_b, 4))
+                    table_svfs.append(round(svf_t, 4))
+
+                    if use_discrete_panels:
+                        discrete_modules.append({
+                            "row_idx": row_b,
+                            "col_idx": col_b,
+                            "is_front_row": is_front_row,
+                            "is_top": False,
+                            "center_lon": c_lon_b,
+                            "center_lat": c_lat_b,
+                            "south_tables": south_tables,
+                            "tilt_deg": tbl.tilt_deg or 30.0,
+                            "slant_h": tbl.slant_height_m or 4.56,
+                            "svf": svf_b
+                        })
+                        discrete_modules.append({
+                            "row_idx": row_t,
+                            "col_idx": col_t,
+                            "is_front_row": is_front_row,
+                            "is_top": True,
+                            "center_lon": c_lon_t,
+                            "center_lat": c_lat_t,
+                            "south_tables": south_tables,
+                            "tilt_deg": tbl.tilt_deg or 30.0,
+                            "slant_h": tbl.slant_height_m or 4.56,
+                            "svf": svf_t
+                        })
+
+                tbl.module_svf = table_svfs
+
+        if use_discrete_panels and discrete_modules:
+            sum_mod_svf = float(sum(m["svf"] for m in discrete_modules))
+            avg_svf = sum_mod_svf / len(discrete_modules)
+        elif polygon_mask is not None:
+            sum_mod_svf = 0.0
+            avg_svf = float(np.mean(svf_grid[polygon_mask]))
+        else:
+            sum_mod_svf = 0.0
+            avg_svf = float(np.mean(svf_grid))
 
         # 6. Compute power for all timesteps
         timeseries_metrics = []
@@ -292,10 +368,6 @@ class SimulationOrchestrator:
                 if use_discrete_panels:
                     # Discrete module-level physics simulation (exact sum of physical panels)
                     num_mods = len(discrete_modules)
-                    unshaded_power_kw = round(
-                        num_mods * (irradiance.poa_direct_w_m2 + irradiance.poa_diffuse_w_m2) * module_conv,
-                        3
-                    )
 
                     num_terrain_shaded = 0
                     num_canopy_shaded = 0
@@ -325,14 +397,15 @@ class SimulationOrchestrator:
                     poa_diffuse = irradiance.poa_diffuse_w_m2
 
                     direct_mod_w = poa_direct * module_conv
-                    diffuse_mod_w = poa_diffuse * module_conv
+                    base_diffuse_mod_w = poa_diffuse * module_conv
                     incident_power_kw = round(num_mods * direct_mod_w, 3)
-                    diffuse_power_kw = round(num_mods * diffuse_mod_w, 3)
+                    diffuse_power_kw = round(sum_mod_svf * base_diffuse_mod_w, 3)
                     unshaded_power_kw = round(incident_power_kw + diffuse_power_kw, 3)
 
                     for mod in discrete_modules:
                         r = mod["row_idx"]
                         c = mod["col_idx"]
+                        mod_diffuse_w = base_diffuse_mod_w * mod["svf"]
 
                         terrain_lit = bool(mask[r, c] > 0)
                         canopy_lit = bool(canopy_m[r, c] > 0) if canopy_m is not None else True
@@ -342,7 +415,7 @@ class SimulationOrchestrator:
                             geo_loss = direct_mod_w
                             canopy_loss = 0.0
                             self_loss = 0.0
-                            mod_pwr = diffuse_mod_w
+                            mod_pwr = mod_diffuse_w
                         else:
                             geo_loss = 0.0
                             # Solid panel self-shading takes physical precedence over semi-transparent tree canopy shade
@@ -382,7 +455,7 @@ class SimulationOrchestrator:
                                 canopy_loss = 0.0
                                 direct_reaching = unblocked_direct
 
-                            mod_pwr = max(0.0, direct_reaching + diffuse_mod_w)
+                            mod_pwr = max(0.0, direct_reaching + mod_diffuse_w)
 
                         total_geo_loss_kw += geo_loss
                         total_canopy_loss_kw += canopy_loss
@@ -426,7 +499,7 @@ class SimulationOrchestrator:
                         3
                     )
                     diffuse_power_kw = round(
-                        total_active_cells * irradiance.poa_diffuse_w_m2 * conv_factor,
+                        total_active_cells * irradiance.poa_diffuse_w_m2 * avg_svf * conv_factor,
                         3
                     )
                     unshaded_power_kw = round(incident_power_kw + diffuse_power_kw, 3)
@@ -586,6 +659,7 @@ class SimulationOrchestrator:
             daylight_hours=daylight_hours,
             avg_shaded_pct=avg_shaded,
             avg_canopy_shaded_pct=avg_canopy_shaded,
+            avg_sky_view_factor=round(avg_svf, 3),
             optimal_tilt_deg=seasonal_tilt,
             total_panels=layout.total_panels if layout else None,
             installed_dc_kw=layout.installed_dc_kw if layout else None
@@ -608,6 +682,7 @@ class SimulationOrchestrator:
             include_tree_canopy=request.include_tree_canopy,
             canopy_mode=request.canopy_mode,
             canopy_transmittance=round(canopy_transmittance, 3),
+            avg_sky_view_factor=round(avg_svf, 3),
             date=request.date,
             time_step_minutes=step_min,
             buffer_meters=request.buffer_meters,

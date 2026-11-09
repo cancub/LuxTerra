@@ -80,6 +80,38 @@ def calculate_row_self_shading_fraction(
     return fraction_shaded
 
 
+def calculate_module_rack_sky_view_factor(
+    row_pitch_m: float,
+    slant_height_m: float,
+    tilt_deg: float,
+    is_top_module: bool,
+    has_south_obstruction: bool = True
+) -> float:
+    """
+    Calculates the inter-row diffuse Sky View Factor multiplier (0..1) for a module
+    due to horizon occlusion from the solar panel rack directly to its south.
+    Front-row modules (has_south_obstruction=False) return 1.0.
+    Interior-row bottom modules see a higher horizon obstruction angle from the front rack
+    than top modules.
+    """
+    if not has_south_obstruction or row_pitch_m <= 0.0 or slant_height_m <= 0.0:
+        return 1.0
+
+    tilt_rad = np.radians(tilt_deg)
+    frac_up_slant = 0.75 if is_top_module else 0.25
+    delta_slant = (1.0 - frac_up_slant) * slant_height_m
+
+    dz = delta_slant * np.sin(tilt_rad)
+    dy = row_pitch_m - delta_slant * np.cos(tilt_rad)
+
+    if dy <= 0.1 or dz <= 0.0:
+        return 1.0
+
+    tan_psi = dz / dy
+    blocked_fraction = (1.0 / 3.0) * (1.0 - (1.0 / (1.0 + tan_psi * tan_psi)))
+    return float(np.clip(1.0 - blocked_fraction, 0.5, 1.0))
+
+
 def calculate_array_self_shading_fraction(
     layout: PVLayoutResult,
     solar_azimuth_deg: float,

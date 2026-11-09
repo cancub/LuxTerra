@@ -261,3 +261,108 @@ class NumPyOcclusionEngine(OcclusionEngine):
             terrain_list.append(t_m)
             canopy_list.append(c_m)
         return terrain_list, canopy_list
+
+    def compute_sky_view_factor(
+        self,
+        dtm_grid: np.ndarray,
+        dsm_grid: np.ndarray,
+        patch_slice_y: slice,
+        patch_slice_x: slice,
+        resolution_m: float = 1.0,
+        max_search_radius_m: float = 500.0,
+        num_azimuths: int = 32,
+        is_rooftop: bool = False,
+        ground_stand_height_m: float = 1.5,
+        include_tree_canopy: bool = True,
+        canopy_transmittance: float = 0.15
+    ) -> np.ndarray:
+        """
+        Computes a 2D Sky View Factor (SVF) map in [0.05, 1.0] across the patch on CPU.
+        Integrates horizon elevation angles across `num_azimuths` directions around 360 degrees.
+        """
+        patch_H, patch_W, y_offset, x_offset = self._validate_slices(dtm_grid, patch_slice_y, patch_slice_x)
+        H, W = dtm_grid.shape
+        max_steps = max(2, int(np.ceil(max_search_radius_m / max(0.1, resolution_m))))
+        n_az = max(4, int(num_azimuths))
+
+        py_indices, px_indices = np.indices((patch_H, patch_W))
+        r0 = py_indices + y_offset
+        c0 = px_indices + x_offset
+
+        z_dtm_0 = dtm_grid[r0, c0].astype(np.float32)
+        z_dsm_0 = np.maximum(z_dtm_0, dsm_grid[r0, c0].astype(np.float32))
+
+        if is_rooftop and include_tree_canopy:
+            z0 = z_dsm_0 + np.float32(0.5)
+        else:
+            z0 = z_dtm_0 + np.float32(ground_stand_height_m)
+
+        overhead_tan = np.zeros((patch_H, patch_W), dtype=np.float32)
+        if include_tree_canopy and not is_rooftop:
+            overhead_mask = z_dsm_0 > (z0 + np.float32(0.5))
+            overhead_tan[overhead_mask] = (z_dsm_0 - z0)[overhead_mask]
+
+        r0_f = r0.astype(np.float32)
+        c0_f = c0.astype(np.float32)
+        svf_sum = np.zeros((patch_H, patch_W), dtype=np.float32)
+
+        for a in range(n_az):
+            phi = (2.0 * np.pi * float(a)) / float(n_az)
+            step_dr = np.float32(-np.cos(phi))
+            step_dc = np.float32(np.sin(phi))
+
+            max_tan_dtm = np.zeros((patch_H, patch_W), dtype=np.float32)
+            max_tan_dsm = overhead_tan.copy()
+
+            for s in range(2, max_steps + 1):
+                r_f = r0_f + np.float32(s) * step_dr
+                c_f = c0_f + np.float32(s) * step_dc
+
+                in_bounds = (r_f >= 0.0) & (r_f < float(H - 1)) & (c_f >= 0.0) & (c_f < float(W - 1))
+                if not np.any(in_bounds):
+                    break
+
+                rf_ib = r_f[in_bounds]
+                cf_ib = c_f[in_bounds]
+
+                r0_i = np.floor(rf_ib).astype(np.int32)
+                c0_i = np.floor(cf_ib).astype(np.int32)
+                r1_i = r0_i + 1
+                c1_i = c0_i + 1
+
+                dr = rf_ib - r0_i.astype(np.float32)
+                dc = cf_ib - c0_i.astype(np.float32)
+
+                z_dtm_00 = dtm_grid[r0_i, c0_i]
+                z_dtm_01 = dtm_grid[r0_i, c1_i]
+                z_dtm_10 = dtm_grid[r1_i, c0_i]
+                z_dtm_11 = dtm_grid[r1_i, c1_i]
+                z_dtm_sampled = (1.0 - dr) * ((1.0 - dc) * z_dtm_00 + dc * z_dtm_01) + dr * ((1.0 - dc) * z_dtm_10 + dc * z_dtm_11)
+
+                dist = np.float32(s * resolution_m)
+                tan_t = (z_dtm_sampled - z0[in_bounds]) / dist
+
+                active_r = py_indices[in_bounds]
+                active_c = px_indices[in_bounds]
+
+                max_tan_dtm[active_r, active_c] = np.maximum(max_tan_dtm[active_r, active_c], tan_t)
+                max_tan_dsm[active_r, active_c] = np.maximum(max_tan_dsm[active_r, active_c], tan_t)
+
+                if include_tree_canopy:
+                    z_dsm_00 = dsm_grid[r0_i, c0_i]
+                    z_dsm_01 = dsm_grid[r0_i, c1_i]
+                    z_dsm_10 = dsm_grid[r1_i, c0_i]
+                    z_dsm_11 = dsm_grid[r1_i, c1_i]
+                    z_dsm_sampled = np.maximum(
+                        z_dtm_sampled,
+                        (1.0 - dr) * ((1.0 - dc) * z_dsm_00 + dc * z_dsm_01) + dr * ((1.0 - dc) * z_dsm_10 + dc * z_dsm_11)
+                    )
+                    tan_s = (z_dsm_sampled - z0[in_bounds]) / dist
+                    max_tan_dsm[active_r, active_c] = np.maximum(max_tan_dsm[active_r, active_c], tan_s)
+
+            svf_terrain = 1.0 / (1.0 + max_tan_dtm * max_tan_dtm)
+            svf_surface = 1.0 / (1.0 + max_tan_dsm * max_tan_dsm)
+            sector_svf = svf_surface + (svf_terrain - svf_surface) * np.float32(canopy_transmittance)
+            svf_sum += sector_svf
+
+        return np.clip(svf_sum / np.float32(n_az), 0.05, 1.0).astype(np.float32)

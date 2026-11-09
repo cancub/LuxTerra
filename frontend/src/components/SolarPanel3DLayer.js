@@ -93,6 +93,7 @@ export class SolarPanel3DLayer {
 
     // Discrete individual panels collection & interactive hover telemetry
     this.panels = [];
+    this.avgSvf = 1.0;
     this.hoveredPanel = null;
     this.onHoverCallback = null;
     this.latestMvp = null;
@@ -318,6 +319,27 @@ export class SolarPanel3DLayer {
   }
 
   /**
+   * Calculates the inter-row diffuse sky view factor multiplier for a module in a 2P table
+   * due to solid obstruction of the lower southern sky dome by the rack in front of it.
+   */
+  calculateModuleRackSvf(rowPitchM, slantHM, tiltDeg, isTop, hasSouthObstruction) {
+    if (!hasSouthObstruction || rowPitchM <= 0.0 || slantHM <= 0.0) {
+      return 1.0;
+    }
+    const tiltRad = (tiltDeg * Math.PI) / 180.0;
+    const fFrac = isTop ? 0.75 : 0.25;
+    const dz = (1.0 - fFrac) * slantHM * Math.sin(tiltRad);
+    const dy = rowPitchM - (1.0 - fFrac) * slantHM * Math.cos(tiltRad);
+    if (dy <= 0.01 || dz <= 0.0) {
+      return 1.0;
+    }
+    const tanGamma = dz / dy;
+    const obsFraction = 1.0 - 1.0 / (1.0 + tanGamma * tanGamma);
+    const rackSvf = 1.0 - 0.5 * obsFraction;
+    return Math.min(1.0, Math.max(0.2, rackSvf));
+  }
+
+  /**
    * Builds Float32 vertex buffers for tilted panel faces and frames/posts.
    * Every individual solar panel is shaded independently based on its exact geographic position.
    */
@@ -454,6 +476,23 @@ export class SolarPanel3DLayer {
         const centerLon_T = 0.25 * lonBot + 0.75 * lonTop;
         const centerLat_T = 0.25 * latBot + 0.75 * latTop;
 
+        const tblTiltDeg = tbl.tilt_deg !== undefined ? tbl.tilt_deg : 30.0;
+
+        // Check if there is a physical table directly south of this module column (for diffuse SVF)
+        let hasSouthRack = false;
+        if (tbl.row_index > minRowIndex && southTables.length > 0) {
+          for (const st of southTables) {
+            const sc = st.corners_wgs84;
+            if (!sc || sc.length < 4) continue;
+            const stMinLon = Math.min(sc[0][0], sc[3][0]);
+            const stMaxLon = Math.max(sc[1][0], sc[2][0]);
+            if (centerLon_B >= stMinLon && centerLon_B <= stMaxLon) {
+              hasSouthRack = true;
+              break;
+            }
+          }
+        }
+
         // Check if there is an actual physical table directly to the south along the solar vector
         let hasSouthObstruction = false;
         let selfShadeFrac = 0.0;
@@ -481,7 +520,7 @@ export class SolarPanel3DLayer {
               selfShadeFrac = this.calculateRowSelfShadeFraction(
                 rowPitchM,
                 slantH,
-                tbl.tilt_deg !== undefined ? tbl.tilt_deg : 30.0,
+                tblTiltDeg,
                 solarAz,
                 solarEl
               );
@@ -490,6 +529,13 @@ export class SolarPanel3DLayer {
         }
         const isSelfShaded_B = selfShadeFrac > 0.0;
         const isSelfShaded_T = selfShadeFrac >= 0.5;
+
+        const svf_B = (tbl.module_svf && tbl.module_svf[2 * k] !== undefined)
+          ? tbl.module_svf[2 * k]
+          : this.calculateModuleRackSvf(rowPitchM, slantH, tblTiltDeg, false, hasSouthRack);
+        const svf_T = (tbl.module_svf && tbl.module_svf[2 * k + 1] !== undefined)
+          ? tbl.module_svf[2 * k + 1]
+          : this.calculateModuleRackSvf(rowPitchM, slantH, tblTiltDeg, true, hasSouthRack);
 
         const shade_B = this.sampleShadowAtPoint(centerLon_B, centerLat_B, maskData);
         const shade_T = this.sampleShadowAtPoint(centerLon_T, centerLat_T, maskData);
@@ -549,6 +595,7 @@ export class SolarPanel3DLayer {
           rtcVertices: [b0, b1, m1, m0],
           selfShadeFrac: selfShadeFrac,
           moduleSelfShadeFrac: modSelfFrac_B,
+          svf: svf_B,
           shadeState: {
             inTerrainShade: Boolean(!currentSun.isDaylight || shade_B.inTerrainShade),
             inCanopyShade: Boolean(shade_B.inCanopyShade),
@@ -567,6 +614,7 @@ export class SolarPanel3DLayer {
           rtcVertices: [m0, m1, t1_pt, t0_pt],
           selfShadeFrac: selfShadeFrac,
           moduleSelfShadeFrac: modSelfFrac_T,
+          svf: svf_T,
           shadeState: {
             inTerrainShade: Boolean(!currentSun.isDaylight || shade_T.inTerrainShade),
             inCanopyShade: Boolean(shade_T.inCanopyShade),
@@ -621,6 +669,13 @@ export class SolarPanel3DLayer {
       this.pushLine(lineData, seG, se, COL_POST);
       this.pushLine(lineData, nwG, nw, COL_POST);
       this.pushLine(lineData, neG, ne, COL_POST);
+    }
+
+    if (this.panels.length > 0) {
+      const sumSvf = this.panels.reduce((acc, p) => acc + (p.svf !== undefined ? p.svf : 1.0), 0.0);
+      this.avgSvf = sumSvf / this.panels.length;
+    } else {
+      this.avgSvf = 1.0;
     }
 
     this.faceVertices = new Float32Array(faceData);
@@ -858,15 +913,19 @@ export class SolarPanel3DLayer {
 
     // Direct incident potential and diffuse sky radiation for this single panel module
     const arrayUnshadedKw = metric.unshaded_power_kw !== undefined ? metric.unshaded_power_kw : metric.power_kw;
+    const panelSvf = panel.svf !== undefined ? panel.svf : 1.0;
+    const avgSvf = this.avgSvf && this.avgSvf > 0 ? this.avgSvf : 1.0;
+    const svfRatio = panelSvf / avgSvf;
+
     let incidentW;
     let diffuseW;
     if (metric.incident_power_kw !== undefined && metric.diffuse_power_kw !== undefined) {
       incidentW = (metric.incident_power_kw / totalPanels) * 1000.0;
-      diffuseW = (metric.diffuse_power_kw / totalPanels) * 1000.0;
+      diffuseW = ((metric.diffuse_power_kw / totalPanels) * 1000.0) * svfRatio;
     } else {
       const unshadedW = (arrayUnshadedKw / totalPanels) * 1000.0;
       incidentW = unshadedW * 0.85;
-      diffuseW = unshadedW * 0.15;
+      diffuseW = (unshadedW * 0.15) * svfRatio;
     }
 
     let geoLossW = 0.0;
@@ -906,7 +965,8 @@ export class SolarPanel3DLayer {
       selfLossW,
       diffuseW,
       acPowerW,
-      unshadedW
+      unshadedW,
+      svf: panelSvf
     };
   }
 

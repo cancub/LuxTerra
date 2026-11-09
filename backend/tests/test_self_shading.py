@@ -8,7 +8,8 @@ import pytest
 from backend.app.services.pv.self_shading import (
     calculate_profile_angle_rad,
     calculate_row_self_shading_fraction,
-    calculate_array_self_shading_fraction
+    calculate_array_self_shading_fraction,
+    calculate_module_rack_sky_view_factor
 )
 from backend.app.schemas.domain import PVTableGeometry, PVLayoutResult
 
@@ -159,3 +160,33 @@ def test_calculate_array_self_shading_fraction_multi_row():
     )
     # At solar noon (azimuth 180), there is 0 overlap between [-74.1, -74.09] and [-74.08, -74.07]
     assert calculate_array_self_shading_fraction(layout_staggered, 180.0, 10.0) == 0.0
+
+
+def test_calculate_module_rack_sky_view_factor():
+    # Unobstructed front row has full local sky view (1.0)
+    svf_front = calculate_module_rack_sky_view_factor(
+        row_pitch_m=10.57,
+        slant_height_m=4.56,
+        tilt_deg=30.0,
+        is_top_module=False,
+        has_south_obstruction=False
+    )
+    assert svf_front == 1.0
+
+    # Interior row with southern table: bottom module sees less sky than top module
+    svf_bot = calculate_module_rack_sky_view_factor(
+        row_pitch_m=10.57,
+        slant_height_m=4.56,
+        tilt_deg=30.0,
+        is_top_module=False,
+        has_south_obstruction=True
+    )
+    svf_top = calculate_module_rack_sky_view_factor(
+        row_pitch_m=10.57,
+        slant_height_m=4.56,
+        tilt_deg=30.0,
+        is_top_module=True,
+        has_south_obstruction=True
+    )
+    assert 0.85 < svf_bot < svf_top < 1.0
+

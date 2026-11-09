@@ -150,10 +150,118 @@ void raymarch_dual_surface_kernel(
     terrain_mask[out_idx] = is_terrain_unshaded;
     canopy_mask[out_idx] = is_canopy_unshaded;
 }
+
+extern "C" __global__
+void compute_svf_kernel(
+    const float* __restrict__ dtm,
+    const float* __restrict__ dsm,
+    float* __restrict__ svf_out,
+    int H, int W,
+    int patch_y_offset, int patch_x_offset,
+    int patch_H, int patch_W,
+    int num_azimuths,
+    int max_steps,
+    float step_dist,
+    int is_rooftop,
+    float ground_stand_height_m,
+    int include_tree_canopy,
+    float canopy_transmittance
+) {
+    int px = blockDim.x * blockIdx.x + threadIdx.x;
+    int py = blockDim.y * blockIdx.y + threadIdx.y;
+
+    if (px >= patch_W || py >= patch_H) return;
+
+    int r0 = patch_y_offset + py;
+    int c0 = patch_x_offset + px;
+
+    float z_dtm_0 = dtm[r0 * W + c0];
+    float z_dsm_0 = fmaxf(z_dtm_0, dsm[r0 * W + c0]);
+
+    // Receiver altitude: rooftop sits atop DSM (+0.5m clearance), ground mount sits at DTM + stand height
+    float z0 = (is_rooftop != 0 && include_tree_canopy != 0)
+        ? (z_dsm_0 + 0.5f)
+        : (z_dtm_0 + ground_stand_height_m);
+
+    // Overhead canopy check if ground mount is directly under foliage
+    float overhead_tan = 0.0f;
+    if (include_tree_canopy != 0 && is_rooftop == 0 && z_dsm_0 > z0 + 0.5f) {
+        overhead_tan = z_dsm_0 - z0;
+    }
+
+    float svf_sum = 0.0f;
+    for (int a = 0; a < num_azimuths; ++a) {
+        float phi = (2.0f * 3.14159265358979323846f * (float)a) / (float)num_azimuths;
+        float step_dr = -cosf(phi);
+        float step_dc = sinf(phi);
+
+        float max_tan_dtm = 0.0f;
+        float max_tan_dsm = overhead_tan;
+
+        for (int s = 2; s <= max_steps; ++s) {
+            float r_f = (float)r0 + (float)s * step_dr;
+            float c_f = (float)c0 + (float)s * step_dc;
+
+            if (r_f < 0.0f || r_f >= (float)(H - 1) || c_f < 0.0f || c_f >= (float)(W - 1)) {
+                break;
+            }
+
+            int r0_i = (int)floorf(r_f);
+            int c0_i = (int)floorf(c_f);
+            int r1_i = r0_i + 1;
+            int c1_i = c0_i + 1;
+
+            float dr = r_f - (float)r0_i;
+            float dc = c_f - (float)c0_i;
+
+            float z_dtm_00 = dtm[r0_i * W + c0_i];
+            float z_dtm_01 = dtm[r0_i * W + c1_i];
+            float z_dtm_10 = dtm[r1_i * W + c0_i];
+            float z_dtm_11 = dtm[r1_i * W + c1_i];
+            float z_dtm_sampled = (1.0f - dr) * ((1.0f - dc) * z_dtm_00 + dc * z_dtm_01)
+                                + dr * ((1.0f - dc) * z_dtm_10 + dc * z_dtm_11);
+
+            float dist = (float)s * step_dist;
+            float tan_t = (z_dtm_sampled - z0) / dist;
+            if (tan_t > max_tan_dtm) {
+                max_tan_dtm = tan_t;
+            }
+            if (tan_t > max_tan_dsm) {
+                max_tan_dsm = tan_t;
+            }
+
+            if (include_tree_canopy != 0) {
+                float z_dsm_00 = dsm[r0_i * W + c0_i];
+                float z_dsm_01 = dsm[r0_i * W + c1_i];
+                float z_dsm_10 = dsm[r1_i * W + c0_i];
+                float z_dsm_11 = dsm[r1_i * W + c1_i];
+                float z_dsm_sampled = (1.0f - dr) * ((1.0f - dc) * z_dsm_00 + dc * z_dsm_01)
+                                    + dr * ((1.0f - dc) * z_dsm_10 + dc * z_dsm_11);
+                z_dsm_sampled = fmaxf(z_dtm_sampled, z_dsm_sampled);
+
+                float tan_s = (z_dsm_sampled - z0) / dist;
+                if (tan_s > max_tan_dsm) {
+                    max_tan_dsm = tan_s;
+                }
+            }
+        }
+
+        // Closed-form hemispherical integration: cos^2(atan(tan_gamma)) = 1 / (1 + tan_gamma^2)
+        float svf_terrain = 1.0f / (1.0f + max_tan_dtm * max_tan_dtm);
+        float svf_surface = 1.0f / (1.0f + max_tan_dsm * max_tan_dsm);
+
+        // Opaque terrain blocks 100%; canopy above terrain horizon transmits canopy_transmittance
+        float sector_svf = svf_surface + (svf_terrain - svf_surface) * canopy_transmittance;
+        svf_sum += sector_svf;
+    }
+
+    svf_out[py * patch_W + px] = fminf(1.0f, fmaxf(0.05f, svf_sum / (float)num_azimuths));
+}
 """
 
 _compiled_terrain_kernel = None
 _compiled_dual_kernel = None
+_compiled_svf_kernel = None
 
 
 def get_compiled_raymarch_kernel():
@@ -176,3 +284,14 @@ def get_compiled_dual_raymarch_kernel():
         import cupy as cp
         _compiled_dual_kernel = cp.RawKernel(RAYMARCH_CUDA_SOURCE, "raymarch_dual_surface_kernel")
     return _compiled_dual_kernel
+
+
+def get_compiled_svf_kernel():
+    """
+    Returns the lazily compiled CuPy RawKernel instance for 360-degree Horizon Sky View Factor (SVF).
+    """
+    global _compiled_svf_kernel
+    if _compiled_svf_kernel is None:
+        import cupy as cp
+        _compiled_svf_kernel = cp.RawKernel(RAYMARCH_CUDA_SOURCE, "compute_svf_kernel")
+    return _compiled_svf_kernel

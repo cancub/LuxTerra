@@ -105,6 +105,10 @@ class PVTableGeometry(BaseModel):
     slant_height_m: float = Field(default=4.56, description="Total slant length along panel slope in meters")
     width_m: float = Field(..., description="East-West table width in meters")
     depth_m: float = Field(..., description="North-South ground footprint depth in meters")
+    module_svf: Optional[List[float]] = Field(
+        default=None,
+        description="Effective local 3D Sky View Factor (0..1) for each module [col0_bot, col0_top, ...]"
+    )
 
 
 class PVLayoutResult(BaseModel):

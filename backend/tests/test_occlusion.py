@@ -336,3 +336,107 @@ def test_terrain_mask_invariance_to_canopy_toggle():
             assert np.all(c_off[t_off == 1] == 1)
 
 
+def test_sky_view_factor_3d_horizon_and_gpu_cpu_parity():
+    """
+    Validates 360-degree hemispherical Sky View Factor (SVF) calculation:
+    1. Flat unobstructed plain -> SVF = 1.0 everywhere.
+    2. Adjacent solid cliff / wall -> SVF drops significantly near the wall (~0.5).
+    3. Semi-transparent tree canopy -> SVF interpolates smoothly with canopy_transmittance.
+    4. GPU CUDA kernel and CPU NumPy engine agree within floating-point precision.
+    """
+    cpu_engine = NumPyOcclusionEngine()
+
+    # 1. Flat unobstructed terrain
+    flat_dtm = np.full((120, 120), 100.0, dtype=np.float32)
+    patch_y = slice(40, 80)
+    patch_x = slice(40, 80)
+
+    svf_flat = cpu_engine.compute_sky_view_factor(
+        dtm_grid=flat_dtm,
+        dsm_grid=flat_dtm,
+        patch_slice_y=patch_y,
+        patch_slice_x=patch_x,
+        resolution_m=1.0,
+        max_search_radius_m=40.0,
+        num_azimuths=32,
+        is_rooftop=False,
+        ground_stand_height_m=1.5,
+        include_tree_canopy=False
+    )
+    assert svf_flat.shape == (40, 40)
+    assert np.allclose(svf_flat, 1.0, atol=1e-4)
+
+    # 2. High solid wall to the East (col >= 60 raised by +100m)
+    wall_dtm = flat_dtm.copy()
+    wall_dtm[:, 60:] = 200.0
+    svf_wall = cpu_engine.compute_sky_view_factor(
+        dtm_grid=wall_dtm,
+        dsm_grid=wall_dtm,
+        patch_slice_y=patch_y,
+        patch_slice_x=patch_x,
+        resolution_m=1.0,
+        max_search_radius_m=40.0,
+        num_azimuths=32,
+        is_rooftop=False,
+        ground_stand_height_m=1.5,
+        include_tree_canopy=False
+    )
+    # Cell right next to the 100m vertical wall (col 59 -> local col 19) has half its hemisphere blocked (~0.52)
+    svf_near_wall = float(svf_wall[20, 19])
+    svf_far_from_wall = float(svf_wall[20, 0])
+    assert 0.45 < svf_near_wall < 0.65
+    assert svf_far_from_wall > svf_near_wall
+
+    # 3. Semi-transparent tree canopy surround (20m trees around a clearing)
+    canopy_dsm = flat_dtm.copy()
+    canopy_dsm[:, 60:] = 120.0
+    svf_canopy_summer = cpu_engine.compute_sky_view_factor(
+        dtm_grid=flat_dtm,
+        dsm_grid=canopy_dsm,
+        patch_slice_y=patch_y,
+        patch_slice_x=patch_x,
+        resolution_m=1.0,
+        max_search_radius_m=40.0,
+        num_azimuths=32,
+        is_rooftop=False,
+        ground_stand_height_m=1.5,
+        include_tree_canopy=True,
+        canopy_transmittance=0.15
+    )
+    svf_canopy_winter = cpu_engine.compute_sky_view_factor(
+        dtm_grid=flat_dtm,
+        dsm_grid=canopy_dsm,
+        patch_slice_y=patch_y,
+        patch_slice_x=patch_x,
+        resolution_m=1.0,
+        max_search_radius_m=40.0,
+        num_azimuths=32,
+        is_rooftop=False,
+        ground_stand_height_m=1.5,
+        include_tree_canopy=True,
+        canopy_transmittance=0.60
+    )
+    # Winter leafless canopy allows more diffuse sky light than summer dense foliage
+    assert float(svf_canopy_winter[20, 19]) > float(svf_canopy_summer[20, 19])
+    assert float(svf_canopy_summer[20, 19]) < 0.90
+
+    # 4. GPU vs CPU equivalence
+    if is_gpu_available():
+        gpu_engine = CuPyOcclusionEngine()
+        svf_gpu = gpu_engine.compute_sky_view_factor(
+            dtm_grid=flat_dtm,
+            dsm_grid=canopy_dsm,
+            patch_slice_y=patch_y,
+            patch_slice_x=patch_x,
+            resolution_m=1.0,
+            max_search_radius_m=40.0,
+            num_azimuths=32,
+            is_rooftop=False,
+            ground_stand_height_m=1.5,
+            include_tree_canopy=True,
+            canopy_transmittance=0.15
+        )
+        assert np.allclose(svf_gpu, svf_canopy_summer, atol=1e-4)
+
+
+

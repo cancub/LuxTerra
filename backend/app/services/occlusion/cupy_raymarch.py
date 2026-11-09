@@ -7,14 +7,19 @@ from typing import List, Tuple, Optional
 import numpy as np
 
 from ...interfaces.occlusion_engine import OcclusionEngine
-from .cuda_kernels import get_compiled_raymarch_kernel, get_compiled_dual_raymarch_kernel
+from .cuda_kernels import (
+    get_compiled_raymarch_kernel,
+    get_compiled_dual_raymarch_kernel,
+    get_compiled_svf_kernel,
+)
 from .ray_math import calculate_ray_step
 
 
 class CuPyOcclusionEngine(OcclusionEngine):
     """
     High-performance GPU ray-marcher using compiled CUDA kernels via CuPy.
-    Supports single-surface terrain and dual-surface terrain + canopy ray-marching.
+    Supports single-surface terrain, dual-surface terrain + canopy ray-marching,
+    and 360-degree Horizon Sky View Factor (SVF) ambient occlusion.
     """
 
     def __init__(self):
@@ -23,6 +28,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
             self.cp = cp
             self.kernel = get_compiled_raymarch_kernel()
             self.dual_kernel = get_compiled_dual_raymarch_kernel()
+            self.svf_kernel = get_compiled_svf_kernel()
             self._gpu_available = True
         except Exception as e:
             self._gpu_available = False
@@ -296,3 +302,63 @@ class CuPyOcclusionEngine(OcclusionEngine):
             canopy_results.append(cp.asnumpy(d_canopy_mask))
 
         return terrain_results, canopy_results
+
+    def compute_sky_view_factor(
+        self,
+        dtm_grid: np.ndarray,
+        dsm_grid: np.ndarray,
+        patch_slice_y: slice,
+        patch_slice_x: slice,
+        resolution_m: float = 1.0,
+        max_search_radius_m: float = 500.0,
+        num_azimuths: int = 32,
+        is_rooftop: bool = False,
+        ground_stand_height_m: float = 1.5,
+        include_tree_canopy: bool = True,
+        canopy_transmittance: float = 0.15
+    ) -> np.ndarray:
+        """
+        Computes a 2D Sky View Factor (SVF) map in [0.05, 1.0] across the patch on GPU.
+        Integrates horizon elevation angles across `num_azimuths` directions around 360 degrees.
+        """
+        patch_H, patch_W, y_offset, x_offset = self._validate_slices(dtm_grid, patch_slice_y, patch_slice_x)
+        cp = self.cp
+        H, W = dtm_grid.shape
+
+        max_steps = max(2, int(np.ceil(max_search_radius_m / max(0.1, resolution_m))))
+
+        d_dtm = cp.asarray(dtm_grid, dtype=cp.float32)
+        d_dsm = cp.asarray(dsm_grid, dtype=cp.float32)
+        d_svf = cp.empty((patch_H, patch_W), dtype=cp.float32)
+
+        block_dim = (16, 16, 1)
+        grid_dim = (
+            (patch_W + block_dim[0] - 1) // block_dim[0],
+            (patch_H + block_dim[1] - 1) // block_dim[1],
+            1
+        )
+
+        self.svf_kernel(
+            grid_dim,
+            block_dim,
+            (
+                d_dtm,
+                d_dsm,
+                d_svf,
+                np.int32(H),
+                np.int32(W),
+                np.int32(y_offset),
+                np.int32(x_offset),
+                np.int32(patch_H),
+                np.int32(patch_W),
+                np.int32(max(4, num_azimuths)),
+                np.int32(max_steps),
+                np.float32(resolution_m),
+                np.int32(1 if is_rooftop else 0),
+                np.float32(ground_stand_height_m),
+                np.int32(1 if include_tree_canopy else 0),
+                np.float32(canopy_transmittance),
+            )
+        )
+
+        return cp.asnumpy(d_svf)
