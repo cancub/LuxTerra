@@ -549,6 +549,66 @@ async def test_discrete_panel_shade_matches_physical_panels():
                 assert abs(expected_power - t["power_kw"]) < 0.005, f"Subtraction stack mismatch at {t['timestamp']}: expected {expected_power}, got {t['power_kw']}"
 
 
+@pytest.mark.asyncio
+async def test_simulate_with_visual_context_boundary():
+    """
+    Verifies that supplying an outer context_bbox expands the visualization patch
+    while keeping the solar layout and power metrics strictly confined to the interior solar array.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Solar array on Sainte-Lucie field
+        solar_bbox = {
+            "min_lon": -74.153,
+            "min_lat": 46.0375,
+            "max_lon": -74.152,
+            "max_lat": 46.0385
+        }
+        # Outer visual context envelope
+        context_bbox = {
+            "min_lon": -74.154,
+            "min_lat": 46.037,
+            "max_lon": -74.151,
+            "max_lat": 46.039
+        }
+
+        # 1. Base simulation (array only)
+        res_base = await client.post("/api/simulate", json={
+            "bbox": solar_bbox,
+            "date": "2026-06-21",
+            "time_step_minutes": 30,
+            "deployment_mode": "ground_mount"
+        })
+        assert res_base.status_code == 200
+        data_base = res_base.json()
+
+        # 2. Simulation with context envelope
+        res_context = await client.post("/api/simulate", json={
+            "bbox": solar_bbox,
+            "context_bbox": context_bbox,
+            "date": "2026-06-21",
+            "time_step_minutes": 30,
+            "deployment_mode": "ground_mount"
+        })
+        assert res_context.status_code == 200
+        data_context = res_context.json()
+
+        # Context metadata should reflect the larger patch dimensions
+        assert data_context["metadata"]["patch_width_m"] > data_base["metadata"]["patch_width_m"]
+        assert data_context["metadata"]["patch_height_m"] > data_base["metadata"]["patch_height_m"]
+
+        # Solar panel count and installed capacity must be strictly identical
+        assert data_context["daily_summary"]["total_panels"] == data_base["daily_summary"]["total_panels"]
+        assert data_context["daily_summary"]["installed_dc_kw"] == data_base["daily_summary"]["installed_dc_kw"]
+
+        # 3D layout bounds must remain within the interior solar_bbox
+        for tbl in data_context["layout"]["tables"]:
+            c_lon, c_lat = tbl["center_wgs84"]
+            assert solar_bbox["min_lon"] - 0.0005 <= c_lon <= solar_bbox["max_lon"] + 0.0005
+            assert solar_bbox["min_lat"] - 0.0005 <= c_lat <= solar_bbox["max_lat"] + 0.0005
+
+
+
 
 
 

@@ -21,6 +21,10 @@ class SimulateRequest(BaseModel):
         default=None,
         description="Optional closed polygon coordinates [[lon, lat], ...] defining exact oblong/irregular boundary within bbox"
     )
+    context_bbox: Optional[GeoBoundingBox] = Field(
+        default=None,
+        description="Optional wider visual context bounding box enclosing the solar array for shadow visualization"
+    )
     date: str = Field(..., description="Simulation date in YYYY-MM-DD format (e.g. 2026-06-21)")
     time_step_minutes: int = Field(default=1, ge=1, le=60, description="Interval in minutes between frames")
     deployment_mode: DeploymentMode = Field(default=DeploymentMode.GROUND_MOUNT, description="ground_mount (45% GCR) or rooftop (100% GCR)")
@@ -44,6 +48,29 @@ class SimulateRequest(BaseModel):
     @model_validator(mode="after")
     def validate_simulation_area(self) -> "SimulateRequest":
         max_area = config.max_patch_area_m2
+        
+        # If context_bbox is provided, it forms the outer visualization boundary
+        if self.context_bbox:
+            c_area = calculate_bbox_area_meters(
+                self.context_bbox.min_lon,
+                self.context_bbox.min_lat,
+                self.context_bbox.max_lon,
+                self.context_bbox.max_lat
+            )
+            if c_area > max_area:
+                raise ValueError(
+                    f"Visual context area ({c_area:,.1f} m²) exceeds the maximum allowable limit of {max_area:,.0f} m²."
+                )
+            # Enclosure check: context_bbox must fully enclose bbox
+            eps = 1e-6
+            if (self.context_bbox.min_lon > self.bbox.min_lon + eps or
+                self.context_bbox.min_lat > self.bbox.min_lat + eps or
+                self.context_bbox.max_lon < self.bbox.max_lon - eps or
+                self.context_bbox.max_lat < self.bbox.max_lat - eps):
+                raise ValueError(
+                    "Visual context boundary must fully enclose the solar array boundary."
+                )
+
         if self.polygon and len(self.polygon) >= 3:
             poly_area = calculate_polygon_area_meters(self.polygon)
             if poly_area > max_area:

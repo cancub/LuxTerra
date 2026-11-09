@@ -60,12 +60,15 @@ class SimulationOrchestrator:
         Executes a 24-hour simulation for the requested bounding box and date.
         """
         # 1. Extract elevation window (co-registered DTM, DSM, and CHM)
-        bbox = request.bbox
+        # If a wider visual context bounding box is provided, use it for the patch window
+        sim_bbox = request.context_bbox if request.context_bbox else request.bbox
+        solar_bbox = request.bbox
+
         elev_data = self.elevation_provider.get_elevation_window(
-            min_lon=bbox.min_lon,
-            min_lat=bbox.min_lat,
-            max_lon=bbox.max_lon,
-            max_lat=bbox.max_lat,
+            min_lon=sim_bbox.min_lon,
+            min_lat=sim_bbox.min_lat,
+            max_lon=sim_bbox.max_lon,
+            max_lat=sim_bbox.max_lat,
             buffer_meters=request.buffer_meters,
             target_resolution_m=request.resolution_m
         )
@@ -88,9 +91,13 @@ class SimulationOrchestrator:
         transmittance = calculate_canopy_transmittance(request.date, mode=request.canopy_mode)
         canopy_transmittance = transmittance.direct
 
-        # 1b. Rasterize polygon inclusion mask if an oblong/custom shape was requested
+        # 1b. Rasterize inclusion mask for the solar panel generation domain
+        # If polygon is supplied, rasterize it.
+        # If no polygon is supplied but a wider context_bbox was used, rasterize solar_bbox as the inclusion mask.
         polygon_mask = None
         polygon_area_m2 = None
+        has_context_expansion = bool(request.context_bbox is not None)
+
         if request.polygon and len(request.polygon) >= 3:
             from shapely.geometry import Polygon as ShapelyPolygon
             import rasterio.features
@@ -115,6 +122,33 @@ class SimulationOrchestrator:
             ).astype(bool)
             if not np.any(polygon_mask):
                 polygon_mask = None
+        elif has_context_expansion:
+            from shapely.geometry import box as ShapelyBox
+            import rasterio.features
+            import rasterio.transform
+
+            # Mask only the interior solar_bbox within the wider context patch
+            target_crs = elev_data["crs"]
+            box_utm = transform_geometry(
+                ShapelyBox(solar_bbox.min_lon, solar_bbox.min_lat, solar_bbox.max_lon, solar_bbox.max_lat),
+                "EPSG:4326",
+                target_crs
+            )
+            polygon_area_m2 = float(box_utm.area)
+            p_min_x, p_min_y, p_max_x, p_max_y = geo_info["patch_bounds_metric"]
+            patch_transform = rasterio.transform.from_bounds(
+                p_min_x, p_min_y, p_max_x, p_max_y, patch_w, patch_h
+            )
+            polygon_mask = rasterio.features.rasterize(
+                [box_utm],
+                out_shape=(patch_h, patch_w),
+                transform=patch_transform,
+                fill=0,
+                default_value=1,
+                dtype=np.uint8
+            ).astype(bool)
+            if not np.any(polygon_mask):
+                polygon_mask = None
 
         # 2. Build 24-hour timestep intervals (robust against DST transitions)
         sim_date = date.fromisoformat(request.date)
@@ -124,8 +158,8 @@ class SimulationOrchestrator:
         end_dt = datetime.combine(sim_date, time(23, 59, 59), tzinfo=TZ_QUEBEC)
         timestamps = pd.date_range(start=start_dt, end=end_dt, freq=f"{step_min}min")
 
-        center_lon = (bbox.min_lon + bbox.max_lon) / 2.0
-        center_lat = (bbox.min_lat + bbox.max_lat) / 2.0
+        center_lon = (solar_bbox.min_lon + solar_bbox.max_lon) / 2.0
+        center_lat = (solar_bbox.min_lat + solar_bbox.max_lat) / 2.0
 
         # 3. Vectorized calculation of all solar positions
         all_angles = self.solar_engine.calculate_solar_angles_series(timestamps, center_lat, center_lon)
@@ -170,7 +204,8 @@ class SimulationOrchestrator:
             daylight_irradiance = []
 
         # 4b. Synthesize maximal ground-mount solar panel layout (fixed civil layout with seasonal table tilt)
-        boundary_target = request.polygon if (request.polygon and len(request.polygon) >= 3) else bbox
+        # Always pack panels strictly inside the active solar array boundary (polygon or solar_bbox)
+        boundary_target = request.polygon if (request.polygon and len(request.polygon) >= 3) else solar_bbox
         layout = self.packing_engine.generate_layout(
             boundary=boundary_target,
             latitude=center_lat,
@@ -618,7 +653,7 @@ class SimulationOrchestrator:
         # Encode nighttime masks (0 = shaded inside shape, 1 = transparent outside)
         night_grid = np.zeros((patch_h, patch_w), dtype=np.uint8)
         night_canopy_grid = np.ones((patch_h, patch_w), dtype=np.uint8)
-        if polygon_mask is not None:
+        if polygon_mask is not None and not has_context_expansion:
             night_grid[~polygon_mask] = 1
             night_canopy_grid[~polygon_mask] = 1
         encoded_night_mask = encode_mask_bitmask(night_grid)
