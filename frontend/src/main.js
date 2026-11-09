@@ -217,7 +217,9 @@ if (appContainer) {
           canopyMaskStr,
           meta.patch_bounds_wgs84,
           meta.grid_rows,
-          meta.grid_cols
+          meta.grid_cols,
+          metric,
+          meta.canopy_transmittance
         );
       } else if (currentSimulationData.night_mask) {
         // Nighttime: render 100% shade inside the user's selected shape (polygon or rectangle)
@@ -230,7 +232,13 @@ if (appContainer) {
         solarPanel3DLayer.updateSunPosition(
           metric.solar_azimuth_deg,
           metric.solar_elevation_deg,
-          false
+          false,
+          null,
+          null,
+          null,
+          0,
+          0,
+          metric
         );
       } else {
         // Fallback: render shade masked to active polygon geometry
@@ -238,7 +246,13 @@ if (appContainer) {
         solarPanel3DLayer.updateSunPosition(
           metric.solar_azimuth_deg,
           metric.solar_elevation_deg,
-          false
+          false,
+          null,
+          null,
+          null,
+          0,
+          0,
+          metric
         );
       }
     } else {
@@ -249,6 +263,30 @@ if (appContainer) {
   solarDashboard = new SolarDashboard(energyMetricsMount, (seekIndex) => {
     timeScrubber.setStep(seekIndex);
   }, { chartContainer: timeScrubber.getPowerCurveMount() });
+
+  solarPanel3DLayer.setOnPanelHover((panel, breakdown) => {
+    if (panel && breakdown) {
+      solarDashboard.showPanelTelemetry(panel, breakdown);
+    } else {
+      solarDashboard.clearPanelTelemetry();
+    }
+  });
+
+  map.on('mousemove', (e) => {
+    if (!solarPanel3DLayer || !solarPanel3DLayer.isVisible()) return;
+    const canvas = map.getCanvas();
+    if (!canvas) return;
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    const panel = solarPanel3DLayer.findPanelAtPoint(e.point.x, e.point.y, width, height);
+    solarPanel3DLayer.setHoveredPanel(panel);
+  });
+
+  map.on('mouseout', () => {
+    if (solarPanel3DLayer) {
+      solarPanel3DLayer.setHoveredPanel(null);
+    }
+  });
 
   playbackEngine = new PlaybackEngine(playbackControlsMount, (stepIndex) => {
     timeScrubber.setStep(stepIndex);
@@ -507,6 +545,8 @@ if (appContainer) {
     } else {
       panelsToggleBtn.classList.remove('active');
       panelsToggleBtn.title = 'Current: 3D Solar Panels Hidden. Click to Show.';
+      solarPanel3DLayer.setHoveredPanel(null);
+      solarDashboard.clearPanelTelemetry();
     }
     if (timeScrubber && currentSimulationData) {
       const curIdx = timeScrubber.currentIndex !== undefined ? timeScrubber.currentIndex : 0;

@@ -238,6 +238,13 @@ class PVPackingEngine:
             y += pitch_m
             row_index += 1
 
+        # Re-index row_index consecutively from 0 (southernmost front row) upwards
+        if tables:
+            distinct_rows = sorted(list({t.row_index for t in tables}))
+            row_map = {old_idx: new_idx for new_idx, old_idx in enumerate(distinct_rows)}
+            for t in tables:
+                t.row_index = row_map[t.row_index]
+
         total_panels = sum(t.panel_count for t in tables)
         total_tables = len(tables)
         installed_dc_kw = round(total_panels * self.module_wattage_w / 1000.0, 2)

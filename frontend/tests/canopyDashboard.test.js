@@ -191,6 +191,58 @@ test('SolarDashboard: displays ground-mount layout specifications in Daily Energ
   assert.equal(dashboard.arraySpecsRow.style.display, 'none');
 });
 
+test('SolarDashboard: showPanelTelemetry and clearPanelTelemetry display individual panel breakdown in card', () => {
+  const container = createMockElement('div');
+  const dashboard = new SolarDashboard(container);
+
+  const mockMetric = {
+    is_daylight: true,
+    power_kw: 31.6,
+    unshaded_power_kw: 55.8,
+    geological_loss_kw: 0.2,
+    canopy_loss_kw: 21.5,
+    self_shading_loss_kw: 2.5
+  };
+
+  dashboard.updateTelemetry(mockMetric, 12);
+  assert.equal(dashboard.subAcPowerVal.textContent, '31.6 kW');
+  assert.equal(dashboard.subClearSkyVal.textContent, '55.8 kW');
+
+  // Hover over an individual module
+  const mockPanel = {
+    id: 't0_c0_B',
+    label: 'Table 1 · Row 1 · Module 1 (Bottom)'
+  };
+  const mockBreakdown = {
+    unshadedW: 845.0,
+    geoLossW: 0.0,
+    treeLossW: 320.0,
+    selfLossW: 0.0,
+    acPowerW: 525.0
+  };
+
+  dashboard.showPanelTelemetry(mockPanel, mockBreakdown);
+
+  assert.equal(dashboard.panelHoverBanner.style.display, 'flex');
+  assert.equal(dashboard.panelHoverLabel.textContent, 'Table 1 · Row 1 · Module 1 (Bottom)');
+  assert.equal(dashboard.hoveredPanelIndicator.style.display, 'inline-block');
+  assert.equal(dashboard.instantaneousTitle.textContent, 'Individual Panel AC Power');
+
+  assert.equal(dashboard.subClearSkyVal.textContent, '845 W');
+  assert.equal(dashboard.subGeoShadeVal.textContent, '0 W');
+  assert.equal(dashboard.subTreeShadeVal.textContent, '320 W');
+  assert.equal(dashboard.subSelfShadeVal.textContent, '0 W');
+  assert.equal(dashboard.subAcPowerVal.textContent, '525 W');
+
+  // Unhover restores array-wide kW values
+  dashboard.clearPanelTelemetry();
+  assert.equal(dashboard.panelHoverBanner.style.display, 'none');
+  assert.equal(dashboard.hoveredPanelIndicator.style.display, 'none');
+  assert.equal(dashboard.instantaneousTitle.textContent, 'Instantaneous AC Power');
+  assert.equal(dashboard.subAcPowerVal.textContent, '31.6 kW');
+  assert.equal(dashboard.subClearSkyVal.textContent, '55.8 kW');
+});
+
 test('PVConfigPanel: collapsible by default and toggles expand/collapse', (t, done) => {
   const container = createMockElement('div');
   const panel = new PVConfigPanel(container);

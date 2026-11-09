@@ -75,9 +75,11 @@ export class SolarPanel3DLayer {
 
     this.faceBuffer = null;
     this.lineBuffer = null;
+    this.highlightBuffer = null;
 
     this.faceVertexCount = 0;
     this.lineVertexCount = 0;
+    this.highlightVertexCount = 0;
 
     // Anchor Mercator coordinate for RTC (Relative to Center) precision
     this.anchorMerc = { x: 0, y: 0, z: 0 };
@@ -87,6 +89,15 @@ export class SolarPanel3DLayer {
     // Cached raw arrays for testing and inspection
     this.faceVertices = null;
     this.lineVertices = null;
+    this.highlightVertices = null;
+
+    // Discrete individual panels collection & interactive hover telemetry
+    this.panels = [];
+    this.hoveredPanel = null;
+    this.onHoverCallback = null;
+    this.latestMvp = null;
+    this.latestMetric = null;
+    this.canopyTransmittance = 0.15;
 
     // Current solar state & shadow masks for dynamic updating
     this.currentSun = {
@@ -137,6 +148,7 @@ export class SolarPanel3DLayer {
 
     this.faceBuffer = gl.createBuffer();
     this.lineBuffer = gl.createBuffer();
+    this.highlightBuffer = gl.createBuffer();
   }
 
   createShader(gl, type, source) {
@@ -206,7 +218,9 @@ export class SolarPanel3DLayer {
    * Updates sun angle and current raster shadow masks for dynamic per-panel face darkening
    * (canopy green vs geological dark slate vs direct sunlit white).
    */
-  updateSunPosition(azimuthDeg, elevationDeg, isDaylight, maskStr = null, canopyMaskStr = null, patchBounds = null, rows = 0, cols = 0) {
+  updateSunPosition(azimuthDeg, elevationDeg, isDaylight, maskStr = null, canopyMaskStr = null, patchBounds = null, rows = 0, cols = 0, metric = null, canopyTransmittance = 0.15) {
+    this.latestMetric = metric;
+    this.canopyTransmittance = canopyTransmittance;
     this.currentSun = {
       azimuth: azimuthDeg !== undefined ? azimuthDeg : 180.0,
       elevation: elevationDeg !== undefined ? elevationDeg : 0.0,
@@ -227,6 +241,11 @@ export class SolarPanel3DLayer {
 
     if (this.layout && this.layout.tables && this.layout.tables.length > 0) {
       this.rebuildBuffers();
+    }
+
+    if (this.hoveredPanel && this.onHoverCallback) {
+      const breakdown = this.computePanelBreakdown(this.hoveredPanel);
+      this.onHoverCallback(this.hoveredPanel, breakdown);
     }
   }
 
@@ -307,8 +326,13 @@ export class SolarPanel3DLayer {
     if (!tables || tables.length === 0) {
       this.faceVertexCount = 0;
       this.lineVertexCount = 0;
+      this.panels = [];
+      this.hoveredPanel = null;
       return;
     }
+
+    this.panels = [];
+    const minRowIndex = tables.reduce((min, t) => Math.min(min, t.row_index !== undefined ? t.row_index : 0), Infinity);
 
     const currentSun = sun || this.currentSun;
     const solarAz = currentSun.azimuth;
@@ -368,9 +392,9 @@ export class SolarPanel3DLayer {
       const midW = [0.5 * (sw[0] + nw[0]), 0.5 * (sw[1] + nw[1]), 0.5 * (sw[2] + nw[2])];
       const midE = [0.5 * (se[0] + ne[0]), 0.5 * (se[1] + ne[1]), 0.5 * (se[2] + ne[2])];
 
-      // Row self-shading fraction for this table (applies only to interior rows)
+      // Row self-shading fraction for this table (applies only to interior rows to the north of the front row)
       let selfShadeFrac = 0.0;
-      if (tbl.row_index > 0 && isDaylight) {
+      if (tbl.row_index > minRowIndex && isDaylight) {
         selfShadeFrac = this.calculateRowSelfShadeFraction(
           rowPitchM,
           slantH,
@@ -483,6 +507,41 @@ export class SolarPanel3DLayer {
         this.pushVertex(faceData, m0, colT_bot);
         this.pushVertex(faceData, t1_pt, colT_top);
         this.pushVertex(faceData, t0_pt, colT_top);
+
+        // Record discrete panel modules for interactive ray-casting and per-panel power hover
+        this.panels.push({
+          id: `t${tbl.table_id}_c${k}_B`,
+          tableId: tbl.table_id,
+          rowIndex: tbl.row_index,
+          colIndex: k,
+          position: 'bottom',
+          label: `Table ${tbl.table_id + 1} · Row ${tbl.row_index + 1} · Module ${k * 2 + 1} (Bottom)`,
+          centerLngLat: [centerLon_B, centerLat_B],
+          rtcVertices: [b0, b1, m1, m0],
+          selfShadeFrac: selfShadeFrac,
+          shadeState: {
+            inTerrainShade: Boolean(!currentSun.isDaylight || shade_B.inTerrainShade),
+            inCanopyShade: Boolean(shade_B.inCanopyShade),
+            isSelfShaded: Boolean(isSelfShaded_B)
+          }
+        });
+
+        this.panels.push({
+          id: `t${tbl.table_id}_c${k}_T`,
+          tableId: tbl.table_id,
+          rowIndex: tbl.row_index,
+          colIndex: k,
+          position: 'top',
+          label: `Table ${tbl.table_id + 1} · Row ${tbl.row_index + 1} · Module ${k * 2 + 2} (Top)`,
+          centerLngLat: [centerLon_T, centerLat_T],
+          rtcVertices: [m0, m1, t1_pt, t0_pt],
+          selfShadeFrac: selfShadeFrac,
+          shadeState: {
+            inTerrainShade: Boolean(!currentSun.isDaylight || shade_T.inTerrainShade),
+            inCanopyShade: Boolean(shade_T.inCanopyShade),
+            isSelfShaded: Boolean(isSelfShaded_T)
+          }
+        });
       }
 
       // --- Aluminum Framing Lines (Perimeter) ---
@@ -585,6 +644,7 @@ export class SolarPanel3DLayer {
     mvp[14] = matrix[2] * dx + matrix[6] * dy + matrix[10] * dz + matrix[14];
     mvp[15] = matrix[3] * dx + matrix[7] * dy + matrix[11] * dz + matrix[15];
 
+    this.latestMvp = mvp;
     gl.uniformMatrix4fv(this.uMatrixLocation, false, mvp);
 
     gl.enable(gl.DEPTH_TEST);
@@ -612,12 +672,214 @@ export class SolarPanel3DLayer {
       gl.vertexAttribPointer(this.aColorLocation, 4, gl.FLOAT, false, 7 * 4, 3 * 4);
       gl.drawArrays(gl.LINES, 0, this.lineVertexCount);
     }
+
+    // 3. Draw Hovered Panel Vibrant Highlight (LINES)
+    if (this.hoveredPanel && this.highlightVertexCount > 0 && this.highlightBuffer) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.highlightBuffer);
+      gl.enableVertexAttribArray(this.aPosLocation);
+      gl.vertexAttribPointer(this.aPosLocation, 3, gl.FLOAT, false, 7 * 4, 0);
+      gl.enableVertexAttribArray(this.aColorLocation);
+      gl.vertexAttribPointer(this.aColorLocation, 4, gl.FLOAT, false, 7 * 4, 3 * 4);
+      gl.drawArrays(gl.LINES, 0, this.highlightVertexCount);
+    }
+  }
+
+  setHoveredPanel(panel) {
+    if (this.hoveredPanel === panel) return;
+    this.hoveredPanel = panel;
+
+    this.rebuildHighlightBuffer();
+
+    if (this.map && typeof this.map.triggerRepaint === 'function') {
+      this.map.triggerRepaint();
+    }
+
+    if (this.map && typeof this.map.getCanvas === 'function') {
+      const canvas = this.map.getCanvas();
+      if (canvas && canvas.style) {
+        canvas.style.cursor = panel ? 'pointer' : '';
+      }
+    }
+
+    if (this.onHoverCallback) {
+      const breakdown = panel ? this.computePanelBreakdown(panel) : null;
+      this.onHoverCallback(panel, breakdown);
+    }
+  }
+
+  rebuildHighlightBuffer() {
+    if (!this.hoveredPanel || !this.hoveredPanel.rtcVertices) {
+      this.highlightVertexCount = 0;
+      this.highlightVertices = null;
+      return;
+    }
+
+    const pts = this.hoveredPanel.rtcVertices; // [b0, b1, m1, m0] in local RTC
+    const colHighlight = [0.22, 0.74, 0.97, 1.0]; // Bright electric cyan
+    const colAccent = [0.98, 0.80, 0.20, 0.95];   // Golden amber accent
+
+    const lines = [];
+    // 4 perimeter lines for the hovered module
+    this.pushLine(lines, pts[0], pts[1], colHighlight);
+    this.pushLine(lines, pts[1], pts[2], colHighlight);
+    this.pushLine(lines, pts[2], pts[3], colHighlight);
+    this.pushLine(lines, pts[3], pts[0], colHighlight);
+
+    // Cross diagonals for architectural reticle highlight
+    this.pushLine(lines, pts[0], pts[2], colAccent);
+    this.pushLine(lines, pts[1], pts[3], colAccent);
+
+    this.highlightVertices = new Float32Array(lines);
+    this.highlightVertexCount = lines.length / 7;
+
+    const gl = this.gl;
+    if (gl && this.highlightBuffer) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.highlightBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, this.highlightVertices, gl.DYNAMIC_DRAW);
+    }
+  }
+
+  findPanelAtPoint(screenX, screenY, width, height) {
+    if (!this.visible || !this.latestMvp || !this.panels || this.panels.length === 0) {
+      return null;
+    }
+
+    const M = this.latestMvp;
+    let closestPanel = null;
+    let minZ = Infinity;
+
+    for (let i = 0; i < this.panels.length; i++) {
+      const p = this.panels[i];
+      const screenQuad = [];
+      let behind = false;
+      let avgZ = 0;
+
+      for (let j = 0; j < 4; j++) {
+        const v = p.rtcVertices[j];
+        const xc = M[0] * v[0] + M[4] * v[1] + M[8] * v[2] + M[12];
+        const yc = M[1] * v[0] + M[5] * v[1] + M[9] * v[2] + M[13];
+        const zc = M[2] * v[0] + M[6] * v[1] + M[10] * v[2] + M[14];
+        const wc = M[3] * v[0] + M[7] * v[1] + M[11] * v[2] + M[15];
+
+        if (wc <= 0.0001) {
+          behind = true;
+          break;
+        }
+
+        const ndcX = xc / wc;
+        const ndcY = yc / wc;
+        const sx = (ndcX * 0.5 + 0.5) * width;
+        const sy = (1.0 - (ndcY * 0.5 + 0.5)) * height;
+        screenQuad.push([sx, sy]);
+        avgZ += zc / wc;
+      }
+
+      if (behind || screenQuad.length < 4) continue;
+
+      if (this.pointInQuad(screenX, screenY, screenQuad)) {
+        if (avgZ < minZ) {
+          minZ = avgZ;
+          closestPanel = p;
+        }
+      }
+    }
+
+    return closestPanel;
+  }
+
+  pointInQuad(px, py, q) {
+    let sign = null;
+    for (let i = 0; i < 4; i++) {
+      const p1 = q[i];
+      const p2 = q[(i + 1) % 4];
+      const cp = (p2[0] - p1[0]) * (py - p1[1]) - (p2[1] - p1[1]) * (px - p1[0]);
+      if (Math.abs(cp) > 1e-4) {
+        const currentSign = cp > 0;
+        if (sign === null) {
+          sign = currentSign;
+        } else if (sign !== currentSign) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  computePanelBreakdown(panel) {
+    if (!panel) return null;
+
+    const metric = this.latestMetric;
+    const totalPanels = this.getTotalPanels() || 1;
+    const isDaylight = metric ? (metric.is_daylight && metric.solar_elevation_deg > 0) : this.currentSun.isDaylight;
+
+    if (!isDaylight || !metric) {
+      return {
+        unshadedW: 0.0,
+        geoLossW: 0.0,
+        treeLossW: 0.0,
+        selfLossW: 0.0,
+        acPowerW: 0.0
+      };
+    }
+
+    // Proportional clear-sky potential for this single panel module
+    const arrayUnshadedKw = metric.unshaded_power_kw !== undefined ? metric.unshaded_power_kw : metric.power_kw;
+    const unshadedW = (arrayUnshadedKw / totalPanels) * 1000.0;
+
+    // Direct beam fraction (typically ~85% on clear sky, remainder diffuse)
+    const directFraction = 0.85;
+    const directW = unshadedW * directFraction;
+
+    let geoLossW = 0.0;
+    let treeLossW = 0.0;
+    let selfLossW = 0.0;
+
+    const shade = panel.shadeState;
+    if (shade.inTerrainShade) {
+      // In geological terrain shadow: direct beam is blocked
+      geoLossW = directW;
+    } else {
+      if (shade.inCanopyShade) {
+        // Under vegetative tree canopy: direct beam attenuated by transmittance
+        const tau = this.canopyTransmittance !== undefined ? this.canopyTransmittance : 0.15;
+        treeLossW = directW * (1.0 - tau);
+      }
+
+      if (shade.isSelfShaded) {
+        // Inter-row self-shade blocks direct beam reaching this module
+        const directReaching = directW - treeLossW;
+        selfLossW = directReaching * (panel.selfShadeFrac || 1.0);
+      }
+    }
+
+    const acPowerW = Math.max(0.0, unshadedW - geoLossW - treeLossW - selfLossW);
+
+    return {
+      unshadedW,
+      geoLossW,
+      treeLossW,
+      selfLossW,
+      acPowerW
+    };
+  }
+
+  setOnPanelHover(callback) {
+    this.onHoverCallback = callback;
+  }
+
+  getPanels() {
+    return this.panels;
+  }
+
+  getHoveredPanel() {
+    return this.hoveredPanel;
   }
 
   onRemove(map, gl) {
     if (gl) {
       if (this.faceBuffer) gl.deleteBuffer(this.faceBuffer);
       if (this.lineBuffer) gl.deleteBuffer(this.lineBuffer);
+      if (this.highlightBuffer) gl.deleteBuffer(this.highlightBuffer);
       if (this.program) gl.deleteProgram(this.program);
     }
     this.map = null;

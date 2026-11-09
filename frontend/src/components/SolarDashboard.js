@@ -61,9 +61,24 @@ export class SolarDashboard {
 
       <!-- Instantaneous AC Power (Stacked Subtraction: Clear-Sky − Geological Shade − Tree Shade = AC Power) -->
       <div class="instantaneous-subtraction-card" style="background: rgba(0,0,0,0.25); border-radius: 8px; padding: 10px 12px; border: 1px solid rgba(255,255,255,0.06);">
-        <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 6px;">
-          Instantaneous AC Power
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span class="instantaneous-title" style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">
+            Instantaneous AC Power
+          </span>
+          <span class="hovered-panel-indicator" style="display: none; font-size: 0.62rem; color: #38bdf8; font-weight: 700; font-family: var(--font-mono); background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.35); padding: 1px 6px; border-radius: 4px;">
+            1 MODULE
+          </span>
         </div>
+
+        <!-- Hovered Panel Breakdown Banner -->
+        <div class="panel-hover-banner" style="display: none; align-items: center; justify-content: space-between; background: rgba(56, 189, 248, 0.10); border: 1px solid rgba(56, 189, 248, 0.30); border-radius: 6px; padding: 4px 8px; margin-bottom: 6px;">
+          <div style="display: flex; align-items: center; gap: 5px;">
+            <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #38bdf8; box-shadow: 0 0 6px #38bdf8;"></span>
+            <span class="panel-hover-label" style="font-size: 0.68rem; color: #38bdf8; font-weight: 700; font-family: var(--font-mono);">Table 1 · Row 1 · Module 1 (Bottom)</span>
+          </div>
+          <span style="font-size: 0.60rem; color: #94a3b8; font-family: var(--font-mono);">Hover Preview</span>
+        </div>
+
         <div class="subtraction-breakdown" style="display: flex; flex-direction: column; gap: 4px; font-family: var(--font-mono); font-size: 0.76rem;">
           <!-- Clear-Sky Potential -->
           <div class="subtraction-row" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-secondary);">
@@ -159,6 +174,12 @@ export class SolarDashboard {
     this.subAcPowerVal = this.element.querySelector('.sub-acpower-val');
     this.kwGauge = this.subAcPowerVal;
 
+    this.instantaneousTitle = this.element.querySelector('.instantaneous-title');
+    this.hoveredPanelIndicator = this.element.querySelector('.hovered-panel-indicator');
+    this.panelHoverBanner = this.element.querySelector('.panel-hover-banner');
+    this.panelHoverLabel = this.element.querySelector('.panel-hover-label');
+    this.isHoveringPanel = false;
+
     this.pvConfigMount = this.element.querySelector('.pv-config-internal-mount');
     const targetChartMount = this.chartContainer || this.element.querySelector('.internal-chart-mount');
 
@@ -251,6 +272,11 @@ export class SolarDashboard {
     this.currentMetric = metric;
     this.currentIndex = stepIndex;
 
+    if (this.isHoveringPanel) {
+      this.chart.setPlayhead(stepIndex, this.currentScaleFactor);
+      return;
+    }
+
     const currentKw = (metric.power_kw || 0.0) * this.currentScaleFactor;
     const rawUnshadedKw = metric.unshaded_power_kw !== undefined ? metric.unshaded_power_kw : metric.power_kw;
     const unshadedKw = (rawUnshadedKw || 0.0) * this.currentScaleFactor;
@@ -281,5 +307,43 @@ export class SolarDashboard {
     }
 
     this.chart.setPlayhead(stepIndex, this.currentScaleFactor);
+  }
+
+  showPanelTelemetry(panel, breakdown) {
+    if (!panel || !breakdown) return;
+    this.isHoveringPanel = true;
+
+    if (this.panelHoverBanner && this.panelHoverLabel) {
+      this.panelHoverBanner.style.display = 'flex';
+      this.panelHoverLabel.textContent = panel.label || 'Hovered Solar Panel';
+    }
+    if (this.hoveredPanelIndicator) {
+      this.hoveredPanelIndicator.style.display = 'inline-block';
+    }
+    if (this.instantaneousTitle) {
+      this.instantaneousTitle.textContent = 'Individual Panel AC Power';
+    }
+
+    if (this.subClearSkyVal) this.subClearSkyVal.textContent = `${Math.round(breakdown.unshadedW)} W`;
+    if (this.subGeoShadeVal) this.subGeoShadeVal.textContent = `${Math.round(breakdown.geoLossW)} W`;
+    if (this.subTreeShadeVal) this.subTreeShadeVal.textContent = `${Math.round(breakdown.treeLossW)} W`;
+    if (this.subSelfShadeVal) this.subSelfShadeVal.textContent = `${Math.round(breakdown.selfLossW)} W`;
+    if (this.subAcPowerVal) this.subAcPowerVal.textContent = `${Math.round(breakdown.acPowerW)} W`;
+  }
+
+  clearPanelTelemetry() {
+    this.isHoveringPanel = false;
+    if (this.panelHoverBanner) {
+      this.panelHoverBanner.style.display = 'none';
+    }
+    if (this.hoveredPanelIndicator) {
+      this.hoveredPanelIndicator.style.display = 'none';
+    }
+    if (this.instantaneousTitle) {
+      this.instantaneousTitle.textContent = 'Instantaneous AC Power';
+    }
+    if (this.currentMetric) {
+      this.updateTelemetry(this.currentMetric, this.currentIndex);
+    }
   }
 }

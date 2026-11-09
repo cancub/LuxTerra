@@ -273,3 +273,130 @@ test('SolarPanel3DLayer toggles visibility and respects render suppression', () 
   layer.render(mockGl, new Float32Array(16));
   assert.ok(drawCallCount > 0);
 });
+
+test('SolarPanel3DLayer: southernmost front row is NEVER self-shaded even if row_index is offset', () => {
+  const layer = new SolarPanel3DLayer();
+
+  // Layout where the southernmost table has row_index: 1 (e.g. narrow southern tip)
+  const mockLayout = {
+    total_panels: 8,
+    total_tables: 2,
+    row_pitch_m: 10.57,
+    tables: [
+      {
+        table_id: 0,
+        row_index: 1, // Southernmost row in this layout
+        panel_count: 4,
+        corners_wgs84: [
+          [-73.5000, 45.5000],
+          [-73.4980, 45.5000],
+          [-73.4980, 45.5005],
+          [-73.5000, 45.5005]
+        ],
+        center_wgs84: [-73.4990, 45.50025],
+        tilt_deg: 69.6, // Winter solstice steep tilt
+        stand_height_m: 1.0,
+        slant_height_m: 4.56
+      },
+      {
+        table_id: 1,
+        row_index: 2, // Interior row to the north
+        panel_count: 4,
+        corners_wgs84: [
+          [-73.5000, 45.5010],
+          [-73.4980, 45.5010],
+          [-73.4980, 45.5015],
+          [-73.5000, 45.5015]
+        ],
+        center_wgs84: [-73.4990, 45.50125],
+        tilt_deg: 69.6,
+        stand_height_m: 1.0,
+        slant_height_m: 4.56
+      }
+    ]
+  };
+
+  layer.setLayout(mockLayout);
+  // Clear sky, low sun elevation (20.2 deg)
+  const terrainB64 = Buffer.from([0xFF]).toString('base64');
+  layer.updateSunPosition(180.0, 20.2, true, terrainB64, null, [-73.501, 45.499, -73.497, 45.502], 2, 4);
+
+  const panels = layer.getPanels();
+  assert.equal(panels.length, 8); // 4 panels per table * 2 tables
+
+  // Table 0 panels (southernmost front row): isSelfShaded must be FALSE!
+  const table0Panels = panels.filter(p => p.tableId === 0);
+  assert.equal(table0Panels.length, 4);
+  table0Panels.forEach(p => {
+    assert.equal(p.shadeState.isSelfShaded, false, 'Front row table panels must NEVER be self-shaded');
+  });
+
+  // Table 1 panels (interior north row): isSelfShaded bottom module must be TRUE due to low winter sun
+  const table1Bottom = panels.find(p => p.tableId === 1 && p.position === 'bottom');
+  assert.ok(table1Bottom, 'Must find table 1 bottom panel');
+  assert.equal(table1Bottom.shadeState.isSelfShaded, true, 'Interior row bottom module must be self-shaded by front row');
+});
+
+test('SolarPanel3DLayer: findPanelAtPoint and interactive hover breakdown in Watts', () => {
+  const layer = new SolarPanel3DLayer();
+
+  const mockLayout = {
+    total_panels: 4,
+    total_tables: 1,
+    tables: [
+      {
+        table_id: 0,
+        row_index: 0,
+        panel_count: 4,
+        corners_wgs84: [
+          [-73.5000, 45.5000],
+          [-73.4980, 45.5000],
+          [-73.4980, 45.5010],
+          [-73.5000, 45.5010]
+        ],
+        center_wgs84: [-73.4990, 45.5005],
+        tilt_deg: 30.0,
+        stand_height_m: 1.0,
+        slant_height_m: 4.56
+      }
+    ]
+  };
+
+  layer.setLayout(mockLayout);
+
+  const mockMetric = {
+    is_daylight: true,
+    solar_azimuth_deg: 180.0,
+    solar_elevation_deg: 45.0,
+    unshaded_power_kw: 2.0, // 2000 W across 4 panels = 500 W per panel
+    power_kw: 2.0
+  };
+
+  layer.updateSunPosition(180.0, 45.0, true, Buffer.from([0xFF]).toString('base64'), null, [-73.501, 45.499, -73.497, 45.502], 2, 2, mockMetric);
+
+  const panels = layer.getPanels();
+  assert.equal(panels.length, 4);
+
+  // Compute breakdown for panel 0
+  const breakdown = layer.computePanelBreakdown(panels[0]);
+  assert.ok(breakdown);
+  assert.equal(Math.round(breakdown.unshadedW), 500); // 2000W / 4 panels = 500W
+  assert.equal(Math.round(breakdown.geoLossW), 0);
+  assert.equal(Math.round(breakdown.acPowerW), 500);
+
+  // Test setHoveredPanel callback
+  let hoveredNotified = null;
+  layer.setOnPanelHover((p, b) => {
+    hoveredNotified = { p, b };
+  });
+
+  layer.setHoveredPanel(panels[0]);
+  assert.ok(hoveredNotified);
+  assert.equal(hoveredNotified.p.id, panels[0].id);
+  assert.equal(Math.round(hoveredNotified.b.acPowerW), 500);
+
+  layer.setHoveredPanel(null);
+  assert.ok(hoveredNotified);
+  assert.equal(hoveredNotified.p, null);
+  assert.equal(hoveredNotified.b, null);
+});
