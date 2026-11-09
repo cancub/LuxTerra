@@ -94,6 +94,8 @@ class DailySummary(BaseModel):
     unshaded_daily_kwh: float = Field(default=0.0, description="Total clear-sky unshaded electrical energy in kWh")
     canopy_loss_kwh: float = Field(default=0.0, description="Total cumulative energy lost to tree canopy shading in kWh")
     canopy_loss_pct: float = Field(default=0.0, description="Percentage of potential energy lost to tree canopy")
+    self_shading_loss_kwh: float = Field(default=0.0, description="Total cumulative energy lost to inter-row panel self-shading in kWh")
+    self_shading_loss_pct: float = Field(default=0.0, description="Percentage of potential energy lost to panel self-shading")
     peak_power_kw: float = Field(..., description="Maximum instantaneous power achieved in kW")
     unshaded_peak_kw: float = Field(default=0.0, description="Maximum potential instantaneous power achieved in kW")
     peak_time: Optional[str] = Field(None, description="Timestamp of peak generation")
@@ -118,6 +120,7 @@ class TimestepMetric(BaseModel):
     unshaded_power_kw: float = Field(default=0.0, description="Clear-sky unshaded power in kW without terrain or canopy shadows")
     canopy_loss_kw: float = Field(default=0.0, description="Power lost specifically to vegetative tree canopy shade in kW")
     geological_loss_kw: float = Field(default=0.0, description="Power lost specifically to geological/terrain shadows in kW")
+    self_shading_loss_kw: float = Field(default=0.0, description="Power lost specifically to panel-to-panel self-shading in kW")
     percent_shaded: float
     canopy_shaded_pct: float = Field(default=0.0, description="Percentage of patch shaded by tree canopy")
     is_daylight: bool

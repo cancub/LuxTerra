@@ -27,6 +27,7 @@ from .elevation.geo_utils import transform_geometry
 from .serializer import encode_masks_batch, encode_mask_bitmask
 from .solar.phenology import calculate_canopy_transmittance
 from .pv.packing_engine import PVPackingEngine
+from .pv.self_shading import calculate_array_self_shading_fraction
 
 TZ_QUEBEC = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
 
@@ -251,9 +252,32 @@ class SimulationOrchestrator:
                     3
                 )
 
+                # Base power before panel self-shading
+                base_power_kw = power_kw
+
+                # Calculate array self-shading fraction from 3D layout geometry
+                f_self = calculate_array_self_shading_fraction(layout, angles.azimuth_deg, angles.elevation_deg)
+
+                # Self-shading only blocks direct beam radiation on cells that are NOT already in geological shade
+                # and scales with canopy transmittance for cells under tree canopy
+                if f_self > 0.0 and irradiance.poa_direct_w_m2 > 0.001:
+                    if polygon_mask is not None:
+                        t_unshaded_cells = int(np.count_nonzero((mask > 0) & polygon_mask))
+                    else:
+                        t_unshaded_cells = int(np.count_nonzero(mask > 0))
+
+                    unshaded_direct_cells = (t_unshaded_cells - canopy_shaded_cells) + (canopy_shaded_cells * canopy_transmittance)
+                    direct_reaching_kw = unshaded_direct_cells * irradiance.poa_direct_w_m2 * conv_factor
+                    self_shading_loss_kw = round(float(f_self * direct_reaching_kw), 3)
+                else:
+                    self_shading_loss_kw = 0.0
+
+                # Net usable AC power after geological, canopy, and panel self-shading
+                power_kw = round(max(0.0, base_power_kw - self_shading_loss_kw), 3)
+
                 # Geological shade loss is the exact potential loss attributable to terrain shadow
                 geological_loss_kw = round(
-                    max(0.0, unshaded_power_kw - canopy_loss_kw - power_kw),
+                    max(0.0, unshaded_power_kw - canopy_loss_kw - self_shading_loss_kw - power_kw),
                     3
                 )
 
@@ -272,6 +296,7 @@ class SimulationOrchestrator:
                         unshaded_power_kw=unshaded_power_kw,
                         canopy_loss_kw=canopy_loss_kw,
                         geological_loss_kw=geological_loss_kw,
+                        self_shading_loss_kw=self_shading_loss_kw,
                         percent_shaded=percent_shaded,
                         canopy_shaded_pct=canopy_shaded_pct,
                         is_daylight=True,
@@ -292,6 +317,7 @@ class SimulationOrchestrator:
                         unshaded_power_kw=0.0,
                         canopy_loss_kw=0.0,
                         geological_loss_kw=0.0,
+                        self_shading_loss_kw=0.0,
                         percent_shaded=100.0,
                         canopy_shaded_pct=0.0,
                         is_daylight=False,
@@ -305,11 +331,14 @@ class SimulationOrchestrator:
         power_values = [m.power_kw for m in timeseries_metrics]
         unshaded_power_values = [m.unshaded_power_kw for m in timeseries_metrics]
         canopy_loss_values = [m.canopy_loss_kw for m in timeseries_metrics]
+        self_shading_values = [m.self_shading_loss_kw for m in timeseries_metrics]
 
         total_daily_kwh = float(np.trapezoid(power_values, dx=step_min / 60.0))
         unshaded_daily_kwh = float(np.trapezoid(unshaded_power_values, dx=step_min / 60.0))
         canopy_loss_kwh = float(np.trapezoid(canopy_loss_values, dx=step_min / 60.0))
         canopy_loss_pct = float(round((canopy_loss_kwh / unshaded_daily_kwh * 100.0), 1)) if unshaded_daily_kwh > 0 else 0.0
+        self_shading_loss_kwh = float(np.trapezoid(self_shading_values, dx=step_min / 60.0))
+        self_shading_loss_pct = float(round((self_shading_loss_kwh / unshaded_daily_kwh * 100.0), 1)) if unshaded_daily_kwh > 0 else 0.0
         unshaded_peak_kw = float(max(unshaded_power_values)) if unshaded_power_values else 0.0
 
         # 7. Encode daytime masks (masking out non-polygon cells as transparent/unshaded)
@@ -348,6 +377,8 @@ class SimulationOrchestrator:
             unshaded_daily_kwh=round(unshaded_daily_kwh, 2),
             canopy_loss_kwh=round(canopy_loss_kwh, 2),
             canopy_loss_pct=round(canopy_loss_pct, 1),
+            self_shading_loss_kwh=round(self_shading_loss_kwh, 2),
+            self_shading_loss_pct=round(self_shading_loss_pct, 1),
             peak_power_kw=round(peak_power_kw, 2),
             unshaded_peak_kw=round(unshaded_peak_kw, 2),
             peak_time=peak_time,
