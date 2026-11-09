@@ -133,7 +133,11 @@ export class DateSelector {
 
     this.wrapper.querySelector('.cal-shortcut-today').addEventListener('click', (e) => {
       e.stopPropagation();
-      const today = new Date().toISOString().split('T')[0];
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      const today = `${y}-${m}-${d}`;
       this.setDate(today);
       this.closeCalendar();
     });
@@ -203,8 +207,7 @@ export class DateSelector {
 
   shiftDay(deltaDays) {
     const [y, m, d] = this.currentDate.split('-').map(Number);
-    const date = new Date(y, m - 1, d);
-    date.setDate(date.getDate() + deltaDays);
+    const date = new Date(Date.UTC(y, m - 1, d + deltaDays));
     const nextStr = date.toISOString().split('T')[0];
     this.setDate(nextStr);
   }

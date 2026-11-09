@@ -6,9 +6,7 @@
 import {
   decodeBitmaskToImageData,
   decodeDualBitmasksToImageData,
-  TERRAIN_SHADOW_WORD,
-  CANOPY_SHADOW_WORD,
-  SHADOW_PIXEL_WORD
+  TERRAIN_SHADOW_WORD
 } from '../utils/maskDecoder.js';
 
 export class ShadowRenderer {

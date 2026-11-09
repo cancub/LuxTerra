@@ -99,6 +99,24 @@ export function bboxToGeoJSON(minLon, minLat, maxLon, maxLat) {
 }
 
 /**
+ * Strips duplicate closing vertex from a polygon ring if present.
+ * @param {Array<[number, number]>} coordinates
+ * @returns {Array<[number, number]>}
+ */
+export function openPolygonRing(coordinates) {
+  if (!coordinates || coordinates.length === 0) return [];
+  const pts = [...coordinates];
+  if (
+    pts.length > 3 &&
+    pts[0][0] === pts[pts.length - 1][0] &&
+    pts[0][1] === pts[pts.length - 1][1]
+  ) {
+    pts.pop();
+  }
+  return pts;
+}
+
+/**
  * Computes metric surface area (m²), perimeter (m), and bounding box for an arbitrary polygon.
  * Uses high-precision geodesic equirectangular projection to metric coordinates and the Shoelace formula.
  */
@@ -113,14 +131,7 @@ export function computePolygonDimensions(coordinates) {
   }
 
   // Remove duplicate closing point if present for vertex processing
-  const pts = [...coordinates];
-  if (
-    pts.length > 3 &&
-    pts[0][0] === pts[pts.length - 1][0] &&
-    pts[0][1] === pts[pts.length - 1][1]
-  ) {
-    pts.pop();
-  }
+  const pts = openPolygonRing(coordinates);
 
   const n = pts.length;
   let minLon = Infinity;

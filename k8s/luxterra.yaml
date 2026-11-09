@@ -35,6 +35,8 @@ spec:
           volumeMounts:
             - name: dtm-cache
               mountPath: /app/data/dtm
+            - name: dsm-cache
+              mountPath: /app/data/dsm
           livenessProbe:
             httpGet:
               path: /api/health
@@ -58,6 +60,10 @@ spec:
         - name: dtm-cache
           hostPath:
             path: /home/alf/Code/dsh-sandbox/workspace/LuxTerra/data/dtm
+            type: DirectoryOrCreate
+        - name: dsm-cache
+          hostPath:
+            path: /home/alf/Code/dsh-sandbox/workspace/LuxTerra/data/dsm
             type: DirectoryOrCreate
 ---
 apiVersion: v1

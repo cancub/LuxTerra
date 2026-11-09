@@ -203,7 +203,7 @@ class SimulationOrchestrator:
                 is_rooftop=is_rooftop_mode,
                 ground_stand_height_m=1.5,
                 include_tree_canopy=has_canopy,
-                canopy_transmittance=canopy_transmittance
+                canopy_transmittance=transmittance.diffuse
             )
             if isinstance(res_svf, np.ndarray) and res_svf.shape == (patch_h, patch_w):
                 svf_grid = res_svf
@@ -472,25 +472,6 @@ class SimulationOrchestrator:
                     self_shading_loss_kw = round(total_self_loss_kw, 3)
                     geological_loss_kw = round(total_geo_loss_kw, 3)
                 else:
-                    pv_res = self.pv_model.calculate_power_kw(
-                        shadow_mask=mask,
-                        irradiance=irradiance,
-                        cell_area_m2=cell_area_m2,
-                        config=pv_cfg,
-                        inclusion_mask=polygon_mask,
-                        canopy_mask=canopy_m,
-                        canopy_transmittance=canopy_transmittance
-                    )
-
-                    if len(pv_res) == 3:
-                        power_kw, percent_shaded, canopy_shaded_pct = pv_res
-                    else:
-                        power_kw, percent_shaded = pv_res
-                        canopy_shaded_pct = 0.0
-
-                    shaded_pct_list.append(percent_shaded)
-                    canopy_shaded_pct_list.append(canopy_shaded_pct)
-
                     total_active_cells = int(np.count_nonzero(polygon_mask)) if polygon_mask is not None else int(mask.size)
                     conv_factor = cell_area_m2 * pv_cfg.effective_gcr * pv_cfg.module_efficiency * pv_cfg.system_derate / 1000.0
 
@@ -505,9 +486,13 @@ class SimulationOrchestrator:
                     unshaded_power_kw = round(incident_power_kw + diffuse_power_kw, 3)
 
                     if polygon_mask is not None:
-                        t_unshaded_cells = int(np.count_nonzero((mask > 0) & polygon_mask))
+                        t_unshaded = (mask > 0) & polygon_mask
+                        t_unshaded_cells = int(np.count_nonzero(t_unshaded))
+                        percent_shaded = round((1.0 - (t_unshaded_cells / total_active_cells)) * 100.0, 2) if total_active_cells > 0 else 0.0
                     else:
-                        t_unshaded_cells = int(np.count_nonzero(mask > 0))
+                        t_unshaded = mask > 0
+                        t_unshaded_cells = int(np.count_nonzero(t_unshaded))
+                        percent_shaded = round((1.0 - (t_unshaded_cells / mask.size)) * 100.0, 2) if mask.size > 0 else 0.0
 
                     direct_terrain_unshaded_kw = t_unshaded_cells * irradiance.poa_direct_w_m2 * conv_factor
 
@@ -524,15 +509,15 @@ class SimulationOrchestrator:
 
                     # Vegetative tree canopy attenuates remaining unblocked direct beam
                     if canopy_m is not None:
-                        if polygon_mask is not None:
-                            t_unshaded = (mask > 0) & polygon_mask
-                            c_shaded = t_unshaded & (~(canopy_m > 0))
-                        else:
-                            t_unshaded = mask > 0
-                            c_shaded = t_unshaded & (~(canopy_m > 0))
+                        c_shaded = t_unshaded & (~(canopy_m > 0))
                         canopy_shaded_cells = int(np.count_nonzero(c_shaded))
+                        canopy_shaded_pct = round((canopy_shaded_cells / total_active_cells) * 100.0, 2) if total_active_cells > 0 else 0.0
                     else:
                         canopy_shaded_cells = 0
+                        canopy_shaded_pct = 0.0
+
+                    shaded_pct_list.append(percent_shaded)
+                    canopy_shaded_pct_list.append(canopy_shaded_pct)
 
                     if t_unshaded_cells > 0:
                         canopy_loss_kw = round(

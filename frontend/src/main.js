@@ -274,6 +274,10 @@ if (appContainer) {
 
   map.on('mousemove', (e) => {
     if (!solarPanel3DLayer || !solarPanel3DLayer.isVisible()) return;
+    if (map.isMoving() || (boxDrawer && boxDrawer.isDrawingActive)) {
+      solarPanel3DLayer.setHoveredPanel(null);
+      return;
+    }
     const canvas = map.getCanvas();
     if (!canvas) return;
     const width = canvas.clientWidth;
@@ -331,8 +335,9 @@ if (appContainer) {
         <line x1="12" y1="8" x2="12" y2="12"></line>
         <line x1="12" y1="16" x2="12.01" y2="16"></line>
       </svg>
-      <span>${msgStr}</span>
+      <span class="toast-msg"></span>
     `;
+    toast.querySelector('.toast-msg').textContent = msgStr;
     toastContainer.appendChild(toast);
     setTimeout(() => {
       toast.style.opacity = '0';
@@ -342,6 +347,7 @@ if (appContainer) {
   }
 
   let lastSimulationKey = null;
+  let activeSimulationAbort = null;
 
   async function triggerSimulation() {
     if (!currentBbox) return;
@@ -360,6 +366,12 @@ if (appContainer) {
     if (lastSimulationKey === simKey && currentSimulationData) {
       return;
     }
+
+    if (activeSimulationAbort) {
+      activeSimulationAbort.abort();
+    }
+    const abortController = new AbortController();
+    activeSimulationAbort = abortController;
 
     if (statusPill) {
       statusPill.innerHTML = `<span class="spinner" style="display: inline-block; vertical-align: middle; margin-right: 4px;"></span> Ray-marching...`;
@@ -395,7 +407,8 @@ if (appContainer) {
         canopy_mode: pvConfig.canopyMode || 'seasonal'
       };
 
-      const data = await runSimulation(payload);
+      const data = await runSimulation(payload, abortController.signal);
+      if (abortController.signal.aborted) return;
       currentSimulationData = data;
       baseSimulationConfig = {
         deploymentMode: data.metadata.deployment_mode,
@@ -413,14 +426,18 @@ if (appContainer) {
       playbackEngine.setSimulationContext(data.timeseries.length, data.metadata.time_step_minutes);
       lastSimulationKey = simKey;
     } catch (err) {
+      if (err.name === 'AbortError') return;
       console.warn('Simulation execution error:', err);
       showToast(err.message, 'warning');
     } finally {
-      if (loadingPill) {
-        loadingPill.remove();
-      }
-      if (statusPill) {
-        statusPill.textContent = 'QC Solar 1m';
+      if (activeSimulationAbort === abortController) {
+        activeSimulationAbort = null;
+        if (loadingPill) {
+          loadingPill.remove();
+        }
+        if (statusPill) {
+          statusPill.textContent = 'QC Solar 1m';
+        }
       }
     }
   }

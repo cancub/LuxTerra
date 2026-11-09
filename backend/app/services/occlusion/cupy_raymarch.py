@@ -12,7 +12,7 @@ from .cuda_kernels import (
     get_compiled_dual_raymarch_kernel,
     get_compiled_svf_kernel,
 )
-from .ray_math import calculate_ray_step
+from .ray_math import calculate_ray_step, validate_patch_slices
 
 
 class CuPyOcclusionEngine(OcclusionEngine):
@@ -35,19 +35,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
             raise RuntimeError(f"CuPy GPU acceleration initialization failed: {e}")
 
     def _validate_slices(self, elevation_grid: np.ndarray, patch_slice_y: slice, patch_slice_x: slice) -> Tuple[int, int, int, int]:
-        H, W = elevation_grid.shape
-        py_start = max(0, patch_slice_y.start)
-        py_stop = min(H, patch_slice_y.stop)
-        px_start = max(0, patch_slice_x.start)
-        px_stop = min(W, patch_slice_x.stop)
-
-        patch_H = max(0, py_stop - py_start)
-        patch_W = max(0, px_stop - px_start)
-
-        if patch_H == 0 or patch_W == 0:
-            raise ValueError(f"Invalid patch slice: dimensions {patch_H}x{patch_W} within grid of shape {H}x{W}.")
-
-        return patch_H, patch_W, py_start, px_start
+        return validate_patch_slices(elevation_grid, patch_slice_y, patch_slice_x)
 
     def compute_shadow_mask(
         self,
@@ -253,8 +241,6 @@ class CuPyOcclusionEngine(OcclusionEngine):
         # Single upload of both DTM and DSM fields to GPU VRAM
         d_dtm = cp.asarray(dtm_grid, dtype=cp.float32)
         d_dsm = cp.asarray(dsm_grid, dtype=cp.float32)
-        d_terrain_mask = cp.empty((patch_H, patch_W), dtype=cp.uint8)
-        d_canopy_mask = cp.empty((patch_H, patch_W), dtype=cp.uint8)
 
         block_dim = (16, 16, 1)
         grid_dim = (
@@ -263,15 +249,14 @@ class CuPyOcclusionEngine(OcclusionEngine):
             1
         )
 
-        terrain_results = []
-        canopy_results = []
+        # Batch allocate GPU output tensors to avoid per-timestep PCIe syncs
+        num_angles = len(sun_angles)
+        d_terrain_batch = cp.zeros((num_angles, patch_H, patch_W), dtype=cp.uint8)
+        d_canopy_batch = cp.zeros((num_angles, patch_H, patch_W), dtype=cp.uint8)
 
-        for azimuth, elevation in sun_angles:
+        for idx, (azimuth, elevation) in enumerate(sun_angles):
             ray_params = calculate_ray_step(azimuth, elevation, resolution_m, max_search_radius_m)
             if not ray_params.is_daylight:
-                zeros = np.zeros((patch_H, patch_W), dtype=np.uint8)
-                terrain_results.append(zeros)
-                canopy_results.append(zeros.copy())
                 continue
 
             self.dual_kernel(
@@ -280,8 +265,8 @@ class CuPyOcclusionEngine(OcclusionEngine):
                 (
                     d_dtm,
                     d_dsm,
-                    d_terrain_mask,
-                    d_canopy_mask,
+                    d_terrain_batch[idx],
+                    d_canopy_batch[idx],
                     np.int32(H),
                     np.int32(W),
                     np.int32(y_offset),
@@ -298,8 +283,13 @@ class CuPyOcclusionEngine(OcclusionEngine):
                     np.int32(1 if include_tree_canopy else 0),
                 )
             )
-            terrain_results.append(cp.asnumpy(d_terrain_mask))
-            canopy_results.append(cp.asnumpy(d_canopy_mask))
+
+        # Single device-to-host PCIe transfer for all timesteps
+        h_terrain = cp.asnumpy(d_terrain_batch)
+        h_canopy = cp.asnumpy(d_canopy_batch)
+
+        terrain_results = [h_terrain[i] for i in range(num_angles)]
+        canopy_results = [h_canopy[i] for i in range(num_angles)]
 
         return terrain_results, canopy_results
 

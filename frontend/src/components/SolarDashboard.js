@@ -393,13 +393,14 @@ export class SolarDashboard {
       this.instantaneousTitle.textContent = 'Individual Panel AC Power';
     }
 
-    const incW = Math.round(breakdown.incidentW !== undefined ? breakdown.incidentW : (breakdown.unshadedW * 0.85));
-    const diffW = Math.round(breakdown.diffuseW !== undefined ? breakdown.diffuseW : (breakdown.unshadedW - incW));
-    const gW = Math.round(breakdown.geoLossW || 0);
-    const tW = Math.round(breakdown.treeLossW || 0);
-    const sW = Math.round(breakdown.selfLossW || 0);
-    const totShadeW = Math.round(breakdown.totalShadeW !== undefined ? breakdown.totalShadeW : (gW + tW + sW));
-    const acW = Math.round(breakdown.acPowerW || 0);
+    const sf = this.scaleFactor || 1.0;
+    const incW = Math.round((breakdown.incidentW !== undefined ? breakdown.incidentW : (breakdown.unshadedW * 0.85)) * sf);
+    const diffW = Math.round((breakdown.diffuseW !== undefined ? breakdown.diffuseW : (breakdown.unshadedW - incW)) * sf);
+    const gW = Math.round((breakdown.geoLossW || 0) * sf);
+    const tW = Math.round((breakdown.treeLossW || 0) * sf);
+    const sW = Math.round((breakdown.selfLossW || 0) * sf);
+    const totShadeW = Math.round((breakdown.totalShadeW !== undefined ? breakdown.totalShadeW : (gW + tW + sW)) * sf);
+    const acW = Math.round((breakdown.acPowerW || 0) * sf);
 
     if (this.subIncidentVal) this.subIncidentVal.textContent = `+ ${incW} W`;
     if (this.subTotalShadeVal) this.subTotalShadeVal.textContent = `- ${totShadeW} W`;

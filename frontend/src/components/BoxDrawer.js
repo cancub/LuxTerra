@@ -24,6 +24,7 @@ import {
   polygonToGeoJSON,
   computeDistanceMeters,
   computeScreenAlignedRect,
+  openPolygonRing,
   MAX_PATCH_AREA_M2
 } from '../utils/geometry.js';
 
@@ -63,9 +64,6 @@ export class BoxDrawer {
     this.hoveredHandleId = null;
     this.hoveredVertexIndex = null;
     this.activeMidpoint = null;
-
-    // Legacy compatibility dictionary
-    this.handles = { nw: null, ne: null, se: null, sw: null };
 
     this.initLayers();
     this.initTooltip();
@@ -1053,14 +1051,7 @@ export class BoxDrawer {
   deletePolygonVertex(index) {
     if (!this.currentPolygon || this.shapeType !== 'polygon') return;
 
-    let pts = [...this.currentPolygon];
-    if (
-      pts.length > 3 &&
-      pts[0][0] === pts[pts.length - 1][0] &&
-      pts[0][1] === pts[pts.length - 1][1]
-    ) {
-      pts.pop();
-    }
+    let pts = openPolygonRing(this.currentPolygon);
 
     if (pts.length <= 3) {
       if (this.lastMousePoint) {
@@ -1110,14 +1101,7 @@ export class BoxDrawer {
   insertVertexAndStartDrag(segmentIndex, initialCoords) {
     if (this.shapeType !== 'polygon' || !this.currentPolygon) return;
 
-    let pts = [...this.currentPolygon];
-    if (
-      pts.length > 3 &&
-      pts[0][0] === pts[pts.length - 1][0] &&
-      pts[0][1] === pts[pts.length - 1][1]
-    ) {
-      pts.pop();
-    }
+    let pts = openPolygonRing(this.currentPolygon);
 
     if (segmentIndex < 0 || segmentIndex >= pts.length) return;
 
@@ -1138,14 +1122,7 @@ export class BoxDrawer {
   findClosestSegment(screenPoint) {
     if (!this.currentPolygon || this.currentPolygon.length < 3 || !screenPoint) return null;
 
-    let pts = [...this.currentPolygon];
-    if (
-      pts.length > 3 &&
-      pts[0][0] === pts[pts.length - 1][0] &&
-      pts[0][1] === pts[pts.length - 1][1]
-    ) {
-      pts.pop();
-    }
+    let pts = openPolygonRing(this.currentPolygon);
 
     const n = pts.length;
     let minDistance = Infinity;
@@ -1432,7 +1409,9 @@ export class BoxDrawer {
     let targetBbox = bbox;
     let dims = computeBboxDimensions(...bbox);
     if (dims.areaM2 > MAX_PATCH_AREA_M2) {
-      targetBbox = clampBboxToMaxArea(bbox, MAX_PATCH_AREA_M2);
+      const [w, s, e, n] = bbox;
+      const clamped = clampBboxToMaxArea(w, s, e, n, MAX_PATCH_AREA_M2);
+      targetBbox = [w, s, clamped.curLon, clamped.curLat];
       dims = computeBboxDimensions(...targetBbox);
     }
     this.currentBbox = targetBbox;
@@ -1583,14 +1562,7 @@ export class BoxDrawer {
 
     if (Array.isArray(target) && target.length > 0 && Array.isArray(target[0])) {
       // Polygon or screen-aligned rectangle vertices
-      const pts = [...target];
-      if (
-        pts.length > 3 &&
-        pts[0][0] === pts[pts.length - 1][0] &&
-        pts[0][1] === pts[pts.length - 1][1]
-      ) {
-        pts.pop(); // Don't duplicate start/end vertex handle
-      }
+      const pts = openPolygonRing(target);
 
       const rectCursors = ['nwse-resize', 'nesw-resize', 'nwse-resize', 'nesw-resize'];
 

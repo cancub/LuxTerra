@@ -82,3 +82,28 @@ def calculate_ray_step(
         max_steps=max_steps,
         is_daylight=True
     )
+
+
+def validate_patch_slices(
+    elevation_grid: np.ndarray,
+    patch_slice_y: slice,
+    patch_slice_x: slice
+) -> Tuple[int, int, int, int]:
+    """
+    Validates and clamps patch slices to grid dimensions.
+    Returns (patch_H, patch_W, y_offset, x_offset).
+    """
+    H, W = elevation_grid.shape
+    py_start = max(0, patch_slice_y.start)
+    py_stop = min(H, patch_slice_y.stop)
+    px_start = max(0, patch_slice_x.start)
+    px_stop = min(W, patch_slice_x.stop)
+
+    patch_H = max(0, py_stop - py_start)
+    patch_W = max(0, px_stop - px_start)
+
+    if patch_H == 0 or patch_W == 0:
+        raise ValueError(f"Invalid patch slice: dimensions {patch_H}x{patch_W} within grid of shape {H}x{W}.")
+
+    return patch_H, patch_W, py_start, px_start
+

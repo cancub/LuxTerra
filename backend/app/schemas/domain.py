@@ -7,6 +7,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, Field, model_validator
 
+from ..config import config
 from ..services.elevation.geo_utils import normalize_bbox, validate_patch_area
 
 
@@ -41,7 +42,7 @@ class GeoBoundingBox(BaseModel):
                 data["max_lon"] = n_max_lon
                 data["max_lat"] = n_max_lat
 
-                is_valid, area, msg = validate_patch_area(n_min_lon, n_min_lat, n_max_lon, n_max_lat, max_area_m2=250000.0)
+                is_valid, area, msg = validate_patch_area(n_min_lon, n_min_lat, n_max_lon, n_max_lat, max_area_m2=config.max_patch_area_m2)
                 if not is_valid:
                     raise ValueError(msg)
         return data
@@ -126,14 +127,3 @@ class PVLayoutResult(BaseModel):
     physical_gcr: float = Field(..., description="Actual Ground Coverage Ratio (total panel area / site area)")
     tables: List[PVTableGeometry] = Field(default_factory=list, description="List of individual table geometries")
 
-
-class SimulationTimestep(BaseModel):
-    """
-    Result metrics for a single simulation timestep.
-    """
-    timestamp: datetime
-    solar_angles: SolarAngles
-    irradiance: IrradianceComponents
-    instantaneous_power_kw: float
-    percent_shaded: float
-    is_daylight: bool

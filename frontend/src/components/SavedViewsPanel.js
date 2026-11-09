@@ -341,8 +341,8 @@ export class SavedViewsPanel {
 
       item.innerHTML = `
         <div class="view-item-info">
-          <div class="view-item-name">${view.name}</div>
-          <div class="view-item-detail">${view.detail || 'View & Shape'}</div>
+          <div class="view-item-name"></div>
+          <div class="view-item-detail"></div>
         </div>
         <div class="view-item-actions">
           <button class="btn-delete-view" title="Delete saved view">
@@ -353,6 +353,8 @@ export class SavedViewsPanel {
           </button>
         </div>
       `;
+      item.querySelector('.view-item-name').textContent = view.name;
+      item.querySelector('.view-item-detail').textContent = view.detail || 'View & Shape';
 
       // Click to fly & restore
       const triggerRestore = (e) => {

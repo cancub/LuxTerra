@@ -6,6 +6,7 @@ from typing import List, Optional
 from datetime import date
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from ..config import config
 from .domain import GeoBoundingBox, DeploymentMode, PVLayoutResult
 from ..services.elevation.geo_utils import calculate_bbox_area_meters, calculate_polygon_area_meters
 
@@ -42,18 +43,19 @@ class SimulateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_simulation_area(self) -> "SimulateRequest":
+        max_area = config.max_patch_area_m2
         if self.polygon and len(self.polygon) >= 3:
             poly_area = calculate_polygon_area_meters(self.polygon)
-            if poly_area > 100000.0:
+            if poly_area > max_area:
                 raise ValueError(
-                    f"Selected polygon area ({poly_area:,.1f} m²) exceeds the maximum allowable limit of 100,000 m²."
+                    f"Selected polygon area ({poly_area:,.1f} m²) exceeds the maximum allowable limit of {max_area:,.0f} m²."
                 )
         else:
             bbox = self.bbox
             area = calculate_bbox_area_meters(bbox.min_lon, bbox.min_lat, bbox.max_lon, bbox.max_lat)
-            if area > 100000.0:
+            if area > max_area:
                 raise ValueError(
-                    f"Selected area ({area:,.1f} m²) exceeds the maximum allowable limit of 100,000 m²."
+                    f"Selected area ({area:,.1f} m²) exceeds the maximum allowable limit of {max_area:,.0f} m²."
                 )
         return self
 

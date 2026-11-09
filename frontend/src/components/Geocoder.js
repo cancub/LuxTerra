@@ -82,6 +82,12 @@ export class Geocoder {
   }
 
   async search(query) {
+    if (this.activeAbort) {
+      this.activeAbort.abort();
+    }
+    const abort = new AbortController();
+    this.activeAbort = abort;
+
     try {
       const url = new URL('https://nominatim.openstreetmap.org/search');
       url.searchParams.set('q', query);
@@ -94,25 +100,32 @@ export class Geocoder {
       const response = await fetch(url.toString(), {
         headers: {
           'Accept-Language': 'fr,en'
-        }
+        },
+        signal: abort.signal
       });
 
       if (!response.ok) return;
       const data = await response.json();
       this.renderResults(data);
     } catch (err) {
+      if (err.name === 'AbortError') return;
       console.warn('Nominatim search failed:', err);
+    } finally {
+      if (this.activeAbort === abort) {
+        this.activeAbort = null;
+      }
     }
   }
 
   renderResults(results) {
     this.dropdown.innerHTML = '';
     if (!results || results.length === 0) {
-      this.dropdown.innerHTML = `
-        <div style="padding: 10px 14px; font-size: 0.8rem; color: var(--text-muted);">
-          No locations found in Quebec
-        </div>
-      `;
+      const noLoc = document.createElement('div');
+      noLoc.style.padding = '10px 14px';
+      noLoc.style.fontSize = '0.8rem';
+      noLoc.style.color = 'var(--text-muted)';
+      noLoc.textContent = 'No locations found in Quebec';
+      this.dropdown.appendChild(noLoc);
       this.dropdown.style.display = 'block';
       return;
     }
@@ -132,10 +145,21 @@ export class Geocoder {
       const title = parts[0];
       const subtitle = parts.slice(1).join(',').trim();
 
-      item.innerHTML = `
-        <div style="font-weight: 600; color: var(--text-primary);">${title}</div>
-        <div style="font-size: 0.72rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${subtitle}</div>
-      `;
+      const titleEl = document.createElement('div');
+      titleEl.style.fontWeight = '600';
+      titleEl.style.color = 'var(--text-primary)';
+      titleEl.textContent = title;
+
+      const subEl = document.createElement('div');
+      subEl.style.fontSize = '0.72rem';
+      subEl.style.color = 'var(--text-muted)';
+      subEl.style.overflow = 'hidden';
+      subEl.style.textOverflow = 'ellipsis';
+      subEl.style.whiteSpace = 'nowrap';
+      subEl.textContent = subtitle;
+
+      item.appendChild(titleEl);
+      item.appendChild(subEl);
 
       item.addEventListener('mouseenter', () => {
         item.style.background = 'rgba(255, 255, 255, 0.08)';

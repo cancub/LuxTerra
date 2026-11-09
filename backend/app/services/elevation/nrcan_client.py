@@ -136,26 +136,3 @@ class NRCanClient:
             
         return (dtm_path, dsm_path)
 
-    def get_wcs_coverage_url(
-        self,
-        min_lon: float,
-        min_lat: float,
-        max_lon: float,
-        max_lat: float,
-        crs: str = "EPSG:4326"
-    ) -> str:
-        """
-        Constructs an OGC WCS 2.0.1 GetCoverage URL to directly extract a GeoTIFF
-        from NRCan's CanElevation WCS server.
-        """
-        query_params = [
-            ("SERVICE", "WCS"),
-            ("VERSION", "2.0.1"),
-            ("REQUEST", "GetCoverage"),
-            ("COVERAGEID", "dtm"),
-            ("FORMAT", "image/tiff"),
-            ("SUBSET", f"Long({min_lon},{max_lon})"),
-            ("SUBSET", f"Lat({min_lat},{max_lat})"),
-        ]
-        param_str = "&".join(f"{k}={v}" for k, v in query_params)
-        return f"{NRCAN_WCS_URL}?{param_str}"

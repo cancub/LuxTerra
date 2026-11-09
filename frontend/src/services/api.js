@@ -2,13 +2,14 @@
  * Client API Service for LuxTerra Backend
  */
 
-export async function runSimulation(requestPayload) {
+export async function runSimulation(requestPayload, signal = null) {
   const response = await fetch('/api/simulate', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(requestPayload)
+    body: JSON.stringify(requestPayload),
+    signal
   });
 
   if (!response.ok) {
