@@ -400,3 +400,68 @@ test('SolarPanel3DLayer: findPanelAtPoint and interactive hover breakdown in Wat
   assert.equal(hoveredNotified.p, null);
   assert.equal(hoveredNotified.b, null);
 });
+
+test('SolarPanel3DLayer: opaque self-shading supersedes semi-transparent tree canopy shade', () => {
+  const layer = new SolarPanel3DLayer();
+
+  const mockMetric = {
+    is_daylight: true,
+    solar_azimuth_deg: 180.0,
+    solar_elevation_deg: 20.0,
+    unshaded_power_kw: 1.0,
+    incident_power_kw: 0.85,
+    diffuse_power_kw: 0.15,
+    power_kw: 0.15
+  };
+
+  // Mock panel with total panels = 1
+  layer.getTotalPanels = () => 1;
+  layer.latestMetric = mockMetric;
+  layer.canopyTransmittance = 0.60;
+
+  // Case A: 100% self-shaded panel (mod_frac = 1.0) under tree canopy
+  const fullySelfShadedPanel = {
+    shadeState: {
+      inTerrainShade: false,
+      inCanopyShade: true,
+      isSelfShaded: true
+    },
+    moduleSelfShadeFrac: 1.0
+  };
+
+  const breakdownA = layer.computePanelBreakdown(fullySelfShadedPanel);
+  assert.equal(Math.round(breakdownA.incidentW), 850);
+  assert.equal(Math.round(breakdownA.selfLossW), 850);
+  assert.equal(Math.round(breakdownA.treeLossW), 0, 'Canopy shade must be 0 W when 100% covered by opaque panel shadow');
+  assert.equal(Math.round(breakdownA.totalShadeW), 850);
+  assert.equal(Math.round(breakdownA.diffuseW), 150);
+  assert.equal(Math.round(breakdownA.acPowerW), 150);
+  assert.equal(Math.round(breakdownA.incidentW - breakdownA.totalShadeW + breakdownA.diffuseW), Math.round(breakdownA.acPowerW));
+
+  // Case B: 50% self-shaded panel (mod_frac = 0.5) under tree canopy (tau = 0.60)
+  const halfSelfShadedPanel = {
+    shadeState: {
+      inTerrainShade: false,
+      inCanopyShade: true,
+      isSelfShaded: true
+    },
+    moduleSelfShadeFrac: 0.5
+  };
+
+  const breakdownB = layer.computePanelBreakdown(halfSelfShadedPanel);
+  // Direct = 850 W
+  // Self loss = 850 * 0.5 = 425 W
+  // Unblocked direct = 425 W
+  // Canopy loss = 425 * (1 - 0.60) = 170 W
+  // Direct reaching = 425 * 0.60 = 255 W
+  // Diffuse = 150 W
+  // AC Power = 255 + 150 = 405 W
+  // Total Shade = 425 + 170 = 595 W
+  // 850 - 595 + 150 = 405 W
+  assert.equal(Math.round(breakdownB.incidentW), 850);
+  assert.equal(Math.round(breakdownB.selfLossW), 425);
+  assert.equal(Math.round(breakdownB.treeLossW), 170);
+  assert.equal(Math.round(breakdownB.totalShadeW), 595);
+  assert.equal(Math.round(breakdownB.acPowerW), 405);
+  assert.equal(Math.round(breakdownB.incidentW - breakdownB.totalShadeW + breakdownB.diffuseW), Math.round(breakdownB.acPowerW));
+});

@@ -119,6 +119,8 @@ class TimestepMetric(BaseModel):
     solar_elevation_deg: float
     power_kw: float
     unshaded_power_kw: float = Field(default=0.0, description="Clear-sky unshaded power in kW without terrain or canopy shadows")
+    incident_power_kw: float = Field(default=0.0, description="Clear-sky direct beam potential on panels in kW")
+    diffuse_power_kw: float = Field(default=0.0, description="Diffuse sky radiation reaching panels in kW")
     canopy_loss_kw: float = Field(default=0.0, description="Power lost specifically to vegetative tree canopy shade in kW")
     geological_loss_kw: float = Field(default=0.0, description="Power lost specifically to geological/terrain shadows in kW")
     self_shading_loss_kw: float = Field(default=0.0, description="Power lost specifically to panel-to-panel self-shading in kW")

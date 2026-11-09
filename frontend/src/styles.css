@@ -168,6 +168,33 @@ body, html {
   flex-shrink: 0;
 }
 
+/* Shade Master Section & Expandable Contributions */
+.shade-header-row {
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.shade-header-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.shade-header-row:focus-visible {
+  outline: 1px solid rgba(56, 189, 248, 0.5);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.shade-expand-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.shade-contributions-container {
+  transition: opacity 0.2s ease, max-height 0.2s ease;
+}
+
 /* Diffuse Only Badge & Layperson Tooltip */
 .diffuse-only-overlay {
   display: none;

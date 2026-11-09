@@ -845,21 +845,29 @@ export class SolarPanel3DLayer {
 
     if (!isDaylight || !metric) {
       return {
-        unshadedW: 0.0,
+        incidentW: 0.0,
+        totalShadeW: 0.0,
         geoLossW: 0.0,
         treeLossW: 0.0,
         selfLossW: 0.0,
-        acPowerW: 0.0
+        diffuseW: 0.0,
+        acPowerW: 0.0,
+        unshadedW: 0.0
       };
     }
 
-    // Proportional clear-sky potential for this single panel module
+    // Direct incident potential and diffuse sky radiation for this single panel module
     const arrayUnshadedKw = metric.unshaded_power_kw !== undefined ? metric.unshaded_power_kw : metric.power_kw;
-    const unshadedW = (arrayUnshadedKw / totalPanels) * 1000.0;
-
-    // Direct beam fraction (typically ~85% on clear sky, remainder diffuse)
-    const directFraction = 0.85;
-    const directW = unshadedW * directFraction;
+    let incidentW;
+    let diffuseW;
+    if (metric.incident_power_kw !== undefined && metric.diffuse_power_kw !== undefined) {
+      incidentW = (metric.incident_power_kw / totalPanels) * 1000.0;
+      diffuseW = (metric.diffuse_power_kw / totalPanels) * 1000.0;
+    } else {
+      const unshadedW = (arrayUnshadedKw / totalPanels) * 1000.0;
+      incidentW = unshadedW * 0.85;
+      diffuseW = unshadedW * 0.15;
+    }
 
     let geoLossW = 0.0;
     let treeLossW = 0.0;
@@ -867,31 +875,38 @@ export class SolarPanel3DLayer {
 
     const shade = panel.shadeState;
     if (shade.inTerrainShade) {
-      // In geological terrain shadow: direct beam is blocked
-      geoLossW = directW;
+      // In geological terrain shadow: 100% opaque geological barrier blocks all direct beam
+      geoLossW = incidentW;
     } else {
-      if (shade.inCanopyShade) {
-        // Under vegetative tree canopy: direct beam attenuated by transmittance
-        const tau = this.canopyTransmittance !== undefined ? this.canopyTransmittance : 0.15;
-        treeLossW = directW * (1.0 - tau);
-      }
+      // Solid panel self-shading takes physical precedence over semi-transparent tree canopy
+      const modFrac = shade.isSelfShaded
+        ? (panel.moduleSelfShadeFrac !== undefined ? panel.moduleSelfShadeFrac : Math.min(1.0, (panel.selfShadeFrac || 0.0) * 2.0))
+        : 0.0;
+      selfLossW = incidentW * modFrac;
 
-      if (shade.isSelfShaded) {
-        // Inter-row self-shade blocks direct beam reaching this module
-        const directReaching = directW - treeLossW;
-        const modFrac = panel.moduleSelfShadeFrac !== undefined ? panel.moduleSelfShadeFrac : Math.min(1.0, (panel.selfShadeFrac || 0.0) * 2.0);
-        selfLossW = directReaching * modFrac;
+      const unblockedDirectW = Math.max(0.0, incidentW - selfLossW);
+
+      if (shade.inCanopyShade && unblockedDirectW > 0.0) {
+        // Vegetative tree canopy attenuates only the remaining unblocked direct beam
+        const tau = this.canopyTransmittance !== undefined ? this.canopyTransmittance : 0.15;
+        treeLossW = unblockedDirectW * (1.0 - tau);
       }
     }
 
-    const acPowerW = Math.max(0.0, unshadedW - geoLossW - treeLossW - selfLossW);
+    const totalShadeW = geoLossW + treeLossW + selfLossW;
+    const directReachingW = Math.max(0.0, incidentW - totalShadeW);
+    const acPowerW = Math.max(0.0, directReachingW + diffuseW);
+    const unshadedW = incidentW + diffuseW;
 
     return {
-      unshadedW,
+      incidentW,
+      totalShadeW,
       geoLossW,
       treeLossW,
       selfLossW,
-      acPowerW
+      diffuseW,
+      acPowerW,
+      unshadedW
     };
   }
 

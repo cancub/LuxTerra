@@ -17,6 +17,7 @@ export class SolarDashboard {
     this.timeseries = [];
     this.currentMetric = null;
     this.canopyTransmittance = 0.15;
+    this.isShadeExpanded = true;
 
     this.render();
   }
@@ -80,43 +81,56 @@ export class SolarDashboard {
         </div>
 
         <div class="subtraction-breakdown" style="display: flex; flex-direction: column; gap: 4px; font-family: var(--font-mono); font-size: 0.76rem;">
-          <!-- Clear-Sky Potential -->
-          <div class="subtraction-row" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-secondary);">
+          <!-- Incident Potential -->
+          <div class="subtraction-row incident-row" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-secondary);">
             <span style="display: flex; align-items: center; gap: 6px;">
               <span style="display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: #facc15;"></span>
-              <span>Clear-Sky</span>
+              <span>Incident Potential</span>
             </span>
-            <span class="sub-clearsky-val" style="font-weight: 600; color: #facc15;">0.0 kW</span>
+            <span class="sub-incident-val sub-clearsky-val" style="font-weight: 600; color: #facc15;">+ 0.0 kW</span>
           </div>
 
-          <!-- Shading Subtractions Wrapper (Hosts the Diffuse Only overlay) -->
-          <div class="shade-rows-wrapper" style="position: relative; display: flex; flex-direction: column; gap: 4px;">
-            <!-- Geological Shade Loss -->
-            <div class="subtraction-row geo-shade-row" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-secondary);">
-              <span style="display: flex; align-items: center; gap: 6px;">
-                <span style="font-weight: 700; color: #a16207; width: 8px; text-align: center;">−</span>
-                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: #78350f;"></span>
-                <span>Geological Shade</span>
+          <!-- Master Shade Section (Clickable to Expand / Collapse Contributions) -->
+          <div class="shade-master-section" style="position: relative; display: flex; flex-direction: column; gap: 3px;">
+            <div class="subtraction-row shade-header-row" role="button" tabindex="0" title="Click to toggle shade breakdown" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-secondary); cursor: pointer; user-select: none; border-radius: 4px; padding: 2px 2px;">
+              <span style="display: flex; align-items: center; gap: 4px;">
+                <span class="shade-expand-chevron" style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; transition: transform 0.2s ease; color: #94a3b8;">
+                  <svg style="width: 10px; height: 10px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </span>
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: #ef4444;"></span>
+                <span>Shade</span>
               </span>
-              <span class="sub-geoshade-val" style="font-weight: 600; color: #d97706;">0.0 kW</span>
+              <span class="sub-totalshade-val" style="font-weight: 600; color: #f87171;">- 0.0 kW</span>
             </div>
-            <!-- Tree Canopy Shade Loss -->
-            <div class="subtraction-row tree-shade-row" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-secondary);">
-              <span style="display: flex; align-items: center; gap: 6px;">
-                <span style="font-weight: 700; color: #22c55e; width: 8px; text-align: center;">−</span>
-                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: #22c55e;"></span>
-                <span>Tree Shade</span>
-              </span>
-              <span class="sub-treeshade-val" style="font-weight: 600; color: #22c55e;">0.0 kW</span>
-            </div>
-            <!-- Panel Self-Shade Loss -->
-            <div class="subtraction-row panel-shade-row" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-secondary);">
-              <span style="display: flex; align-items: center; gap: 6px;">
-                <span style="font-weight: 700; color: #818cf8; width: 8px; text-align: center;">−</span>
-                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: #6366f1;"></span>
-                <span>Panel Self-Shade</span>
-              </span>
-              <span class="sub-selfshade-val" style="font-weight: 600; color: #a5b4fc;">0.0 kW</span>
+
+            <!-- Expandable Shade Contributions Wrapper -->
+            <div class="shade-contributions-container" style="display: flex; flex-direction: column; gap: 3px; padding-left: 18px; border-left: 1px dashed rgba(255,255,255,0.12); margin-left: 6px;">
+              <!-- Geological Shade Loss -->
+              <div class="subtraction-row geo-shade-row" style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: var(--text-muted);">
+                <span style="display: flex; align-items: center; gap: 6px;">
+                  <span style="display: inline-block; width: 6px; height: 6px; border-radius: 2px; background: #d97706;"></span>
+                  <span>Geological</span>
+                </span>
+                <span class="sub-geoshade-val" style="font-weight: 600; color: #d97706;">- 0.0 kW</span>
+              </div>
+              <!-- Tree Canopy Shade Loss -->
+              <div class="subtraction-row tree-shade-row" style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: var(--text-muted);">
+                <span style="display: flex; align-items: center; gap: 6px;">
+                  <span style="display: inline-block; width: 6px; height: 6px; border-radius: 2px; background: #22c55e;"></span>
+                  <span>Tree Canopy</span>
+                </span>
+                <span class="sub-treeshade-val" style="font-weight: 600; color: #22c55e;">- 0.0 kW</span>
+              </div>
+              <!-- Panel Self-Shade Loss -->
+              <div class="subtraction-row panel-shade-row" style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: var(--text-muted);">
+                <span style="display: flex; align-items: center; gap: 6px;">
+                  <span style="display: inline-block; width: 6px; height: 6px; border-radius: 2px; background: #818cf8;"></span>
+                  <span>Panel Self-Shade</span>
+                </span>
+                <span class="sub-selfshade-val" style="font-weight: 600; color: #a5b4fc;">- 0.0 kW</span>
+              </div>
             </div>
 
             <!-- Diffuse Only Overlay Badge with Layperson Hover Tooltip -->
@@ -143,6 +157,15 @@ export class SolarDashboard {
             </div>
           </div>
 
+          <!-- Diffuse Radiation Row -->
+          <div class="subtraction-row diffuse-row" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-secondary);">
+            <span style="display: flex; align-items: center; gap: 6px;">
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: #38bdf8;"></span>
+              <span>Diffuse</span>
+            </span>
+            <span class="sub-diffuse-val" style="font-weight: 600; color: #38bdf8;">+ 0.0 kW</span>
+          </div>
+
           <!-- Subtraction Divider -->
           <div class="subtraction-divider" style="height: 1px; background: rgba(255,255,255,0.1); margin: 3px 0;"></div>
           <!-- AC Power Result -->
@@ -167,12 +190,31 @@ export class SolarDashboard {
     this.arrayDcAcBadge = this.element.querySelector('.array-dcac-badge');
     this.arrayGcrBadge = this.element.querySelector('.array-gcr-badge');
     this.diffuseOnlyOverlay = this.element.querySelector('.diffuse-only-overlay');
-    this.subClearSkyVal = this.element.querySelector('.sub-clearsky-val');
+    this.subIncidentVal = this.element.querySelector('.sub-incident-val');
+    this.subClearSkyVal = this.subIncidentVal; // Compatibility alias
+    this.subTotalShadeVal = this.element.querySelector('.sub-totalshade-val');
     this.subGeoShadeVal = this.element.querySelector('.sub-geoshade-val');
     this.subTreeShadeVal = this.element.querySelector('.sub-treeshade-val');
     this.subSelfShadeVal = this.element.querySelector('.sub-selfshade-val');
+    this.subDiffuseVal = this.element.querySelector('.sub-diffuse-val');
     this.subAcPowerVal = this.element.querySelector('.sub-acpower-val');
     this.kwGauge = this.subAcPowerVal;
+
+    this.shadeHeaderRow = this.element.querySelector('.shade-header-row');
+    this.shadeContributions = this.element.querySelector('.shade-contributions-container');
+    this.shadeChevron = this.element.querySelector('.shade-expand-chevron');
+
+    if (this.shadeHeaderRow) {
+      this.shadeHeaderRow.addEventListener('click', () => {
+        this.toggleShadeExpanded();
+      });
+      this.shadeHeaderRow.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          this.toggleShadeExpanded();
+        }
+      });
+    }
 
     this.instantaneousTitle = this.element.querySelector('.instantaneous-title');
     this.hoveredPanelIndicator = this.element.querySelector('.hovered-panel-indicator');
@@ -190,6 +232,16 @@ export class SolarDashboard {
     this.container.appendChild(this.element);
   }
 
+  toggleShadeExpanded(forceState) {
+    this.isShadeExpanded = forceState !== undefined ? forceState : !this.isShadeExpanded;
+    if (this.shadeContributions) {
+      this.shadeContributions.style.display = this.isShadeExpanded ? 'flex' : 'none';
+    }
+    if (this.shadeChevron) {
+      this.shadeChevron.style.transform = this.isShadeExpanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+    }
+  }
+
   getPVConfigMount() {
     return this.pvConfigMount;
   }
@@ -200,10 +252,12 @@ export class SolarDashboard {
       if (this.tiltVal) this.tiltVal.textContent = '--°';
       if (this.arraySpecsRow) this.arraySpecsRow.style.display = 'none';
       if (this.diffuseOnlyOverlay) this.diffuseOnlyOverlay.style.display = 'none';
-      if (this.subClearSkyVal) this.subClearSkyVal.textContent = '0.0 kW';
-      if (this.subGeoShadeVal) this.subGeoShadeVal.textContent = '0.0 kW';
-      if (this.subTreeShadeVal) this.subTreeShadeVal.textContent = '0.0 kW';
-      if (this.subSelfShadeVal) this.subSelfShadeVal.textContent = '0.0 kW';
+      if (this.subIncidentVal) this.subIncidentVal.textContent = '+ 0.0 kW';
+      if (this.subTotalShadeVal) this.subTotalShadeVal.textContent = '- 0.0 kW';
+      if (this.subGeoShadeVal) this.subGeoShadeVal.textContent = '- 0.0 kW';
+      if (this.subTreeShadeVal) this.subTreeShadeVal.textContent = '- 0.0 kW';
+      if (this.subSelfShadeVal) this.subSelfShadeVal.textContent = '- 0.0 kW';
+      if (this.subDiffuseVal) this.subDiffuseVal.textContent = '+ 0.0 kW';
       if (this.subAcPowerVal) this.subAcPowerVal.textContent = '0.0 kW';
       this.chart.setData([], 1.0);
       return;
@@ -280,21 +334,36 @@ export class SolarDashboard {
     const currentKw = (metric.power_kw || 0.0) * this.currentScaleFactor;
     const rawUnshadedKw = metric.unshaded_power_kw !== undefined ? metric.unshaded_power_kw : metric.power_kw;
     const unshadedKw = (rawUnshadedKw || 0.0) * this.currentScaleFactor;
+
+    let incidentKw;
+    let diffuseKw;
+    if (metric.incident_power_kw !== undefined) {
+      incidentKw = (metric.incident_power_kw || 0.0) * this.currentScaleFactor;
+      diffuseKw = (metric.diffuse_power_kw !== undefined ? metric.diffuse_power_kw : Math.max(0.0, rawUnshadedKw - metric.incident_power_kw)) * this.currentScaleFactor;
+    } else if (metric.diffuse_power_kw !== undefined) {
+      diffuseKw = (metric.diffuse_power_kw || 0.0) * this.currentScaleFactor;
+      incidentKw = Math.max(0.0, unshadedKw - diffuseKw);
+    } else {
+      incidentKw = unshadedKw;
+      diffuseKw = 0.0;
+    }
+
     const canopyLossKw = (metric.canopy_loss_kw || 0.0) * this.currentScaleFactor;
     const selfLossKw = (metric.self_shading_loss_kw || 0.0) * this.currentScaleFactor;
     const rawGeoLossKw = metric.geological_loss_kw !== undefined
       ? metric.geological_loss_kw
       : Math.max(0.0, rawUnshadedKw - (metric.canopy_loss_kw || 0.0) - (metric.self_shading_loss_kw || 0.0) - (metric.power_kw || 0.0));
     const geoLossKw = (rawGeoLossKw || 0.0) * this.currentScaleFactor;
+    const totalShadeKw = geoLossKw + canopyLossKw + selfLossKw;
 
-    // Stacked subtraction values: Clear-Sky − Geological Shade − Tree Shade − Panel Self-Shade = AC Power
-    this.subClearSkyVal.textContent = `${unshadedKw.toFixed(1)} kW`;
-    this.subGeoShadeVal.textContent = `${geoLossKw.toFixed(1)} kW`;
-    this.subTreeShadeVal.textContent = `${canopyLossKw.toFixed(1)} kW`;
-    if (this.subSelfShadeVal) {
-      this.subSelfShadeVal.textContent = `${selfLossKw.toFixed(1)} kW`;
-    }
-    this.subAcPowerVal.textContent = `${currentKw.toFixed(1)} kW`;
+    // Stacked subtraction values: Incident (+ X) − Shade (− Y) + Diffuse (+ Z) = AC Power
+    if (this.subIncidentVal) this.subIncidentVal.textContent = `+ ${incidentKw.toFixed(1)} kW`;
+    if (this.subTotalShadeVal) this.subTotalShadeVal.textContent = `- ${totalShadeKw.toFixed(1)} kW`;
+    if (this.subGeoShadeVal) this.subGeoShadeVal.textContent = `- ${geoLossKw.toFixed(1)} kW`;
+    if (this.subTreeShadeVal) this.subTreeShadeVal.textContent = `- ${canopyLossKw.toFixed(1)} kW`;
+    if (this.subSelfShadeVal) this.subSelfShadeVal.textContent = `- ${selfLossKw.toFixed(1)} kW`;
+    if (this.subDiffuseVal) this.subDiffuseVal.textContent = `+ ${diffuseKw.toFixed(1)} kW`;
+    if (this.subAcPowerVal) this.subAcPowerVal.textContent = `${currentKw.toFixed(1)} kW`;
 
     // Overlay 'Diffuse Only' badge when direct beam is blocked by racking tilt or past direct cutoff
     const isDiffuseOnly = Boolean(
@@ -324,11 +393,21 @@ export class SolarDashboard {
       this.instantaneousTitle.textContent = 'Individual Panel AC Power';
     }
 
-    if (this.subClearSkyVal) this.subClearSkyVal.textContent = `${Math.round(breakdown.unshadedW)} W`;
-    if (this.subGeoShadeVal) this.subGeoShadeVal.textContent = `${Math.round(breakdown.geoLossW)} W`;
-    if (this.subTreeShadeVal) this.subTreeShadeVal.textContent = `${Math.round(breakdown.treeLossW)} W`;
-    if (this.subSelfShadeVal) this.subSelfShadeVal.textContent = `${Math.round(breakdown.selfLossW)} W`;
-    if (this.subAcPowerVal) this.subAcPowerVal.textContent = `${Math.round(breakdown.acPowerW)} W`;
+    const incW = Math.round(breakdown.incidentW !== undefined ? breakdown.incidentW : (breakdown.unshadedW * 0.85));
+    const diffW = Math.round(breakdown.diffuseW !== undefined ? breakdown.diffuseW : (breakdown.unshadedW - incW));
+    const gW = Math.round(breakdown.geoLossW || 0);
+    const tW = Math.round(breakdown.treeLossW || 0);
+    const sW = Math.round(breakdown.selfLossW || 0);
+    const totShadeW = Math.round(breakdown.totalShadeW !== undefined ? breakdown.totalShadeW : (gW + tW + sW));
+    const acW = Math.round(breakdown.acPowerW || 0);
+
+    if (this.subIncidentVal) this.subIncidentVal.textContent = `+ ${incW} W`;
+    if (this.subTotalShadeVal) this.subTotalShadeVal.textContent = `- ${totShadeW} W`;
+    if (this.subGeoShadeVal) this.subGeoShadeVal.textContent = `- ${gW} W`;
+    if (this.subTreeShadeVal) this.subTreeShadeVal.textContent = `- ${tW} W`;
+    if (this.subSelfShadeVal) this.subSelfShadeVal.textContent = `- ${sW} W`;
+    if (this.subDiffuseVal) this.subDiffuseVal.textContent = `+ ${diffW} W`;
+    if (this.subAcPowerVal) this.subAcPowerVal.textContent = `${acW} W`;
   }
 
   clearPanelTelemetry() {

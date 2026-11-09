@@ -324,6 +324,12 @@ class SimulationOrchestrator:
                     poa_direct = irradiance.poa_direct_w_m2
                     poa_diffuse = irradiance.poa_diffuse_w_m2
 
+                    direct_mod_w = poa_direct * module_conv
+                    diffuse_mod_w = poa_diffuse * module_conv
+                    incident_power_kw = round(num_mods * direct_mod_w, 3)
+                    diffuse_power_kw = round(num_mods * diffuse_mod_w, 3)
+                    unshaded_power_kw = round(incident_power_kw + diffuse_power_kw, 3)
+
                     for mod in discrete_modules:
                         r = mod["row_idx"]
                         c = mod["col_idx"]
@@ -331,26 +337,17 @@ class SimulationOrchestrator:
                         terrain_lit = bool(mask[r, c] > 0)
                         canopy_lit = bool(canopy_m[r, c] > 0) if canopy_m is not None else True
 
-                        unshaded_w = (poa_direct + poa_diffuse) * module_conv
-                        diffuse_w = poa_diffuse * module_conv
-
                         if not terrain_lit:
                             num_terrain_shaded += 1
-                            geo_loss = poa_direct * module_conv
+                            geo_loss = direct_mod_w
                             canopy_loss = 0.0
                             self_loss = 0.0
-                            mod_pwr = diffuse_w
+                            mod_pwr = diffuse_mod_w
                         else:
                             geo_loss = 0.0
-                            if not canopy_lit:
-                                num_canopy_shaded += 1
-                                canopy_loss = poa_direct * (1.0 - canopy_transmittance) * module_conv
-                                direct_reaching = poa_direct * canopy_transmittance * module_conv
-                            else:
-                                canopy_loss = 0.0
-                                direct_reaching = poa_direct * module_conv
-
+                            # Solid panel self-shading takes physical precedence over semi-transparent tree canopy shade
                             self_loss = 0.0
+                            mod_frac = 0.0
                             if rack_self_frac > 0.0 and (not mod["is_front_row"]) and mod["south_tables"]:
                                 delta_x_m = layout.row_pitch_m * tan_az_delta
                                 m_per_deg_lon = 111320.0 * np.cos(np.radians(mod["center_lat"]))
@@ -373,9 +370,19 @@ class SimulationOrchestrator:
                                         mod_frac = float(np.clip(rack_self_frac * 2.0, 0.0, 1.0))
                                     else:
                                         mod_frac = float(np.clip((rack_self_frac - 0.5) * 2.0, 0.0, 1.0))
-                                    self_loss = direct_reaching * mod_frac
+                                    self_loss = direct_mod_w * mod_frac
 
-                            mod_pwr = max(0.0, unshaded_w - geo_loss - canopy_loss - self_loss)
+                            unblocked_direct = max(0.0, direct_mod_w - self_loss)
+
+                            if not canopy_lit and unblocked_direct > 0.0:
+                                num_canopy_shaded += 1
+                                canopy_loss = unblocked_direct * (1.0 - canopy_transmittance)
+                                direct_reaching = unblocked_direct * canopy_transmittance
+                            else:
+                                canopy_loss = 0.0
+                                direct_reaching = unblocked_direct
+
+                            mod_pwr = max(0.0, direct_reaching + diffuse_mod_w)
 
                         total_geo_loss_kw += geo_loss
                         total_canopy_loss_kw += canopy_loss
@@ -414,11 +421,35 @@ class SimulationOrchestrator:
                     total_active_cells = int(np.count_nonzero(polygon_mask)) if polygon_mask is not None else int(mask.size)
                     conv_factor = cell_area_m2 * pv_cfg.effective_gcr * pv_cfg.module_efficiency * pv_cfg.system_derate / 1000.0
 
-                    unshaded_power_kw = round(
-                        total_active_cells * (irradiance.poa_direct_w_m2 + irradiance.poa_diffuse_w_m2) * conv_factor,
+                    incident_power_kw = round(
+                        total_active_cells * irradiance.poa_direct_w_m2 * conv_factor,
                         3
                     )
+                    diffuse_power_kw = round(
+                        total_active_cells * irradiance.poa_diffuse_w_m2 * conv_factor,
+                        3
+                    )
+                    unshaded_power_kw = round(incident_power_kw + diffuse_power_kw, 3)
 
+                    if polygon_mask is not None:
+                        t_unshaded_cells = int(np.count_nonzero((mask > 0) & polygon_mask))
+                    else:
+                        t_unshaded_cells = int(np.count_nonzero(mask > 0))
+
+                    direct_terrain_unshaded_kw = t_unshaded_cells * irradiance.poa_direct_w_m2 * conv_factor
+
+                    # Calculate array self-shading fraction from 3D layout geometry
+                    f_self = calculate_array_self_shading_fraction(layout, angles.azimuth_deg, angles.elevation_deg)
+
+                    # Self-shading blocks f_self of direct beam on terrain-unshaded cells (opaque solid shade)
+                    if f_self > 0.0 and irradiance.poa_direct_w_m2 > 0.001:
+                        self_shading_loss_kw = round(float(f_self * direct_terrain_unshaded_kw), 3)
+                    else:
+                        self_shading_loss_kw = 0.0
+
+                    unblocked_direct_kw = max(0.0, direct_terrain_unshaded_kw - self_shading_loss_kw)
+
+                    # Vegetative tree canopy attenuates remaining unblocked direct beam
                     if canopy_m is not None:
                         if polygon_mask is not None:
                             t_unshaded = (mask > 0) & polygon_mask
@@ -430,37 +461,18 @@ class SimulationOrchestrator:
                     else:
                         canopy_shaded_cells = 0
 
-                    canopy_loss_kw = round(
-                        canopy_shaded_cells * (1.0 - canopy_transmittance) * irradiance.poa_direct_w_m2 * conv_factor,
-                        3
-                    )
-
-                    # Base power before panel self-shading
-                    base_power_kw = power_kw
-
-                    # Calculate array self-shading fraction from 3D layout geometry
-                    f_self = calculate_array_self_shading_fraction(layout, angles.azimuth_deg, angles.elevation_deg)
-
-                    # Self-shading only blocks direct beam radiation on cells that are NOT already in geological shade
-                    # and scales with canopy transmittance for cells under tree canopy
-                    if f_self > 0.0 and irradiance.poa_direct_w_m2 > 0.001:
-                        if polygon_mask is not None:
-                            t_unshaded_cells = int(np.count_nonzero((mask > 0) & polygon_mask))
-                        else:
-                            t_unshaded_cells = int(np.count_nonzero(mask > 0))
-
-                        unshaded_direct_cells = (t_unshaded_cells - canopy_shaded_cells) + (canopy_shaded_cells * canopy_transmittance)
-                        direct_reaching_kw = unshaded_direct_cells * irradiance.poa_direct_w_m2 * conv_factor
-                        self_shading_loss_kw = round(float(f_self * direct_reaching_kw), 3)
+                    if t_unshaded_cells > 0:
+                        canopy_loss_kw = round(
+                            (canopy_shaded_cells / t_unshaded_cells) * unblocked_direct_kw * (1.0 - canopy_transmittance),
+                            3
+                        )
                     else:
-                        self_shading_loss_kw = 0.0
+                        canopy_loss_kw = 0.0
 
-                    # Net usable AC power after geological, canopy, and panel self-shading
-                    power_kw = round(max(0.0, base_power_kw - self_shading_loss_kw), 3)
-
-                    # Geological shade loss is the exact potential loss attributable to terrain shadow
+                    direct_reaching_kw = max(0.0, unblocked_direct_kw - canopy_loss_kw)
+                    power_kw = round(direct_reaching_kw + diffuse_power_kw, 3)
                     geological_loss_kw = round(
-                        max(0.0, unshaded_power_kw - canopy_loss_kw - self_shading_loss_kw - power_kw),
+                        max(0.0, incident_power_kw - direct_terrain_unshaded_kw),
                         3
                     )
 
@@ -477,6 +489,8 @@ class SimulationOrchestrator:
                         solar_elevation_deg=round(angles.elevation_deg, 2),
                         power_kw=power_kw,
                         unshaded_power_kw=unshaded_power_kw,
+                        incident_power_kw=incident_power_kw,
+                        diffuse_power_kw=diffuse_power_kw,
                         canopy_loss_kw=canopy_loss_kw,
                         geological_loss_kw=geological_loss_kw,
                         self_shading_loss_kw=self_shading_loss_kw,
@@ -498,6 +512,8 @@ class SimulationOrchestrator:
                         solar_elevation_deg=round(angles.elevation_deg, 2),
                         power_kw=0.0,
                         unshaded_power_kw=0.0,
+                        incident_power_kw=0.0,
+                        diffuse_power_kw=0.0,
                         canopy_loss_kw=0.0,
                         geological_loss_kw=0.0,
                         self_shading_loss_kw=0.0,

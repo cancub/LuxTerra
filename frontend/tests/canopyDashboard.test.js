@@ -125,18 +125,26 @@ test('SolarDashboard: telemetry correctly populates stacked subtraction and 3-pa
   // Update telemetry for daylight frame (11:36)
   dashboard.updateTelemetry(mockSimulationData.timeseries[0], 0);
 
-  // Stacked subtraction: Clear-Sky (81.9) - Geological Shade (0.0) - Tree Shade (28.8) - Panel Self-Shade (0.0) = AC Power (53.1)
-  assert.equal(dashboard.subClearSkyVal.textContent, '81.9 kW');
-  assert.equal(dashboard.subGeoShadeVal.textContent, '0.0 kW');
-  assert.equal(dashboard.subTreeShadeVal.textContent, '28.8 kW');
-  assert.equal(dashboard.subSelfShadeVal.textContent, '0.0 kW');
+  // Stacked subtraction: Incident (+ 81.9) - Shade (- 28.8) + Diffuse (+ 0.0) = AC Power (53.1)
+  assert.equal(dashboard.subIncidentVal.textContent, '+ 81.9 kW');
+  assert.equal(dashboard.subTotalShadeVal.textContent, '- 28.8 kW');
+  assert.equal(dashboard.subGeoShadeVal.textContent, '- 0.0 kW');
+  assert.equal(dashboard.subTreeShadeVal.textContent, '- 28.8 kW');
+  assert.equal(dashboard.subSelfShadeVal.textContent, '- 0.0 kW');
+  assert.equal(dashboard.subDiffuseVal.textContent, '+ 0.0 kW');
   assert.equal(dashboard.subAcPowerVal.textContent, '53.1 kW');
   assert.equal(dashboard.kwGauge.textContent, '53.1 kW');
   assert.equal(dashboard.diffuseOnlyOverlay.style.display, 'none');
 
+  // Test Shade expand/collapse toggle
+  dashboard.toggleShadeExpanded(false);
+  assert.equal(dashboard.shadeContributions.style.display, 'none');
+  dashboard.toggleShadeExpanded(true);
+  assert.equal(dashboard.shadeContributions.style.display, 'flex');
+
   // Update telemetry for diffuse-only twilight frame (16:15)
   dashboard.updateTelemetry(mockSimulationData.timeseries[1], 1);
-  assert.equal(dashboard.subClearSkyVal.textContent, '1.2 kW');
+  assert.equal(dashboard.subIncidentVal.textContent, '+ 1.2 kW');
   assert.equal(dashboard.subAcPowerVal.textContent, '1.2 kW');
   assert.equal(dashboard.diffuseOnlyOverlay.style.display, 'flex');
 
@@ -206,7 +214,8 @@ test('SolarDashboard: showPanelTelemetry and clearPanelTelemetry display individ
 
   dashboard.updateTelemetry(mockMetric, 12);
   assert.equal(dashboard.subAcPowerVal.textContent, '31.6 kW');
-  assert.equal(dashboard.subClearSkyVal.textContent, '55.8 kW');
+  assert.equal(dashboard.subIncidentVal.textContent, '+ 55.8 kW');
+  assert.equal(dashboard.subTotalShadeVal.textContent, '- 24.2 kW');
 
   // Hover over an individual module
   const mockPanel = {
@@ -214,11 +223,14 @@ test('SolarDashboard: showPanelTelemetry and clearPanelTelemetry display individ
     label: 'Table 1 · Row 1 · Module 1 (Bottom)'
   };
   const mockBreakdown = {
-    unshadedW: 845.0,
+    incidentW: 718.0,
+    totalShadeW: 320.0,
     geoLossW: 0.0,
     treeLossW: 320.0,
     selfLossW: 0.0,
-    acPowerW: 525.0
+    diffuseW: 127.0,
+    acPowerW: 525.0,
+    unshadedW: 845.0
   };
 
   dashboard.showPanelTelemetry(mockPanel, mockBreakdown);
@@ -228,10 +240,12 @@ test('SolarDashboard: showPanelTelemetry and clearPanelTelemetry display individ
   assert.equal(dashboard.hoveredPanelIndicator.style.display, 'inline-block');
   assert.equal(dashboard.instantaneousTitle.textContent, 'Individual Panel AC Power');
 
-  assert.equal(dashboard.subClearSkyVal.textContent, '845 W');
-  assert.equal(dashboard.subGeoShadeVal.textContent, '0 W');
-  assert.equal(dashboard.subTreeShadeVal.textContent, '320 W');
-  assert.equal(dashboard.subSelfShadeVal.textContent, '0 W');
+  assert.equal(dashboard.subIncidentVal.textContent, '+ 718 W');
+  assert.equal(dashboard.subTotalShadeVal.textContent, '- 320 W');
+  assert.equal(dashboard.subGeoShadeVal.textContent, '- 0 W');
+  assert.equal(dashboard.subTreeShadeVal.textContent, '- 320 W');
+  assert.equal(dashboard.subSelfShadeVal.textContent, '- 0 W');
+  assert.equal(dashboard.subDiffuseVal.textContent, '+ 127 W');
   assert.equal(dashboard.subAcPowerVal.textContent, '525 W');
 
   // Unhover restores array-wide kW values
@@ -240,7 +254,7 @@ test('SolarDashboard: showPanelTelemetry and clearPanelTelemetry display individ
   assert.equal(dashboard.hoveredPanelIndicator.style.display, 'none');
   assert.equal(dashboard.instantaneousTitle.textContent, 'Instantaneous AC Power');
   assert.equal(dashboard.subAcPowerVal.textContent, '31.6 kW');
-  assert.equal(dashboard.subClearSkyVal.textContent, '55.8 kW');
+  assert.equal(dashboard.subIncidentVal.textContent, '+ 55.8 kW');
 });
 
 test('PVConfigPanel: collapsible by default and toggles expand/collapse', (t, done) => {
