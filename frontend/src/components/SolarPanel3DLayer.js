@@ -2,15 +2,19 @@
  * SolarPanel3DLayer Component
  * Custom MapLibre GL 3D WebGL layer that renders maximal ground-mount solar panel tables
  * in true 3D spatial coordinates:
- * - Dynamic 3D ground shadows cast onto the terrain plane tracking solar azimuth and elevation
- * - Crisp architectural white panel surfaces by default, dynamically darkening as shadows pass:
+ * - Each individual solar panel module is independently shaded based on its exact geographic position:
  *     * Deep forest green when under vegetative tree canopy shade
  *     * Dark slate shadow tone when under geological (terrain) or inter-row panel self-shade
- * - Independent bottom/top 2P module rendering for realistic partial self-shading progression
+ *     * Crisp architectural white by default in direct sunlight
+ * - Fine-grained 2-in-portrait (2P) modular subdivision: every single module in the table rack
+ *   evaluates terrain, canopy, and self-shading obstruction individually
  * - Aluminum perimeter frames, module seams, and galvanized structural steel vertical posts
  *
  * Uses Relative-to-Center (RTC) 64-bit coordinate translation to prevent single-precision
  * vertex jitter at high zoom levels.
+ *
+ * Note: Ground shadows are unified into ShadowCanvasLayer to guarantee strictly binary
+ * ground coloring without deeper colors at geological and panel shadow intersections.
  */
 
 import maplibregl from 'maplibre-gl';
@@ -47,7 +51,6 @@ const COL_SUNLIT_TOP = [0.96, 0.98, 1.00, 0.98];      // Crisp sunlit white with
 const COL_SUNLIT_BOT = [0.90, 0.93, 0.96, 0.98];      // Crisp architectural white
 const COL_CANOPY_SHADE = [0.09, 0.24, 0.17, 0.95];    // Rich forest green tree canopy shade
 const COL_GEOLOGICAL_SHADE = [0.06, 0.09, 0.16, 0.96];// Deep dark slate geological/terrain/self shadow
-const COL_GROUND_SHADOW = [0.06, 0.09, 0.16, 0.60];   // Ground shadow polygon on earth plane
 
 // Structural framing colors
 const COL_FRAME = [0.72, 0.78, 0.86, 0.95];          // Aluminum rack perimeter frame
@@ -70,11 +73,9 @@ export class SolarPanel3DLayer {
     this.aColorLocation = null;
     this.uMatrixLocation = null;
 
-    this.shadowBuffer = null;
     this.faceBuffer = null;
     this.lineBuffer = null;
 
-    this.shadowVertexCount = 0;
     this.faceVertexCount = 0;
     this.lineVertexCount = 0;
 
@@ -84,7 +85,6 @@ export class SolarPanel3DLayer {
     this.pendingLayout = null;
 
     // Cached raw arrays for testing and inspection
-    this.shadowVertices = null;
     this.faceVertices = null;
     this.lineVertices = null;
 
@@ -135,7 +135,6 @@ export class SolarPanel3DLayer {
     this.aColorLocation = gl.getAttribLocation(program, 'a_color');
     this.uMatrixLocation = gl.getUniformLocation(program, 'u_matrix');
 
-    this.shadowBuffer = gl.createBuffer();
     this.faceBuffer = gl.createBuffer();
     this.lineBuffer = gl.createBuffer();
   }
@@ -163,10 +162,8 @@ export class SolarPanel3DLayer {
     }
 
     if (!layout || !layout.tables || layout.tables.length === 0) {
-      this.shadowVertexCount = 0;
       this.faceVertexCount = 0;
       this.lineVertexCount = 0;
-      this.shadowVertices = null;
       this.faceVertices = null;
       this.lineVertices = null;
       if (this.map && typeof this.map.triggerRepaint === 'function') {
@@ -206,8 +203,8 @@ export class SolarPanel3DLayer {
   }
 
   /**
-   * Updates sun angle and current raster shadow masks for dynamic 3D ground shadows
-   * and live panel face darkening (canopy green vs geological dark slate).
+   * Updates sun angle and current raster shadow masks for dynamic per-panel face darkening
+   * (canopy green vs geological dark slate vs direct sunlit white).
    */
   updateSunPosition(azimuthDeg, elevationDeg, isDaylight, maskStr = null, canopyMaskStr = null, patchBounds = null, rows = 0, cols = 0) {
     this.currentSun = {
@@ -225,7 +222,6 @@ export class SolarPanel3DLayer {
         cols
       };
     } else if (isDaylight === false) {
-      // Nighttime: entire field in shadow
       this.currentMasks = null;
     }
 
@@ -237,7 +233,7 @@ export class SolarPanel3DLayer {
   rebuildBuffers() {
     this.buildGeometry(this.layout, this.currentSun, this.currentMasks);
 
-    if (this.gl && this.faceBuffer && this.lineBuffer && this.shadowBuffer) {
+    if (this.gl && this.faceBuffer && this.lineBuffer) {
       this.uploadBuffers();
     }
 
@@ -303,12 +299,12 @@ export class SolarPanel3DLayer {
   }
 
   /**
-   * Builds Float32 vertex buffers for tilted panel faces, ground shadows, and frames/posts.
+   * Builds Float32 vertex buffers for tilted panel faces and frames/posts.
+   * Every individual solar panel is shaded independently based on its exact geographic position.
    */
   buildGeometry(layout, sun = null, maskData = null) {
     const tables = layout.tables;
     if (!tables || tables.length === 0) {
-      this.shadowVertexCount = 0;
       this.faceVertexCount = 0;
       this.lineVertexCount = 0;
       return;
@@ -329,33 +325,8 @@ export class SolarPanel3DLayer {
     const dy = this.anchorMerc.y;
     const dz = this.anchorMerc.z;
 
-    const shadowData = []; // Ground shadow triangles on z = 0
-    const faceData = [];   // Elevated panel faces (2 quads per 2P table: bottom & top)
-    const lineData = [];   // Perimeter frames, module seams, and mounting legs
-
-    // Calculate displacement in Mercator units for ground shadow projection
-    // Mercator coordinate scale: 1 meter = meterUnits
-    const firstMerc = MercatorCoordinate.fromLngLat(anchorLngLat, 0);
-    const meterUnits = typeof firstMerc.meterInMercatorCoordinateUnits === 'function'
-      ? firstMerc.meterInMercatorCoordinateUnits()
-      : 1e-7;
-
-    let shadowProjDX_perM = 0;
-    let shadowProjDY_perM = 0;
-
-    if (isDaylight) {
-      const azRad = (solarAz * Math.PI) / 180.0;
-      const elRad = (Math.max(1.5, solarEl) * Math.PI) / 180.0;
-      const tanEl = Math.tan(elRad);
-
-      // In meters:
-      // dx = -sin(az) / tan(el)
-      // dy_North = -cos(az) / tan(el). In Mercator, +y is South, so dy_merc = +cos(az) / tan(el)
-      const maxShadowMeters = 50.0;
-      const shadowLengthMeters = Math.min(maxShadowMeters, 1.0 / tanEl);
-      shadowProjDX_perM = -Math.sin(azRad) * shadowLengthMeters * meterUnits;
-      shadowProjDY_perM = Math.cos(azRad) * shadowLengthMeters * meterUnits;
-    }
+    const faceData = []; // Elevated panel faces: 2 quads per module pair (bottom & top modules)
+    const lineData = []; // Perimeter frames, module seams, and mounting legs
 
     const rowPitchM = layout.row_pitch_m || 10.57;
 
@@ -367,7 +338,6 @@ export class SolarPanel3DLayer {
       const tiltRad = ((tbl.tilt_deg !== undefined ? tbl.tilt_deg : 30.0) * Math.PI) / 180.0;
       const hBottom = tbl.stand_height_m !== undefined ? tbl.stand_height_m : 1.0;
       const slantH = tbl.slant_height_m !== undefined ? tbl.slant_height_m : 4.56;
-      const hMid = hBottom + 0.5 * slantH * Math.sin(tiltRad);
       const hTop = hBottom + slantH * Math.sin(tiltRad);
 
       // Elevated 3D rack corners: SW, SE, NE, NW
@@ -398,112 +368,133 @@ export class SolarPanel3DLayer {
       const midW = [0.5 * (sw[0] + nw[0]), 0.5 * (sw[1] + nw[1]), 0.5 * (sw[2] + nw[2])];
       const midE = [0.5 * (se[0] + ne[0]), 0.5 * (se[1] + ne[1]), 0.5 * (se[2] + ne[2])];
 
-      // --- 1. Dynamic 3D Ground Shadow Quads (rendered at z = 0) ---
-      if (isDaylight) {
-        // Project SW, SE (at hBottom) and NW, NE (at hTop) down to ground plane
-        const swProj = [swG[0] + shadowProjDX_perM * hBottom, swG[1] + shadowProjDY_perM * hBottom, swG[2]];
-        const seProj = [seG[0] + shadowProjDX_perM * hBottom, seG[1] + shadowProjDY_perM * hBottom, seG[2]];
-        const neProj = [neG[0] + shadowProjDX_perM * hTop,    neG[1] + shadowProjDY_perM * hTop,    neG[2]];
-        const nwProj = [nwG[0] + shadowProjDX_perM * hTop,    nwG[1] + shadowProjDY_perM * hTop,    nwG[2]];
-
-        // Rack footprint shadow quad (underneath rack)
-        this.pushQuad(shadowData, swG, seG, neG, nwG, COL_GROUND_SHADOW);
-
-        // Projected rack face shadow quad
-        this.pushQuad(shadowData, swProj, seProj, neProj, nwProj, COL_GROUND_SHADOW);
-
-        // Bridge quad linking rack ground base to projected top edge
-        this.pushQuad(shadowData, nwG, neG, neProj, nwProj, COL_GROUND_SHADOW);
-        this.pushQuad(shadowData, swG, seG, seProj, swProj, COL_GROUND_SHADOW);
+      // Row self-shading fraction for this table (applies only to interior rows)
+      let selfShadeFrac = 0.0;
+      if (tbl.row_index > 0 && isDaylight) {
+        selfShadeFrac = this.calculateRowSelfShadeFraction(
+          rowPitchM,
+          slantH,
+          tbl.tilt_deg !== undefined ? tbl.tilt_deg : 30.0,
+          solarAz,
+          solarEl
+        );
       }
+      const isSelfShaded_B = selfShadeFrac > 0.0;
+      const isSelfShaded_T = selfShadeFrac >= 0.5;
 
-      // --- 2. Dynamic Module Shading (Canopy Green vs Geological Dark Slate vs Sunlit White) ---
-      let colBotTop = COL_SUNLIT_TOP;
-      let colBotBot = COL_SUNLIT_BOT;
-      let colTopTop = COL_SUNLIT_TOP;
-      let colTopBot = COL_SUNLIT_BOT;
+      const c0 = corners[0]; // SW
+      const c1 = corners[1]; // SE
+      const c2 = corners[2]; // NE
+      const c3 = corners[3]; // NW
 
-      if (!currentSun.isDaylight) {
-        // Nighttime: full dark geological shade
-        colBotTop = COL_GEOLOGICAL_SHADE;
-        colBotBot = COL_GEOLOGICAL_SHADE;
-        colTopTop = COL_GEOLOGICAL_SHADE;
-        colTopBot = COL_GEOLOGICAL_SHADE;
-      } else {
-        const center = tbl.center_wgs84 || corners[0];
-        const shade = this.sampleShadowAtPoint(center[0], center[1], maskData);
+      const panelCount = tbl.panel_count || 4;
+      const numPairs = Math.max(1, Math.floor(panelCount / 2));
 
-        if (shade.inTerrainShade) {
-          // Terrain / mountain blocks direct sunlight
-          colBotTop = COL_GEOLOGICAL_SHADE;
-          colBotBot = COL_GEOLOGICAL_SHADE;
-          colTopTop = COL_GEOLOGICAL_SHADE;
-          colTopBot = COL_GEOLOGICAL_SHADE;
-        } else if (shade.inCanopyShade) {
-          // Tree canopy blocks direct sunlight -> rich forest green
-          colBotTop = COL_CANOPY_SHADE;
-          colBotBot = COL_CANOPY_SHADE;
-          colTopTop = COL_CANOPY_SHADE;
-          colTopBot = COL_CANOPY_SHADE;
-        } else {
-          // Direct sunlight is available: evaluate inter-row self-shading
-          if (tbl.row_index > 0) {
-            const selfShadeFrac = this.calculateRowSelfShadeFraction(
-              rowPitchM,
-              slantH,
-              tbl.tilt_deg !== undefined ? tbl.tilt_deg : 30.0,
-              solarAz,
-              solarEl
-            );
+      // --- Render EACH individual solar panel independently! ---
+      for (let k = 0; k < numPairs; k++) {
+        const t0 = k / numPairs;
+        const t1 = (k + 1) / numPairs;
+        const tMid = (k + 0.5) / numPairs;
 
-            if (selfShadeFrac >= 0.5) {
-              // Both bottom and top modules shaded by front row
-              colBotTop = COL_GEOLOGICAL_SHADE;
-              colBotBot = COL_GEOLOGICAL_SHADE;
-              colTopTop = COL_GEOLOGICAL_SHADE;
-              colTopBot = COL_GEOLOGICAL_SHADE;
-            } else if (selfShadeFrac > 0.0) {
-              // Lower module in self-shade, upper module in direct sun
-              colBotTop = COL_GEOLOGICAL_SHADE;
-              colBotBot = COL_GEOLOGICAL_SHADE;
-              colTopTop = COL_SUNLIT_TOP;
-              colTopBot = COL_SUNLIT_BOT;
-            }
-          }
+        // 3D elevated points for this panel column
+        const b0 = [
+          (1 - t0) * sw[0] + t0 * se[0],
+          (1 - t0) * sw[1] + t0 * se[1],
+          (1 - t0) * sw[2] + t0 * se[2]
+        ];
+        const b1 = [
+          (1 - t1) * sw[0] + t1 * se[0],
+          (1 - t1) * sw[1] + t1 * se[1],
+          (1 - t1) * sw[2] + t1 * se[2]
+        ];
+
+        const m0 = [
+          (1 - t0) * midW[0] + t0 * midE[0],
+          (1 - t0) * midW[1] + t0 * midE[1],
+          (1 - t0) * midW[2] + t0 * midE[2]
+        ];
+        const m1 = [
+          (1 - t1) * midW[0] + t1 * midE[0],
+          (1 - t1) * midW[1] + t1 * midE[1],
+          (1 - t1) * midW[2] + t1 * midE[2]
+        ];
+
+        const t0_pt = [
+          (1 - t0) * nw[0] + t0 * ne[0],
+          (1 - t0) * nw[1] + t0 * ne[1],
+          (1 - t0) * nw[2] + t0 * ne[2]
+        ];
+        const t1_pt = [
+          (1 - t1) * nw[0] + t1 * ne[0],
+          (1 - t1) * nw[1] + t1 * ne[1],
+          (1 - t1) * nw[2] + t1 * ne[2]
+        ];
+
+        // Specific geographic coordinates for this individual panel module
+        const lonBot = (1 - tMid) * c0[0] + tMid * c1[0];
+        const latBot = (1 - tMid) * c0[1] + tMid * c1[1];
+        const lonTop = (1 - tMid) * c3[0] + tMid * c2[0];
+        const latTop = (1 - tMid) * c3[1] + tMid * c2[1];
+
+        const centerLon_B = 0.75 * lonBot + 0.25 * lonTop;
+        const centerLat_B = 0.75 * latBot + 0.25 * latTop;
+        const centerLon_T = 0.25 * lonBot + 0.75 * lonTop;
+        const centerLat_T = 0.25 * latBot + 0.75 * latTop;
+
+        const shade_B = this.sampleShadowAtPoint(centerLon_B, centerLat_B, maskData);
+        const shade_T = this.sampleShadowAtPoint(centerLon_T, centerLat_T, maskData);
+
+        // Independent color for bottom panel module
+        let colB_top = COL_SUNLIT_TOP;
+        let colB_bot = COL_SUNLIT_BOT;
+        if (!currentSun.isDaylight || shade_B.inTerrainShade || isSelfShaded_B) {
+          colB_top = COL_GEOLOGICAL_SHADE;
+          colB_bot = COL_GEOLOGICAL_SHADE;
+        } else if (shade_B.inCanopyShade) {
+          colB_top = COL_CANOPY_SHADE;
+          colB_bot = COL_CANOPY_SHADE;
         }
+
+        // Independent color for top panel module
+        let colT_top = COL_SUNLIT_TOP;
+        let colT_bot = COL_SUNLIT_BOT;
+        if (!currentSun.isDaylight || shade_T.inTerrainShade || isSelfShaded_T) {
+          colT_top = COL_GEOLOGICAL_SHADE;
+          colT_bot = COL_GEOLOGICAL_SHADE;
+        } else if (shade_T.inCanopyShade) {
+          colT_top = COL_CANOPY_SHADE;
+          colT_bot = COL_CANOPY_SHADE;
+        }
+
+        // --- Bottom Panel Quad (SW, SE, midE, midW) ---
+        this.pushVertex(faceData, b0, colB_bot);
+        this.pushVertex(faceData, b1, colB_bot);
+        this.pushVertex(faceData, m1, colB_top);
+
+        this.pushVertex(faceData, b0, colB_bot);
+        this.pushVertex(faceData, m1, colB_top);
+        this.pushVertex(faceData, m0, colB_top);
+
+        // --- Top Panel Quad (midW, midE, ne, nw) ---
+        this.pushVertex(faceData, m0, colT_bot);
+        this.pushVertex(faceData, m1, colT_bot);
+        this.pushVertex(faceData, t1_pt, colT_top);
+
+        this.pushVertex(faceData, m0, colT_bot);
+        this.pushVertex(faceData, t1_pt, colT_top);
+        this.pushVertex(faceData, t0_pt, colT_top);
       }
 
-      // --- 3. Panel Face Triangles (Bottom & Top 2P Module Quads) ---
-      // Bottom 2P Module Quad: SW, SE, midE, midW
-      this.pushVertex(faceData, sw, colBotBot);
-      this.pushVertex(faceData, se, colBotBot);
-      this.pushVertex(faceData, midE, colBotTop);
-
-      this.pushVertex(faceData, sw, colBotBot);
-      this.pushVertex(faceData, midE, colBotTop);
-      this.pushVertex(faceData, midW, colBotTop);
-
-      // Top 2P Module Quad: midW, midE, ne, nw
-      this.pushVertex(faceData, midW, colTopBot);
-      this.pushVertex(faceData, midE, colTopBot);
-      this.pushVertex(faceData, ne, colTopTop);
-
-      this.pushVertex(faceData, midW, colTopBot);
-      this.pushVertex(faceData, ne, colTopTop);
-      this.pushVertex(faceData, nw, colTopTop);
-
-      // --- 4. Aluminum Framing Lines (Perimeter) ---
+      // --- Aluminum Framing Lines (Perimeter) ---
       this.pushLine(lineData, sw, se, COL_FRAME);
       this.pushLine(lineData, se, ne, COL_FRAME);
       this.pushLine(lineData, ne, nw, COL_FRAME);
       this.pushLine(lineData, nw, sw, COL_FRAME);
 
-      // --- 5. 2P Horizontal Mid-Seam ---
+      // --- 2P Horizontal Mid-Seam ---
       this.pushLine(lineData, midW, midE, COL_MID_SEAM);
 
-      // --- 6. Vertical Seams Dividing Module Pairs ---
-      const panelCount = tbl.panel_count || 4;
-      const numPairs = Math.max(1, Math.floor(panelCount / 2));
+      // --- Vertical Seams Dividing Module Pairs ---
       for (let k = 1; k < numPairs; k++) {
         const tRatio = k / numPairs;
         const bK = [
@@ -535,35 +526,22 @@ export class SolarPanel3DLayer {
         }
       }
 
-      // --- 7. Four Corner Vertical Mounting Posts (Ground to Rack) ---
+      // --- Four Corner Vertical Mounting Posts (Ground to Rack) ---
       this.pushLine(lineData, swG, sw, COL_POST);
       this.pushLine(lineData, seG, se, COL_POST);
       this.pushLine(lineData, nwG, nw, COL_POST);
       this.pushLine(lineData, neG, ne, COL_POST);
     }
 
-    this.shadowVertices = new Float32Array(shadowData);
     this.faceVertices = new Float32Array(faceData);
     this.lineVertices = new Float32Array(lineData);
 
-    this.shadowVertexCount = shadowData.length / 7;
     this.faceVertexCount = faceData.length / 7;
     this.lineVertexCount = lineData.length / 7;
   }
 
   pushVertex(arr, pos, color) {
     arr.push(pos[0], pos[1], pos[2], color[0], color[1], color[2], color[3]);
-  }
-
-  pushQuad(arr, p1, p2, p3, p4, color) {
-    // Triangle 1: p1, p2, p3
-    this.pushVertex(arr, p1, color);
-    this.pushVertex(arr, p2, color);
-    this.pushVertex(arr, p3, color);
-    // Triangle 2: p1, p3, p4
-    this.pushVertex(arr, p1, color);
-    this.pushVertex(arr, p3, color);
-    this.pushVertex(arr, p4, color);
   }
 
   pushLine(arr, p1, p2, color) {
@@ -574,11 +552,6 @@ export class SolarPanel3DLayer {
   uploadBuffers() {
     const gl = this.gl;
     if (!gl) return;
-
-    if (this.shadowBuffer && this.shadowVertices) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.shadowBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, this.shadowVertices, gl.DYNAMIC_DRAW);
-    }
 
     if (this.faceBuffer && this.faceVertices) {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.faceBuffer);
@@ -620,20 +593,7 @@ export class SolarPanel3DLayer {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.disable(gl.CULL_FACE); // Two-sided viewing for tilted racking structures
 
-    // 1. Draw Dynamic Ground Shadows (TRIANGLES on ground plane z = 0)
-    // Rendered with depthMask false so shadows lay smoothly beneath racks without occluding legs
-    if (this.shadowVertexCount > 0 && this.shadowBuffer) {
-      gl.depthMask(false);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.shadowBuffer);
-      gl.enableVertexAttribArray(this.aPosLocation);
-      gl.vertexAttribPointer(this.aPosLocation, 3, gl.FLOAT, false, 7 * 4, 0);
-      gl.enableVertexAttribArray(this.aColorLocation);
-      gl.vertexAttribPointer(this.aColorLocation, 4, gl.FLOAT, false, 7 * 4, 3 * 4);
-      gl.drawArrays(gl.TRIANGLES, 0, this.shadowVertexCount);
-      gl.depthMask(true);
-    }
-
-    // 2. Draw 3D Tilted Panel Faces (TRIANGLES)
+    // 1. Draw 3D Tilted Panel Faces (TRIANGLES)
     if (this.faceVertexCount > 0 && this.faceBuffer) {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.faceBuffer);
       gl.enableVertexAttribArray(this.aPosLocation);
@@ -643,7 +603,7 @@ export class SolarPanel3DLayer {
       gl.drawArrays(gl.TRIANGLES, 0, this.faceVertexCount);
     }
 
-    // 3. Draw Frames, Module Seams, and Mounting Posts (LINES)
+    // 2. Draw Frames, Module Seams, and Mounting Posts (LINES)
     if (this.lineVertexCount > 0 && this.lineBuffer) {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.lineBuffer);
       gl.enableVertexAttribArray(this.aPosLocation);
@@ -656,7 +616,6 @@ export class SolarPanel3DLayer {
 
   onRemove(map, gl) {
     if (gl) {
-      if (this.shadowBuffer) gl.deleteBuffer(this.shadowBuffer);
       if (this.faceBuffer) gl.deleteBuffer(this.faceBuffer);
       if (this.lineBuffer) gl.deleteBuffer(this.lineBuffer);
       if (this.program) gl.deleteProgram(this.program);

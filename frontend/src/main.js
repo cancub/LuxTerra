@@ -17,6 +17,7 @@ import { PlaybackEngine } from './components/PlaybackEngine.js';
 import { PVConfigPanel } from './components/PVConfigPanel.js';
 import { SolarDashboard } from './components/SolarDashboard.js';
 import { SolarPanel3DLayer } from './components/SolarPanel3DLayer.js';
+import { rasterizePanelShadowMask } from './utils/maskDecoder.js';
 import { runSimulation } from './services/api.js';
 import {
   loadAppState,
@@ -194,7 +195,20 @@ if (appContainer) {
       if (metric.is_daylight && metric.mask_index !== null && currentSimulationData.masks) {
         const maskStr = currentSimulationData.masks[metric.mask_index];
         const canopyMaskStr = currentSimulationData.canopy_masks ? currentSimulationData.canopy_masks[metric.mask_index] : null;
-        shadowCanvasLayer.renderFrame(maskStr, meta.grid_rows, meta.grid_cols, canopyMaskStr);
+
+        let panelShadowBytes = null;
+        if (solarPanel3DLayer.isVisible() && currentSimulationData.layout) {
+          panelShadowBytes = rasterizePanelShadowMask(
+            currentSimulationData.layout,
+            metric.solar_azimuth_deg,
+            metric.solar_elevation_deg,
+            meta.patch_bounds_wgs84,
+            meta.grid_rows,
+            meta.grid_cols
+          );
+        }
+
+        shadowCanvasLayer.renderFrame(maskStr, meta.grid_rows, meta.grid_cols, canopyMaskStr, panelShadowBytes);
         solarPanel3DLayer.updateSunPosition(
           metric.solar_azimuth_deg,
           metric.solar_elevation_deg,
@@ -493,6 +507,10 @@ if (appContainer) {
     } else {
       panelsToggleBtn.classList.remove('active');
       panelsToggleBtn.title = 'Current: 3D Solar Panels Hidden. Click to Show.';
+    }
+    if (timeScrubber && currentSimulationData) {
+      const curIdx = timeScrubber.currentIndex !== undefined ? timeScrubber.currentIndex : 0;
+      timeScrubber.setStep(curIdx);
     }
   });
 
