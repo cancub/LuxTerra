@@ -85,6 +85,34 @@
       "dsm_path": "/app/data/dsm/dsm_auto_45.521_-73.594.tif"
     },
     {
+      "filename": "dtm_auto_45.535_-73.590.tif",
+      "path": "/app/data/dtm/dtm_auto_45.535_-73.590.tif",
+      "crs": "EPSG:3979",
+      "width": 3368,
+      "height": 3316,
+      "resolution": [
+        1.0,
+        1.0
+      ],
+      "bounds_native": [
+        1663648.4525113504,
+        -106685.31312236782,
+        1667016.4525113504,
+        -103369.31312236782
+      ],
+      "bounds_wgs84": [
+        -73.61699514154114,
+        45.51634382617335,
+        -73.56307652636254,
+        45.5539542996463
+      ],
+      "nodata": -32767.0,
+      "filesize_bytes": 44886245,
+      "has_dsm": false,
+      "dsm_filename": null,
+      "dsm_path": null
+    },
+    {
       "filename": "dtm_auto_45.557_-73.720.tif",
       "path": "/app/data/dtm/dtm_auto_45.557_-73.720.tif",
       "crs": "EPSG:3979",
@@ -113,6 +141,62 @@
       "dsm_path": "/app/data/dsm/dsm_auto_45.557_-73.720.tif"
     },
     {
+      "filename": "dtm_auto_45.757_-71.949.tif",
+      "path": "/app/data/dtm/dtm_auto_45.757_-71.949.tif",
+      "crs": "EPSG:3979",
+      "width": 3323,
+      "height": 3311,
+      "resolution": [
+        1.0,
+        1.0
+      ],
+      "bounds_native": [
+        1777030.5280656226,
+        -38761.60484969143,
+        1780353.5280656226,
+        -35450.60484969143
+      ],
+      "bounds_wgs84": [
+        -71.97609631035718,
+        45.73792691915738,
+        -71.92182313716063,
+        45.77585595389805
+      ],
+      "nodata": -32767.0,
+      "filesize_bytes": 42426288,
+      "has_dsm": false,
+      "dsm_filename": null,
+      "dsm_path": null
+    },
+    {
+      "filename": "dtm_auto_46.038_-74.153.tif",
+      "path": "/app/data/dtm/dtm_auto_46.038_-74.153.tif",
+      "crs": "EPSG:3979",
+      "width": 3418,
+      "height": 3412,
+      "resolution": [
+        1.0,
+        1.0
+      ],
+      "bounds_native": [
+        1603235.7447144198,
+        -67633.16935861364,
+        1606653.7447144198,
+        -64221.16935861363
+      ],
+      "bounds_wgs84": [
+        -74.18013697925045,
+        46.01875753346858,
+        -74.12483712547645,
+        46.05723701039602
+      ],
+      "nodata": -32767.0,
+      "filesize_bytes": 45084291,
+      "has_dsm": true,
+      "dsm_filename": "dsm_auto_46.038_-74.153.tif",
+      "dsm_path": "/app/data/dsm/dsm_auto_46.038_-74.153.tif"
+    },
+    {
       "filename": "dtm_auto_46.111_-74.193.tif",
       "path": "/app/data/dtm/dtm_auto_46.111_-74.193.tif",
       "crs": "EPSG:3979",
@@ -139,6 +223,62 @@
       "has_dsm": true,
       "dsm_filename": "dsm_auto_46.111_-74.193.tif",
       "dsm_path": "/app/data/dsm/dsm_auto_46.111_-74.193.tif"
+    },
+    {
+      "filename": "dtm_auto_46.121_-74.151.tif",
+      "path": "/app/data/dtm/dtm_auto_46.121_-74.151.tif",
+      "crs": "EPSG:3979",
+      "width": 3323,
+      "height": 3330,
+      "resolution": [
+        1.0,
+        1.0
+      ],
+      "bounds_native": [
+        1600396.9010084225,
+        -58738.427461197134,
+        1603719.9010084225,
+        -55408.427461197134
+      ],
+      "bounds_wgs84": [
+        -74.17794353037526,
+        46.10198247844467,
+        -74.12402664409312,
+        46.139514358270254
+      ],
+      "nodata": -32767.0,
+      "filesize_bytes": 41594786,
+      "has_dsm": false,
+      "dsm_filename": null,
+      "dsm_path": null
+    },
+    {
+      "filename": "dtm_auto_46.122_-73.594.tif",
+      "path": "/app/data/dtm/dtm_auto_46.122_-73.594.tif",
+      "crs": "EPSG:3979",
+      "width": 3179,
+      "height": 3173,
+      "resolution": [
+        1.0,
+        1.0
+      ],
+      "bounds_native": [
+        1641578.3331326342,
+        -44313.46745697336,
+        1644757.3331326342,
+        -41140.46745697336
+      ],
+      "bounds_wgs84": [
+        -73.62030966007515,
+        46.10416950271371,
+        -73.56856029950268,
+        46.14012159473514
+      ],
+      "nodata": -32767.0,
+      "filesize_bytes": 40987351,
+      "has_dsm": false,
+      "dsm_filename": null,
+      "dsm_path": null
     },
     {
       "filename": "dtm_montreal_edouard_montpetit.tif",

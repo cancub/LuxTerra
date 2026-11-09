@@ -591,6 +591,7 @@ class SimulationOrchestrator:
             has_canopy_data=has_canopy,
             include_tree_canopy=request.include_tree_canopy,
             canopy_mode=request.canopy_mode,
+            canopy_transmittance=round(canopy_transmittance, 3),
             date=request.date,
             time_step_minutes=step_min,
             buffer_meters=request.buffer_meters,

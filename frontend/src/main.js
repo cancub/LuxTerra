@@ -219,7 +219,7 @@ if (appContainer) {
           meta.grid_rows,
           meta.grid_cols,
           metric,
-          meta.canopy_transmittance
+          currentSimulationData.canopy_transmittance !== undefined ? currentSimulationData.canopy_transmittance : (meta.canopy_transmittance || 0.15)
         );
       } else if (currentSimulationData.night_mask) {
         // Nighttime: render 100% shade inside the user's selected shape (polygon or rectangle)

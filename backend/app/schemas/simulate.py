@@ -75,6 +75,7 @@ class SimulateMetadata(BaseModel):
     has_canopy_data: bool = False
     include_tree_canopy: bool = True
     canopy_mode: str = "seasonal"
+    canopy_transmittance: float = Field(default=0.15, description="Fractional direct beam canopy transmittance")
     date: str
     time_step_minutes: int
     buffer_meters: float

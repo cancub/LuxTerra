@@ -534,6 +534,9 @@ export class SolarPanel3DLayer {
         this.pushVertex(faceData, t1_pt, colT_top);
         this.pushVertex(faceData, t0_pt, colT_top);
 
+        const modSelfFrac_B = Math.min(1.0, Math.max(0.0, selfShadeFrac * 2.0));
+        const modSelfFrac_T = Math.min(1.0, Math.max(0.0, (selfShadeFrac - 0.5) * 2.0));
+
         // Record discrete panel modules for interactive ray-casting and per-panel power hover
         this.panels.push({
           id: `t${tbl.table_id}_c${k}_B`,
@@ -545,6 +548,7 @@ export class SolarPanel3DLayer {
           centerLngLat: [centerLon_B, centerLat_B],
           rtcVertices: [b0, b1, m1, m0],
           selfShadeFrac: selfShadeFrac,
+          moduleSelfShadeFrac: modSelfFrac_B,
           shadeState: {
             inTerrainShade: Boolean(!currentSun.isDaylight || shade_B.inTerrainShade),
             inCanopyShade: Boolean(shade_B.inCanopyShade),
@@ -562,6 +566,7 @@ export class SolarPanel3DLayer {
           centerLngLat: [centerLon_T, centerLat_T],
           rtcVertices: [m0, m1, t1_pt, t0_pt],
           selfShadeFrac: selfShadeFrac,
+          moduleSelfShadeFrac: modSelfFrac_T,
           shadeState: {
             inTerrainShade: Boolean(!currentSun.isDaylight || shade_T.inTerrainShade),
             inCanopyShade: Boolean(shade_T.inCanopyShade),
@@ -874,7 +879,8 @@ export class SolarPanel3DLayer {
       if (shade.isSelfShaded) {
         // Inter-row self-shade blocks direct beam reaching this module
         const directReaching = directW - treeLossW;
-        selfLossW = directReaching * (panel.selfShadeFrac || 1.0);
+        const modFrac = panel.moduleSelfShadeFrac !== undefined ? panel.moduleSelfShadeFrac : Math.min(1.0, (panel.selfShadeFrac || 0.0) * 2.0);
+        selfLossW = directReaching * modFrac;
       }
     }
 
