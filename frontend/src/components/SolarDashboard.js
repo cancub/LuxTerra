@@ -82,12 +82,27 @@ export class SolarDashboard {
               <span class="sub-treeshade-val" style="font-weight: 600; color: #22c55e;">0.0 kW</span>
             </div>
 
-            <!-- Diffuse Only Overlay Badge -->
-            <div class="diffuse-only-overlay" style="display: none; position: absolute; inset: -2px -4px; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(2px); border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.35); align-items: center; justify-content: center; z-index: 2; pointer-events: none; transition: opacity 0.2s ease;">
-              <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.70rem; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.08em; background: rgba(56, 189, 248, 0.12); padding: 3px 10px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3);">
+            <!-- Diffuse Only Overlay Badge with Layperson Hover Tooltip -->
+            <div class="diffuse-only-overlay">
+              <div class="diffuse-badge-pill" title="Direct sunbeams are not hitting the panels. Power comes purely from ambient sky light, so trees and hills cast no direct shadows.">
                 <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #38bdf8; box-shadow: 0 0 6px #38bdf8;"></span>
-                Diffuse Only
-              </span>
+                <span>Diffuse Only</span>
+                <svg style="width: 11px; height: 11px; opacity: 0.8; margin-left: 1px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+
+                <!-- Hover-triggered Tooltip -->
+                <div class="diffuse-tooltip">
+                  <div style="font-weight: 700; color: #38bdf8; margin-bottom: 4px; display: flex; align-items: center; gap: 5px; font-size: 0.74rem;">
+                    <span>Ambient Sky Light Only</span>
+                  </div>
+                  <div style="color: #cbd5e1; font-size: 0.71rem; line-height: 1.35; font-family: var(--font-sans); text-transform: none; letter-spacing: normal; font-weight: 400;">
+                    Direct sunbeams are no longer hitting the front of the solar panels (the sun is behind the array or below direct angle). All generated power comes from scattered ambient daylight, so trees and hills cast no direct shadows to subtract.
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 

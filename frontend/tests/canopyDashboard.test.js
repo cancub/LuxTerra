@@ -139,6 +139,12 @@ test('SolarDashboard: telemetry correctly populates stacked subtraction and 3-pa
   assert.equal(dashboard.subAcPowerVal.textContent, '1.2 kW');
   assert.equal(dashboard.diffuseOnlyOverlay.style.display, 'flex');
 
+  // Verify diffuse tooltip content and pill structure
+  assert.ok(dashboard.diffuseOnlyOverlay, 'Diffuse overlay element must exist');
+  assert.match(dashboard.element.innerHTML, /Ambient Sky Light Only/);
+  assert.match(dashboard.element.innerHTML, /Direct sunbeams are no longer hitting/);
+  assert.match(dashboard.element.innerHTML, /no direct shadows to subtract/);
+
   // Update telemetry for nighttime frame
   dashboard.updateTelemetry(mockSimulationData.timeseries[2], 2);
   assert.equal(dashboard.subAcPowerVal.textContent, '0.0 kW');
