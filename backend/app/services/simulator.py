@@ -27,7 +27,7 @@ from .elevation.geo_utils import transform_geometry
 from .serializer import encode_masks_batch, encode_mask_bitmask
 from .solar.phenology import calculate_canopy_transmittance
 from .pv.packing_engine import PVPackingEngine
-from .pv.self_shading import calculate_array_self_shading_fraction
+from .pv.self_shading import calculate_array_self_shading_fraction, calculate_row_self_shading_fraction
 
 TZ_QUEBEC = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
 
@@ -184,6 +184,86 @@ class SimulationOrchestrator:
             pv_kwargs["gcr"] = request.gcr
         pv_cfg = PVConfig(**pv_kwargs)
 
+        # 5b. Precompute discrete module locations for ground-mount polygon layouts
+        use_discrete_panels = bool(
+            request.polygon
+            and len(request.polygon) >= 3
+            and request.deployment_mode == DeploymentMode.GROUND_MOUNT
+            and layout is not None
+            and layout.total_panels > 0
+        )
+
+        discrete_modules = []
+        module_conv = 0.0
+        if use_discrete_panels:
+            min_lon, min_lat, max_lon, max_lat = geo_info["patch_bounds_wgs84"]
+            lon_span = max_lon - min_lon
+            lat_span = max_lat - min_lat
+
+            module_area_m2 = layout.module_width_m * layout.module_length_m
+            module_conv = module_area_m2 * pv_cfg.module_efficiency * pv_cfg.system_derate / 1000.0
+
+            tables_by_row = {}
+            for tbl in layout.tables:
+                tables_by_row.setdefault(tbl.row_index, []).append(tbl)
+            distinct_rows = sorted(tables_by_row.keys())
+            min_row_index = distinct_rows[0] if distinct_rows else 0
+
+            for tbl in layout.tables:
+                corners = tbl.corners_wgs84
+                if not corners or len(corners) < 4:
+                    continue
+                c0 = corners[0]  # SW
+                c1 = corners[1]  # SE
+                c2 = corners[2]  # NE
+                c3 = corners[3]  # NW
+
+                panel_count = tbl.panel_count or 4
+                num_pairs = max(1, panel_count // 2)
+                south_tables = tables_by_row.get(tbl.row_index - 1, [])
+
+                for k in range(num_pairs):
+                    t_mid = (k + 0.5) / float(num_pairs)
+
+                    lon_bot = (1.0 - t_mid) * c0[0] + t_mid * c1[0]
+                    lat_bot = (1.0 - t_mid) * c0[1] + t_mid * c1[1]
+                    lon_top = (1.0 - t_mid) * c3[0] + t_mid * c2[0]
+                    lat_top = (1.0 - t_mid) * c3[1] + t_mid * c2[1]
+
+                    c_lon_b = 0.75 * lon_bot + 0.25 * lon_top
+                    c_lat_b = 0.75 * lat_bot + 0.25 * lat_top
+                    c_lon_t = 0.25 * lon_bot + 0.75 * lon_top
+                    c_lat_t = 0.25 * lat_bot + 0.75 * lat_top
+
+                    col_b = min(patch_w - 1, max(0, int(((c_lon_b - min_lon) / lon_span) * patch_w))) if lon_span > 0 else 0
+                    row_b = min(patch_h - 1, max(0, int(((max_lat - c_lat_b) / lat_span) * patch_h))) if lat_span > 0 else 0
+
+                    col_t = min(patch_w - 1, max(0, int(((c_lon_t - min_lon) / lon_span) * patch_w))) if lon_span > 0 else 0
+                    row_t = min(patch_h - 1, max(0, int(((max_lat - c_lat_t) / lat_span) * patch_h))) if lat_span > 0 else 0
+
+                    discrete_modules.append({
+                        "row_idx": row_b,
+                        "col_idx": col_b,
+                        "is_front_row": (tbl.row_index == min_row_index),
+                        "is_top": False,
+                        "center_lon": c_lon_b,
+                        "center_lat": c_lat_b,
+                        "south_tables": south_tables,
+                        "tilt_deg": tbl.tilt_deg or 30.0,
+                        "slant_h": tbl.slant_height_m or 4.56
+                    })
+                    discrete_modules.append({
+                        "row_idx": row_t,
+                        "col_idx": col_t,
+                        "is_front_row": (tbl.row_index == min_row_index),
+                        "is_top": True,
+                        "center_lon": c_lon_t,
+                        "center_lat": c_lat_t,
+                        "south_tables": south_tables,
+                        "tilt_deg": tbl.tilt_deg or 30.0,
+                        "slant_h": tbl.slant_height_m or 4.56
+                    })
+
         # 6. Compute power for all timesteps
         timeseries_metrics = []
         daylight_counter = 0
@@ -209,77 +289,180 @@ class SimulationOrchestrator:
                 canopy_m = daylight_canopy_masks[daylight_counter] if has_canopy else None
                 irradiance = daylight_irradiance[daylight_counter]
 
-                pv_res = self.pv_model.calculate_power_kw(
-                    shadow_mask=mask,
-                    irradiance=irradiance,
-                    cell_area_m2=cell_area_m2,
-                    config=pv_cfg,
-                    inclusion_mask=polygon_mask,
-                    canopy_mask=canopy_m,
-                    canopy_transmittance=canopy_transmittance
-                )
+                if use_discrete_panels:
+                    # Discrete module-level physics simulation (exact sum of physical panels)
+                    num_mods = len(discrete_modules)
+                    unshaded_power_kw = round(
+                        num_mods * (irradiance.poa_direct_w_m2 + irradiance.poa_diffuse_w_m2) * module_conv,
+                        3
+                    )
 
-                if len(pv_res) == 3:
-                    power_kw, percent_shaded, canopy_shaded_pct = pv_res
+                    num_terrain_shaded = 0
+                    num_canopy_shaded = 0
+                    total_geo_loss_kw = 0.0
+                    total_canopy_loss_kw = 0.0
+                    total_self_loss_kw = 0.0
+                    total_power_kw = 0.0
+
+                    az_delta_rad = np.radians(angles.azimuth_deg - 180.0)
+                    cos_az_delta = np.cos(az_delta_rad)
+                    tan_az_delta = np.tan(az_delta_rad) if cos_az_delta > 0.001 else 0.0
+
+                    # Pre-calculate row self-shade fraction if sun is facing array from the south
+                    rack_self_frac = 0.0
+                    if cos_az_delta > 0.001 and angles.elevation_deg > 0.0 and layout.tables:
+                        ref_table = layout.tables[0]
+                        rack_self_frac = calculate_row_self_shading_fraction(
+                            row_pitch_m=layout.row_pitch_m,
+                            slant_height_m=ref_table.slant_height_m,
+                            tilt_deg=ref_table.tilt_deg,
+                            solar_azimuth_deg=angles.azimuth_deg,
+                            solar_elevation_deg=angles.elevation_deg,
+                            rack_azimuth_deg=ref_table.azimuth_deg
+                        )
+
+                    poa_direct = irradiance.poa_direct_w_m2
+                    poa_diffuse = irradiance.poa_diffuse_w_m2
+
+                    for mod in discrete_modules:
+                        r = mod["row_idx"]
+                        c = mod["col_idx"]
+
+                        terrain_lit = bool(mask[r, c] > 0)
+                        canopy_lit = bool(canopy_m[r, c] > 0) if canopy_m is not None else True
+
+                        unshaded_w = (poa_direct + poa_diffuse) * module_conv
+                        diffuse_w = poa_diffuse * module_conv
+
+                        if not terrain_lit:
+                            num_terrain_shaded += 1
+                            geo_loss = poa_direct * module_conv
+                            canopy_loss = 0.0
+                            self_loss = 0.0
+                            mod_pwr = diffuse_w
+                        else:
+                            geo_loss = 0.0
+                            if not canopy_lit:
+                                num_canopy_shaded += 1
+                                canopy_loss = poa_direct * (1.0 - canopy_transmittance) * module_conv
+                                direct_reaching = poa_direct * canopy_transmittance * module_conv
+                            else:
+                                canopy_loss = 0.0
+                                direct_reaching = poa_direct * module_conv
+
+                            self_loss = 0.0
+                            if rack_self_frac > 0.0 and (not mod["is_front_row"]) and mod["south_tables"]:
+                                delta_x_m = layout.row_pitch_m * tan_az_delta
+                                m_per_deg_lon = 111320.0 * np.cos(np.radians(mod["center_lat"]))
+                                delta_lon = delta_x_m / m_per_deg_lon if m_per_deg_lon > 0 else 0.0
+                                lon_source = mod["center_lon"] - delta_lon
+
+                                has_obstruction = False
+                                for st in mod["south_tables"]:
+                                    sc = st.corners_wgs84
+                                    if not sc or len(sc) < 4:
+                                        continue
+                                    st_min = min(sc[0][0], sc[3][0])
+                                    st_max = max(sc[1][0], sc[2][0])
+                                    if st_min <= lon_source <= st_max:
+                                        has_obstruction = True
+                                        break
+
+                                if has_obstruction:
+                                    if not mod["is_top"]:
+                                        mod_frac = float(np.clip(rack_self_frac * 2.0, 0.0, 1.0))
+                                    else:
+                                        mod_frac = float(np.clip((rack_self_frac - 0.5) * 2.0, 0.0, 1.0))
+                                    self_loss = direct_reaching * mod_frac
+
+                            mod_pwr = max(0.0, unshaded_w - geo_loss - canopy_loss - self_loss)
+
+                        total_geo_loss_kw += geo_loss
+                        total_canopy_loss_kw += canopy_loss
+                        total_self_loss_kw += self_loss
+                        total_power_kw += mod_pwr
+
+                    percent_shaded = round((num_terrain_shaded / num_mods) * 100.0, 2)
+                    canopy_shaded_pct = round((num_canopy_shaded / num_mods) * 100.0, 2)
+                    shaded_pct_list.append(percent_shaded)
+                    canopy_shaded_pct_list.append(canopy_shaded_pct)
+
+                    power_kw = round(total_power_kw, 3)
+                    canopy_loss_kw = round(total_canopy_loss_kw, 3)
+                    self_shading_loss_kw = round(total_self_loss_kw, 3)
+                    geological_loss_kw = round(total_geo_loss_kw, 3)
                 else:
-                    power_kw, percent_shaded = pv_res
-                    canopy_shaded_pct = 0.0
+                    pv_res = self.pv_model.calculate_power_kw(
+                        shadow_mask=mask,
+                        irradiance=irradiance,
+                        cell_area_m2=cell_area_m2,
+                        config=pv_cfg,
+                        inclusion_mask=polygon_mask,
+                        canopy_mask=canopy_m,
+                        canopy_transmittance=canopy_transmittance
+                    )
 
-                shaded_pct_list.append(percent_shaded)
-                canopy_shaded_pct_list.append(canopy_shaded_pct)
-
-                total_active_cells = int(np.count_nonzero(polygon_mask)) if polygon_mask is not None else int(mask.size)
-                conv_factor = cell_area_m2 * pv_cfg.effective_gcr * pv_cfg.module_efficiency * pv_cfg.system_derate / 1000.0
-
-                unshaded_power_kw = round(
-                    total_active_cells * (irradiance.poa_direct_w_m2 + irradiance.poa_diffuse_w_m2) * conv_factor,
-                    3
-                )
-
-                if canopy_m is not None:
-                    if polygon_mask is not None:
-                        t_unshaded = (mask > 0) & polygon_mask
-                        c_shaded = t_unshaded & (~(canopy_m > 0))
+                    if len(pv_res) == 3:
+                        power_kw, percent_shaded, canopy_shaded_pct = pv_res
                     else:
-                        t_unshaded = mask > 0
-                        c_shaded = t_unshaded & (~(canopy_m > 0))
-                    canopy_shaded_cells = int(np.count_nonzero(c_shaded))
-                else:
-                    canopy_shaded_cells = 0
+                        power_kw, percent_shaded = pv_res
+                        canopy_shaded_pct = 0.0
 
-                canopy_loss_kw = round(
-                    canopy_shaded_cells * (1.0 - canopy_transmittance) * irradiance.poa_direct_w_m2 * conv_factor,
-                    3
-                )
+                    shaded_pct_list.append(percent_shaded)
+                    canopy_shaded_pct_list.append(canopy_shaded_pct)
 
-                # Base power before panel self-shading
-                base_power_kw = power_kw
+                    total_active_cells = int(np.count_nonzero(polygon_mask)) if polygon_mask is not None else int(mask.size)
+                    conv_factor = cell_area_m2 * pv_cfg.effective_gcr * pv_cfg.module_efficiency * pv_cfg.system_derate / 1000.0
 
-                # Calculate array self-shading fraction from 3D layout geometry
-                f_self = calculate_array_self_shading_fraction(layout, angles.azimuth_deg, angles.elevation_deg)
+                    unshaded_power_kw = round(
+                        total_active_cells * (irradiance.poa_direct_w_m2 + irradiance.poa_diffuse_w_m2) * conv_factor,
+                        3
+                    )
 
-                # Self-shading only blocks direct beam radiation on cells that are NOT already in geological shade
-                # and scales with canopy transmittance for cells under tree canopy
-                if f_self > 0.0 and irradiance.poa_direct_w_m2 > 0.001:
-                    if polygon_mask is not None:
-                        t_unshaded_cells = int(np.count_nonzero((mask > 0) & polygon_mask))
+                    if canopy_m is not None:
+                        if polygon_mask is not None:
+                            t_unshaded = (mask > 0) & polygon_mask
+                            c_shaded = t_unshaded & (~(canopy_m > 0))
+                        else:
+                            t_unshaded = mask > 0
+                            c_shaded = t_unshaded & (~(canopy_m > 0))
+                        canopy_shaded_cells = int(np.count_nonzero(c_shaded))
                     else:
-                        t_unshaded_cells = int(np.count_nonzero(mask > 0))
+                        canopy_shaded_cells = 0
 
-                    unshaded_direct_cells = (t_unshaded_cells - canopy_shaded_cells) + (canopy_shaded_cells * canopy_transmittance)
-                    direct_reaching_kw = unshaded_direct_cells * irradiance.poa_direct_w_m2 * conv_factor
-                    self_shading_loss_kw = round(float(f_self * direct_reaching_kw), 3)
-                else:
-                    self_shading_loss_kw = 0.0
+                    canopy_loss_kw = round(
+                        canopy_shaded_cells * (1.0 - canopy_transmittance) * irradiance.poa_direct_w_m2 * conv_factor,
+                        3
+                    )
 
-                # Net usable AC power after geological, canopy, and panel self-shading
-                power_kw = round(max(0.0, base_power_kw - self_shading_loss_kw), 3)
+                    # Base power before panel self-shading
+                    base_power_kw = power_kw
 
-                # Geological shade loss is the exact potential loss attributable to terrain shadow
-                geological_loss_kw = round(
-                    max(0.0, unshaded_power_kw - canopy_loss_kw - self_shading_loss_kw - power_kw),
-                    3
-                )
+                    # Calculate array self-shading fraction from 3D layout geometry
+                    f_self = calculate_array_self_shading_fraction(layout, angles.azimuth_deg, angles.elevation_deg)
+
+                    # Self-shading only blocks direct beam radiation on cells that are NOT already in geological shade
+                    # and scales with canopy transmittance for cells under tree canopy
+                    if f_self > 0.0 and irradiance.poa_direct_w_m2 > 0.001:
+                        if polygon_mask is not None:
+                            t_unshaded_cells = int(np.count_nonzero((mask > 0) & polygon_mask))
+                        else:
+                            t_unshaded_cells = int(np.count_nonzero(mask > 0))
+
+                        unshaded_direct_cells = (t_unshaded_cells - canopy_shaded_cells) + (canopy_shaded_cells * canopy_transmittance)
+                        direct_reaching_kw = unshaded_direct_cells * irradiance.poa_direct_w_m2 * conv_factor
+                        self_shading_loss_kw = round(float(f_self * direct_reaching_kw), 3)
+                    else:
+                        self_shading_loss_kw = 0.0
+
+                    # Net usable AC power after geological, canopy, and panel self-shading
+                    power_kw = round(max(0.0, base_power_kw - self_shading_loss_kw), 3)
+
+                    # Geological shade loss is the exact potential loss attributable to terrain shadow
+                    geological_loss_kw = round(
+                        max(0.0, unshaded_power_kw - canopy_loss_kw - self_shading_loss_kw - power_kw),
+                        3
+                    )
 
                 if power_kw > peak_power_kw:
                     peak_power_kw = power_kw

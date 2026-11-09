@@ -506,5 +506,49 @@ async def test_simulate_geological_shade_not_overlapped_by_canopy():
                 assert pytest.approx(s_off["percent_shaded"], abs=0.01) == s_on["percent_shaded"]
 
 
+@pytest.mark.asyncio
+async def test_discrete_panel_shade_matches_physical_panels():
+    """
+    Verifies that when ground-mount panels are simulated in an oblong polygon,
+    shade loss is calculated on the physical solar panels rather than empty ground.
+    Specifically:
+    1. Subtraction stack holds strictly: unshaded_power_kw - geological_loss_kw - canopy_loss_kw - self_shading_loss_kw == power_kw
+    2. Total panels and installed DC kW are populated.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        payload = {
+            "bbox": {
+                "min_lon": -74.154,
+                "min_lat": 46.037,
+                "max_lon": -74.151,
+                "max_lat": 46.039
+            },
+            "polygon": [
+                [-74.1535, 46.0375],
+                [-74.1515, 46.0378],
+                [-74.1512, 46.0388],
+                [-74.1532, 46.0385]
+            ],
+            "date": "2026-06-21",
+            "time_step_minutes": 15,
+            "deployment_mode": "ground_mount",
+            "include_tree_canopy": True
+        }
+        res = await client.post("/api/simulate", json=payload)
+        assert res.status_code == 200
+        data = res.json()
+
+        summary = data["daily_summary"]
+        assert summary["total_panels"] > 0
+        assert summary["installed_dc_kw"] > 0
+
+        for t in data["timeseries"]:
+            if t["is_daylight"]:
+                expected_power = t["unshaded_power_kw"] - t["geological_loss_kw"] - t["canopy_loss_kw"] - t["self_shading_loss_kw"]
+                assert abs(expected_power - t["power_kw"]) < 0.005, f"Subtraction stack mismatch at {t['timestamp']}: expected {expected_power}, got {t['power_kw']}"
+
+
+
 
 
