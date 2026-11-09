@@ -165,13 +165,19 @@ class PVPackingEngine:
 
         # 5. Pack East-West rows within setback polygon using permanent design pitch
         min_x, min_y, max_x, max_y = setback_poly.bounds
-        y = min_y
+        avail_h = max_y - min_y
+        max_rows = int((avail_h - design_depth_m) // pitch_m) + 1 if avail_h >= design_depth_m else 0
+        used_h = (max_rows - 1) * pitch_m + design_depth_m if max_rows > 0 else 0
+        margin_y = max(0.0, (avail_h - used_h) / 2.0)
+
+        # Center rows vertically in the setback envelope so the bottom row is not clipped by corner slant
+        y = min_y + margin_y
         row_index = 0
         table_id = 0
         tables: List[PVTableGeometry] = []
         min_table_width = self.min_pairs_per_table * self.pair_width_m
 
-        while y + design_depth_m <= max_y:
+        while y + design_depth_m <= max_y + 0.01:
             band = box(min_x - 10.0, y, max_x + 10.0, y + design_depth_m)
             inter = setback_poly.intersection(band)
 
