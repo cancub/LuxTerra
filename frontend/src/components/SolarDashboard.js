@@ -33,16 +33,29 @@ export class SolarDashboard {
     this.element.style.transition = 'all 0.25s ease';
 
     this.element.innerHTML = `
-      <!-- Daily Energy Card (Displays daily energy & fixed optimal tilt for the day) -->
-      <div class="daily-energy-card" style="background: rgba(0,0,0,0.25); border-radius: 8px; padding: 8px 12px; border: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: space-between; align-items: center;">
-        <div style="display: flex; flex-direction: column; gap: 2px;">
-          <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Daily Energy</span>
-          <span class="optimal-tilt-badge" style="font-size: 0.68rem; color: #38bdf8; font-family: var(--font-mono); font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
-            Tilt: <span class="tilt-val">--°</span>
-          </span>
+      <!-- Daily Energy Card (Displays daily energy, fixed optimal tilt, and panel array specs) -->
+      <div class="daily-energy-card" style="background: rgba(0,0,0,0.25); border-radius: 8px; padding: 8px 12px; border: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; gap: 4px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Daily Energy</span>
+            <span class="optimal-tilt-badge" style="font-size: 0.68rem; color: #38bdf8; font-family: var(--font-mono); font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+              Tilt: <span class="tilt-val">--°</span>
+            </span>
+          </div>
+          <div style="display: flex; align-items: baseline; gap: 4px; white-space: nowrap; font-family: var(--font-mono); font-weight: 700; color: #10b981; font-size: 1.25rem; line-height: 1;">
+            <span class="kwh-total">0.0</span> <span style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-left: 2px;">kWh</span>
+          </div>
         </div>
-        <div style="display: flex; align-items: baseline; gap: 4px; white-space: nowrap; font-family: var(--font-mono); font-weight: 700; color: #10b981; font-size: 1.25rem; line-height: 1;">
-          <span class="kwh-total">0.0</span> <span style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-left: 2px;">kWh</span>
+
+        <!-- Solar Array Specifications Row (Displays Panels, Installed DC kWp, and GCR) -->
+        <div class="array-specs-row" style="display: none; font-size: 0.68rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px; padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.06); justify-content: space-between; align-items: center;">
+          <div style="display: flex; gap: 5px; align-items: center; white-space: nowrap;">
+            <span class="array-panels-badge" style="color: #38bdf8; font-weight: 600;">-- Panels</span>
+            <span style="color: rgba(255,255,255,0.3);">•</span>
+            <span class="array-dc-badge" style="color: #fbbf24; font-weight: 600;">-- kWp</span>
+            <span class="array-dcac-badge" style="color: #a78bfa; font-weight: 500; font-size: 0.65rem;"></span>
+          </div>
+          <span class="array-gcr-badge" style="color: #94a3b8; font-size: 0.65rem;">GCR --%</span>
         </div>
       </div>
 
@@ -124,6 +137,11 @@ export class SolarDashboard {
 
     this.kwhTotal = this.element.querySelector('.kwh-total');
     this.tiltVal = this.element.querySelector('.tilt-val');
+    this.arraySpecsRow = this.element.querySelector('.array-specs-row');
+    this.arrayPanelsBadge = this.element.querySelector('.array-panels-badge');
+    this.arrayDcBadge = this.element.querySelector('.array-dc-badge');
+    this.arrayDcAcBadge = this.element.querySelector('.array-dcac-badge');
+    this.arrayGcrBadge = this.element.querySelector('.array-gcr-badge');
     this.diffuseOnlyOverlay = this.element.querySelector('.diffuse-only-overlay');
     this.subClearSkyVal = this.element.querySelector('.sub-clearsky-val');
     this.subGeoShadeVal = this.element.querySelector('.sub-geoshade-val');
@@ -149,6 +167,7 @@ export class SolarDashboard {
     if (!data) {
       if (this.kwhTotal) this.kwhTotal.textContent = '0.0';
       if (this.tiltVal) this.tiltVal.textContent = '--°';
+      if (this.arraySpecsRow) this.arraySpecsRow.style.display = 'none';
       if (this.diffuseOnlyOverlay) this.diffuseOnlyOverlay.style.display = 'none';
       if (this.subClearSkyVal) this.subClearSkyVal.textContent = '0.0 kW';
       if (this.subGeoShadeVal) this.subGeoShadeVal.textContent = '0.0 kW';
@@ -186,6 +205,33 @@ export class SolarDashboard {
     const optimalTilt = this.dailySummary.optimal_tilt_deg ?? data?.metadata?.optimal_tilt_deg ?? this.timeseries?.[0]?.optimal_tilt_deg;
     if (this.tiltVal) {
       this.tiltVal.textContent = optimalTilt !== undefined ? `${optimalTilt.toFixed(1)}°` : '--°';
+    }
+
+    // Solar Panel Array Specifications & Telemetry
+    const layout = data?.layout;
+    const totalPanels = layout?.total_panels ?? this.dailySummary.total_panels;
+    const installedDcKw = layout?.installed_dc_kw ?? this.dailySummary.installed_dc_kw;
+    const physicalGcr = layout?.physical_gcr ?? data?.metadata?.effective_gcr;
+
+    if (totalPanels && installedDcKw) {
+      if (this.arraySpecsRow) this.arraySpecsRow.style.display = 'flex';
+      if (this.arrayPanelsBadge) this.arrayPanelsBadge.textContent = `${totalPanels.toLocaleString()} Panels`;
+      if (this.arrayDcBadge) this.arrayDcBadge.textContent = `${installedDcKw.toFixed(1)} kWp`;
+      if (this.arrayGcrBadge) {
+        this.arrayGcrBadge.textContent = physicalGcr !== undefined ? `GCR ${(physicalGcr * 100).toFixed(1)}%` : '';
+      }
+      if (this.arrayDcAcBadge) {
+        const peakKw = this.dailySummary.unshaded_peak_kw || this.dailySummary.peak_power_kw;
+        if (peakKw && peakKw > 0) {
+          const ratio = (installedDcKw / peakKw).toFixed(2);
+          this.arrayDcAcBadge.textContent = `(DC/AC ${ratio})`;
+          this.arrayDcAcBadge.style.display = 'inline';
+        } else {
+          this.arrayDcAcBadge.style.display = 'none';
+        }
+      }
+    } else {
+      if (this.arraySpecsRow) this.arraySpecsRow.style.display = 'none';
     }
   }
 

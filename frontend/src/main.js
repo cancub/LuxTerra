@@ -16,6 +16,7 @@ import { TimeScrubber } from './components/TimeScrubber.js';
 import { PlaybackEngine } from './components/PlaybackEngine.js';
 import { PVConfigPanel } from './components/PVConfigPanel.js';
 import { SolarDashboard } from './components/SolarDashboard.js';
+import { SolarPanel3DLayer } from './components/SolarPanel3DLayer.js';
 import { runSimulation } from './services/api.js';
 import {
   loadAppState,
@@ -150,6 +151,23 @@ if (appContainer) {
   });
 
   const shadowCanvasLayer = new ShadowCanvasLayer(map);
+  const solarPanel3DLayer = new SolarPanel3DLayer();
+
+  const addSolarPanelLayer = () => {
+    if (map.getLayer(solarPanel3DLayer.id)) return;
+    const beforeId = map.getLayer('draw-box-stroke') ? 'draw-box-stroke' : undefined;
+    try {
+      map.addLayer(solarPanel3DLayer, beforeId);
+    } catch (err) {
+      console.warn('Failed to add SolarPanel3DLayer:', err);
+    }
+  };
+
+  if (map.isStyleLoaded()) {
+    addSolarPanelLayer();
+  } else {
+    map.once('load', addSolarPanelLayer);
+  }
 
   let currentBbox = null;
   let currentPolygon = null;
@@ -317,6 +335,7 @@ if (appContainer) {
       };
 
       shadowCanvasLayer.setPatchBounds(data.metadata.patch_bounds_wgs84);
+      solarPanel3DLayer.setLayout(data.layout);
       solarDashboard.setSimulationData(data, 1.0);
       timeScrubber.setTimeseries(data.timeseries, data.daily_summary);
       playbackEngine.setSimulationContext(data.timeseries.length, data.metadata.time_step_minutes);
@@ -385,6 +404,7 @@ if (appContainer) {
       lastSimulationKey = null;
       updateSelectionState(null);
       shadowCanvasLayer.clear();
+      solarPanel3DLayer.clear();
       currentSimulationData = null;
       solarDashboard.setSimulationData(null);
     }
@@ -427,6 +447,38 @@ if (appContainer) {
     },
     showToast
   });
+
+  // 3D Solar Panels Toggle Button
+  const panelsToggleBtn = document.createElement('button');
+  panelsToggleBtn.id = 'panels-toggle-btn';
+  panelsToggleBtn.className = 'btn btn-sm panels-toggle-btn active';
+  panelsToggleBtn.title = 'Current: 3D Solar Panels Visible. Click to Hide.';
+  panelsToggleBtn.innerHTML = `
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+      <line x1="2" y1="10" x2="22" y2="10"></line>
+      <line x1="12" y1="3" x2="12" y2="17"></line>
+      <path d="M4 21l3-4"></path>
+      <path d="M20 21l-3-4"></path>
+      <path d="M12 17v4"></path>
+    </svg>
+    <span>3D Panels</span>
+  `;
+  panelsToggleBtn.addEventListener('click', () => {
+    const isNowVisible = !solarPanel3DLayer.isVisible();
+    solarPanel3DLayer.setVisible(isNowVisible);
+    if (isNowVisible) {
+      panelsToggleBtn.classList.add('active');
+      panelsToggleBtn.title = 'Current: 3D Solar Panels Visible. Click to Hide.';
+    } else {
+      panelsToggleBtn.classList.remove('active');
+      panelsToggleBtn.title = 'Current: 3D Solar Panels Hidden. Click to Show.';
+    }
+  });
+
+  if (topRightControls) {
+    topRightControls.appendChild(panelsToggleBtn);
+  }
 
   new LayerToggle(map, topRightControls, {
     initialLayer: savedState.layer,

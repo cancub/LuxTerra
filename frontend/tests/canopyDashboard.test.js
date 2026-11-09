@@ -151,6 +151,45 @@ test('SolarDashboard: telemetry correctly populates stacked subtraction and 3-pa
   assert.equal(dashboard.diffuseOnlyOverlay.style.display, 'none');
 });
 
+test('SolarDashboard: displays ground-mount layout specifications in Daily Energy card', () => {
+  const container = createMockElement('div');
+  const dashboard = new SolarDashboard(container);
+
+  const mockGroundMountData = {
+    metadata: {
+      patch_area_m2: 4000,
+      effective_gcr: 0.422
+    },
+    daily_summary: {
+      total_daily_kwh: 1250.0,
+      peak_power_kw: 210.0,
+      unshaded_peak_kw: 220.0,
+      optimal_tilt_deg: 30.0,
+      total_panels: 480,
+      installed_dc_kw: 264.0
+    },
+    layout: {
+      total_panels: 480,
+      total_tables: 30,
+      installed_dc_kw: 264.0,
+      physical_gcr: 0.422
+    },
+    timeseries: []
+  };
+
+  dashboard.setSimulationData(mockGroundMountData);
+
+  assert.equal(dashboard.arraySpecsRow.style.display, 'flex');
+  assert.equal(dashboard.arrayPanelsBadge.textContent, '480 Panels');
+  assert.equal(dashboard.arrayDcBadge.textContent, '264.0 kWp');
+  assert.equal(dashboard.arrayGcrBadge.textContent, 'GCR 42.2%');
+  assert.equal(dashboard.arrayDcAcBadge.textContent, '(DC/AC 1.20)');
+
+  // When cleared, layout row is hidden
+  dashboard.setSimulationData(null);
+  assert.equal(dashboard.arraySpecsRow.style.display, 'none');
+});
+
 test('PVConfigPanel: collapsible by default and toggles expand/collapse', (t, done) => {
   const container = createMockElement('div');
   const panel = new PVConfigPanel(container);
