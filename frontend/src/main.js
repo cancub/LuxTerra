@@ -172,6 +172,7 @@ if (appContainer) {
 
   let currentBbox = null;
   let currentPolygon = null;
+  let currentContextBbox = null;
   let currentSimulationData = null;
   let baseSimulationConfig = {
     gcr: 1.0,
@@ -357,6 +358,7 @@ if (appContainer) {
     const simKey = JSON.stringify({
       bbox: currentBbox,
       polygon: currentPolygon,
+      contextBbox: currentContextBbox,
       date: date,
       deployment_mode: pvConfig.deploymentMode,
       include_tree_canopy: pvConfig.includeTreeCanopy,
@@ -396,6 +398,12 @@ if (appContainer) {
           max_lon: currentBbox[2],
           max_lat: currentBbox[3]
         },
+        context_bbox: currentContextBbox ? {
+          min_lon: currentContextBbox[0],
+          min_lat: currentContextBbox[1],
+          max_lon: currentContextBbox[2],
+          max_lat: currentContextBbox[3]
+        } : undefined,
         polygon: currentPolygon || undefined,
         date: date,
         time_step_minutes: 1,
@@ -481,15 +489,18 @@ if (appContainer) {
     if (selection && selection.bbox) {
       currentBbox = selection.bbox;
       currentPolygon = selection.polygon || null;
+      currentContextBbox = selection.contextBbox || null;
       updateSelectionState({
         bbox: selection.bbox,
         polygon: selection.polygon,
+        contextBbox: selection.contextBbox,
         shapeType: selection.shapeType || (selection.isRectangle ? 'rectangle' : 'polygon')
       });
       triggerSimulation();
     } else {
       currentBbox = null;
       currentPolygon = null;
+      currentContextBbox = null;
       lastSimulationKey = null;
       updateSelectionState(null);
       shadowCanvasLayer.clear();
@@ -528,6 +539,7 @@ if (appContainer) {
         boxDrawer.setSelection({
           bbox: view.bbox,
           polygon: view.polygon,
+          contextBbox: view.contextBbox || null,
           shapeType: view.shapeType || (view.detail && view.detail.includes('Rectangle') ? 'rectangle' : (view.polygon && view.polygon.length !== 5 ? 'polygon' : 'rectangle'))
         });
       } else {

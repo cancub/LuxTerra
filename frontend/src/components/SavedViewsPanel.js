@@ -117,6 +117,13 @@ export class SavedViewsPanel {
               </svg>
               <span>Rectangle</span>
             </button>
+            <button class="btn btn-sm btn-context-toggle" title="Add or clear a wider visual context envelope for surrounding shadow visualization" style="display: none;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="2" width="20" height="20" rx="3" ry="3" stroke-dasharray="3 3"></rect>
+                <rect x="7" y="7" width="10" height="10" rx="1" ry="1"></rect>
+              </svg>
+              <span class="context-label">Context</span>
+            </button>
             <button class="btn btn-sm btn-shape-clear" title="Clear active shape selection and reset shadows" disabled>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="3 6 5 6 21 6"></polyline>
@@ -157,6 +164,8 @@ export class SavedViewsPanel {
 
     this.btnPolygon = this.element.querySelector('.btn-polygon');
     this.btnRectangle = this.element.querySelector('.btn-rectangle');
+    this.btnContextToggle = this.element.querySelector('.btn-context-toggle');
+    this.contextLabel = this.element.querySelector('.context-label');
     this.btnClear = this.element.querySelector('.btn-shape-clear');
 
     this.saveInput = this.element.querySelector('.save-view-input');
@@ -175,6 +184,18 @@ export class SavedViewsPanel {
     this.btnRectangle.addEventListener('click', (e) => {
       e.stopPropagation();
       this.boxDrawer.startDrawing('rectangle');
+    });
+
+    this.btnContextToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const selection = this.boxDrawer.getSelection();
+      if (selection.contextBbox) {
+        this.boxDrawer.clearContext();
+        this.showToast('Cleared visual context boundary', 'info');
+      } else {
+        this.boxDrawer.addDefaultContext(40.0);
+        this.showToast('Added surrounding visual context boundary', 'info');
+      }
     });
 
     this.btnClear.addEventListener('click', (e) => {
@@ -259,7 +280,21 @@ export class SavedViewsPanel {
       this.btnRectangle.classList.remove('active');
     }
 
-    // 2. Clear button
+    // 2. Context toggle button visibility & state
+    if (state.hasShape && state.dimensions) {
+      this.btnContextToggle.style.display = 'flex';
+      if (state.hasContext) {
+        this.btnContextToggle.classList.add('active', 'btn-accent');
+        this.contextLabel.textContent = 'Context ✓';
+      } else {
+        this.btnContextToggle.classList.remove('active', 'btn-accent');
+        this.contextLabel.textContent = '+ Context';
+      }
+    } else {
+      this.btnContextToggle.style.display = 'none';
+    }
+
+    // 3. Clear button
     if (state.hasShape && state.dimensions) {
       this.btnClear.disabled = false;
       this.btnClear.style.opacity = '1';
@@ -307,6 +342,7 @@ export class SavedViewsPanel {
       bearing: Math.round(bearing),
       bbox: selection.bbox ? selection.bbox.map(n => Number(n.toFixed(5))) : null,
       polygon: selection.polygon ? selection.polygon.map(pt => [Number(pt[0].toFixed(5)), Number(pt[1].toFixed(5))]) : null,
+      contextBbox: selection.contextBbox ? selection.contextBbox.map(n => Number(n.toFixed(5))) : null,
       shapeType: selection.shapeType || (selection.isRectangle ? 'rectangle' : (selection.polygon ? 'polygon' : null)),
       date: date,
       createdAt: new Date().toISOString()

@@ -44,6 +44,10 @@ export class BoxDrawer {
     this.startLngLat = null;
     this.currentBbox = null;
     this.currentPolygon = null;
+    this.currentContextBbox = null; // [minLon, minLat, maxLon, maxLat] enclosing the solar array
+    this.currentContextPolygon = null;
+    this.isEditingContext = false;
+    this.activeContextCorner = null;
 
     // Multi-point polygon drawing state
     this.points = []; // Array of [lon, lat]
@@ -120,10 +124,32 @@ export class BoxDrawer {
           '#ef4444',
           '#38bdf8'
         ],
-        'line-width': 2,
-        'line-dasharray': [2, 2]
+        'line-width': 2.5
       }
     });
+
+    // Outer visual context boundary layers (subtle dashed border & corner handles)
+    if (!this.map.getSource('draw-context-source')) {
+      this.map.addSource('draw-context-source', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: []
+        }
+      });
+
+      this.map.addLayer({
+        id: 'draw-context-stroke',
+        type: 'line',
+        source: 'draw-context-source',
+        paint: {
+          'line-color': '#f59e0b', // Subtle amber/gold dashed context envelope
+          'line-width': 2,
+          'line-dasharray': [4, 3],
+          'line-opacity': 0.85
+        }
+      });
+    }
 
     // Invisible hit stroke layer for detecting hover & clicks along polygon line segments
     this.map.addLayer({
@@ -330,6 +356,9 @@ export class BoxDrawer {
         isRectangle: this.shapeType === 'rectangle',
         currentBbox: this.currentBbox,
         currentPolygon: this.currentPolygon,
+        currentContextBbox: this.currentContextBbox,
+        hasContext: !!this.currentContextBbox,
+        isEditingContext: this.isEditingContext,
         dimensions: dims
       });
     }
@@ -1475,22 +1504,128 @@ export class BoxDrawer {
     });
   }
 
-  setSelection({ bbox, polygon, shapeType = null }) {
+  setSelection({ bbox, polygon, contextBbox = null, shapeType = null }) {
     if (polygon && Array.isArray(polygon) && polygon.length >= 3) {
       this.setPolygon(polygon, shapeType);
     } else if (bbox && Array.isArray(bbox) && bbox.length === 4) {
       this.setBox(bbox);
     } else {
       this.clearSelection();
+      return;
+    }
+
+    if (contextBbox && Array.isArray(contextBbox) && contextBbox.length === 4) {
+      this.setContextBox(contextBbox);
+    } else {
+      this.clearContext();
     }
   }
 
+  setContextBox(bbox) {
+    if (!bbox || bbox.length !== 4) return;
+    let [minLon, minLat, maxLon, maxLat] = bbox;
+
+    // Enclosure invariant: ensure context_bbox fully encloses the inner solar boundary
+    const innerBbox = this.currentBbox || (this.currentPolygon ? computePolygonDimensions(this.currentPolygon).bbox : null);
+    if (innerBbox) {
+      minLon = Math.min(minLon, innerBbox[0]);
+      minLat = Math.min(minLat, innerBbox[1]);
+      maxLon = Math.max(maxLon, innerBbox[2]);
+      maxLat = Math.max(maxLat, innerBbox[3]);
+    }
+
+    // Area clamping: clamp context envelope to MAX_PATCH_AREA_M2
+    const dims = computeBboxDimensions(minLon, minLat, maxLon, maxLat);
+    if (dims.areaM2 > MAX_PATCH_AREA_M2) {
+      const clamped = clampBboxToMaxArea(minLon, minLat, maxLon, maxLat, MAX_PATCH_AREA_M2);
+      maxLon = clamped.curLon;
+      maxLat = clamped.curLat;
+    }
+
+    this.currentContextBbox = [minLon, minLat, maxLon, maxLat];
+    const [w, s, e, n] = this.currentContextBbox;
+    this.currentContextPolygon = [
+      [w, n],
+      [e, n],
+      [e, s],
+      [w, s],
+      [w, n]
+    ];
+
+    this.renderContextShape();
+    this.notifyState();
+    this.notifySelection();
+  }
+
+  clearContext() {
+    this.currentContextBbox = null;
+    this.currentContextPolygon = null;
+    this.isEditingContext = false;
+    const ctxSource = this.map.getSource('draw-context-source');
+    if (ctxSource) {
+      ctxSource.setData({
+        type: 'FeatureCollection',
+        features: []
+      });
+    }
+    this.notifyState();
+    this.notifySelection();
+  }
+
+  addDefaultContext(marginMeters = 50.0) {
+    const innerBbox = this.currentBbox || (this.currentPolygon ? computePolygonDimensions(this.currentPolygon).bbox : null);
+    if (!innerBbox) return;
+
+    const [w, s, e, n] = innerBbox;
+    const midLat = (s + n) / 2.0;
+    const deltaLat = marginMeters / 111320.0;
+    const mPerDegLon = 111320.0 * Math.cos(midLat * Math.PI / 180.0);
+    const deltaLon = marginMeters / Math.max(1.0, mPerDegLon);
+
+    this.setContextBox([
+      w - deltaLon,
+      s - deltaLat,
+      e + deltaLon,
+      n + deltaLat
+    ]);
+  }
+
+  renderContextShape() {
+    const source = this.map.getSource('draw-context-source');
+    if (!source || !this.currentContextPolygon) return;
+
+    const feature = polygonToGeoJSON(this.currentContextPolygon);
+    feature.id = 2;
+    source.setData({
+      type: 'FeatureCollection',
+      features: [feature]
+    });
+  }
+
+  notifySelection() {
+    const dims = this.currentPolygon
+      ? computePolygonDimensions(this.currentPolygon)
+      : (this.currentBbox ? computeBboxDimensions(...this.currentBbox) : null);
+
+    this.onSelectionComplete({
+      bbox: this.currentBbox,
+      polygon: this.currentPolygon,
+      contextBbox: this.currentContextBbox,
+      dimensions: dims,
+      shapeType: this.shapeType,
+      isRectangle: this.shapeType === 'rectangle',
+      isPolygon: this.shapeType === 'polygon'
+    });
+  }
+
   clearSelection() {
+    this.clearContext();
     this.clearBox();
     this.notifyState();
     this.onSelectionComplete({
       bbox: null,
       polygon: null,
+      contextBbox: null,
       dimensions: null,
       shapeType: null
     });
@@ -1504,6 +1639,7 @@ export class BoxDrawer {
     return {
       bbox: this.currentBbox,
       polygon: this.currentPolygon,
+      contextBbox: this.currentContextBbox,
       dimensions: dims,
       shapeType: this.shapeType,
       isRectangle: this.shapeType === 'rectangle',

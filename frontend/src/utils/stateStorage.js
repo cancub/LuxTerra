@@ -135,6 +135,7 @@ export function validateSelection(selection) {
   const validPolygon = isValidPolygon(selection.polygon)
     ? selection.polygon.map((p) => [p[0], p[1]])
     : null;
+  const validContextBbox = isValidBbox(selection.contextBbox) ? [...selection.contextBbox] : null;
 
   if (!validBbox && !validPolygon) return null;
 
@@ -143,6 +144,7 @@ export function validateSelection(selection) {
   return {
     bbox: validBbox,
     polygon: validPolygon,
+    contextBbox: validContextBbox,
     shapeType
   };
 }
