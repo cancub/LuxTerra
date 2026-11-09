@@ -392,19 +392,8 @@ export class SolarPanel3DLayer {
       const midW = [0.5 * (sw[0] + nw[0]), 0.5 * (sw[1] + nw[1]), 0.5 * (sw[2] + nw[2])];
       const midE = [0.5 * (se[0] + ne[0]), 0.5 * (se[1] + ne[1]), 0.5 * (se[2] + ne[2])];
 
-      // Row self-shading fraction for this table (applies only to interior rows to the north of the front row)
-      let selfShadeFrac = 0.0;
-      if (tbl.row_index > minRowIndex && isDaylight) {
-        selfShadeFrac = this.calculateRowSelfShadeFraction(
-          rowPitchM,
-          slantH,
-          tbl.tilt_deg !== undefined ? tbl.tilt_deg : 30.0,
-          solarAz,
-          solarEl
-        );
-      }
-      const isSelfShaded_B = selfShadeFrac > 0.0;
-      const isSelfShaded_T = selfShadeFrac >= 0.5;
+      // Find tables in the row immediately to the south for precise ray obstruction checks
+      const southTables = tables.filter(t => t.row_index === tbl.row_index - 1);
 
       const c0 = corners[0]; // SW
       const c1 = corners[1]; // SE
@@ -464,6 +453,43 @@ export class SolarPanel3DLayer {
         const centerLat_B = 0.75 * latBot + 0.25 * latTop;
         const centerLon_T = 0.25 * lonBot + 0.75 * lonTop;
         const centerLat_T = 0.25 * latBot + 0.75 * latTop;
+
+        // Check if there is an actual physical table directly to the south along the solar vector
+        let hasSouthObstruction = false;
+        let selfShadeFrac = 0.0;
+        if (tbl.row_index > minRowIndex && isDaylight && southTables.length > 0) {
+          const azDeltaRad = ((solarAz - 180.0) * Math.PI) / 180.0;
+          const cosAzDelta = Math.cos(azDeltaRad);
+          if (cosAzDelta > 0.001) {
+            const deltaXM = rowPitchM * Math.tan(azDeltaRad);
+            const mPerDegLon = 111320.0 * Math.cos((centerLat_B * Math.PI) / 180.0);
+            const deltaLon = mPerDegLon > 0 ? deltaXM / mPerDegLon : 0.0;
+            const lonShadowSource = centerLon_B - deltaLon;
+
+            for (const st of southTables) {
+              const sc = st.corners_wgs84;
+              if (!sc || sc.length < 4) continue;
+              const stMinLon = Math.min(sc[0][0], sc[3][0]);
+              const stMaxLon = Math.max(sc[1][0], sc[2][0]);
+              if (lonShadowSource >= stMinLon && lonShadowSource <= stMaxLon) {
+                hasSouthObstruction = true;
+                break;
+              }
+            }
+
+            if (hasSouthObstruction) {
+              selfShadeFrac = this.calculateRowSelfShadeFraction(
+                rowPitchM,
+                slantH,
+                tbl.tilt_deg !== undefined ? tbl.tilt_deg : 30.0,
+                solarAz,
+                solarEl
+              );
+            }
+          }
+        }
+        const isSelfShaded_B = selfShadeFrac > 0.0;
+        const isSelfShaded_T = selfShadeFrac >= 0.5;
 
         const shade_B = this.sampleShadowAtPoint(centerLon_B, centerLat_B, maskData);
         const shade_T = this.sampleShadowAtPoint(centerLon_T, centerLat_T, maskData);

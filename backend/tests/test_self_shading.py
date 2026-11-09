@@ -133,3 +133,29 @@ def test_calculate_array_self_shading_fraction_multi_row():
         tables=[t1]
     )
     assert calculate_array_self_shading_fraction(layout_1row, 180.0, 10.0) == 0.0
+
+    # Staggered 2-row layout where northern table is offset to the East with NO table in front of it
+    t_staggered = PVTableGeometry(
+        table_id=2,
+        row_index=1,
+        panel_count=40,
+        corners_wgs84=[[-74.08, 46.105], [-74.07, 46.105], [-74.07, 46.106], [-74.08, 46.106]],
+        center_wgs84=[-74.075, 46.1055],
+        azimuth_deg=180.0,
+        tilt_deg=30.0,
+        stand_height_m=1.0,
+        slant_height_m=4.56,
+        width_m=20.0,
+        depth_m=3.95
+    )
+    layout_staggered = PVLayoutResult(
+        total_panels=80,
+        total_tables=2,
+        installed_dc_kw=44.0,
+        row_pitch_m=10.57,
+        inter_row_gap_m=6.62,
+        physical_gcr=0.43,
+        tables=[t1, t_staggered]
+    )
+    # At solar noon (azimuth 180), there is 0 overlap between [-74.1, -74.09] and [-74.08, -74.07]
+    assert calculate_array_self_shading_fraction(layout_staggered, 180.0, 10.0) == 0.0

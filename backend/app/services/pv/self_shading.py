@@ -96,13 +96,12 @@ def calculate_array_self_shading_fraction(
     if solar_elevation_deg <= 0.0:
         return 1.0
 
-    # Group panel counts by row_index
-    row_panels = {}
+    # Group tables by row_index
+    tables_by_row = {}
     for tbl in layout.tables:
-        r = tbl.row_index
-        row_panels[r] = row_panels.get(r, 0) + tbl.panel_count
+        tables_by_row.setdefault(tbl.row_index, []).append(tbl)
 
-    distinct_rows = sorted(row_panels.keys())
+    distinct_rows = sorted(tables_by_row.keys())
     if len(distinct_rows) <= 1:
         # Single row has no row to its south; zero self-shading
         return 0.0
@@ -121,10 +120,49 @@ def calculate_array_self_shading_fraction(
     if row_shaded_fraction <= 0.0:
         return 0.0
 
+    # Solar azimuth East-West horizontal displacement along row pitch
+    az_delta_rad = np.radians(solar_azimuth_deg - 180.0)
+    cos_az_delta = np.cos(az_delta_rad)
+    if cos_az_delta <= 0.001:
+        return 0.0
+
+    latitude = ref_table.center_wgs84[1] if (ref_table.center_wgs84 and len(ref_table.center_wgs84) > 1) else 45.5
+    delta_x_m = layout.row_pitch_m * np.tan(az_delta_rad)
+    m_per_deg_lon = 111320.0 * np.cos(np.radians(latitude))
+    delta_lon = delta_x_m / m_per_deg_lon if m_per_deg_lon > 0 else 0.0
+
     total_shaded_panel_units = 0.0
     for r in distinct_rows:
-        count = row_panels[r]
-        if r > distinct_rows[0]:
-            total_shaded_panel_units += count * row_shaded_fraction
+        if r == distinct_rows[0]:
+            continue
+        south_row_idx = r - 1
+        south_tables = tables_by_row.get(south_row_idx, [])
+        if not south_tables:
+            continue
+
+        for tbl in tables_by_row[r]:
+            corners = tbl.corners_wgs84
+            if not corners or len(corners) < 4:
+                continue
+
+            t_min_lon = min(corners[0][0], corners[3][0]) - delta_lon
+            t_max_lon = max(corners[1][0], corners[2][0]) - delta_lon
+            t_len = t_max_lon - t_min_lon
+            if t_len <= 1e-9:
+                continue
+
+            # Compute horizontal obstruction overlap against tables in southern row
+            overlap_lon = 0.0
+            for st in south_tables:
+                sc = st.corners_wgs84
+                if not sc or len(sc) < 4:
+                    continue
+                st_min = min(sc[0][0], sc[3][0])
+                st_max = max(sc[1][0], sc[2][0])
+                ov = max(0.0, min(t_max_lon, st_max) - max(t_min_lon, st_min))
+                overlap_lon += ov
+
+            overlap_frac = float(np.clip(overlap_lon / t_len, 0.0, 1.0))
+            total_shaded_panel_units += tbl.panel_count * row_shaded_fraction * overlap_frac
 
     return float(total_shaded_panel_units / layout.total_panels)
