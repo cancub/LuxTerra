@@ -126,3 +126,57 @@ def test_packing_engine_tiny_polygon_graceful_empty():
     assert result.total_tables == 0
     assert result.installed_dc_kw == 0.0
     assert len(result.tables) == 0
+
+
+def test_packing_engine_preserves_panel_quantity_and_locations_across_seasons():
+    """
+    Verifies that for the same boundary site, the physical table locations,
+    row pitch, and panel count are permanently locked to the site design layout
+    and do not change between summer solstice (22.7° tilt) and winter solstice (69.6° tilt).
+    """
+    engine = PVPackingEngine()
+    oblong_coords = [
+        [-74.196, 46.135],
+        [-74.195, 46.1353],
+        [-74.1935, 46.1358],
+        [-74.1932, 46.136],
+        [-74.1936, 46.1362],
+        [-74.1952, 46.1359],
+        [-74.1962, 46.1353],
+        [-74.196, 46.135]
+    ]
+
+    summer_layout = engine.generate_layout(
+        boundary=oblong_coords,
+        latitude=46.136,
+        design_tilt_deg=30.0,
+        current_tilt_deg=22.7
+    )
+
+    winter_layout = engine.generate_layout(
+        boundary=oblong_coords,
+        latitude=46.136,
+        design_tilt_deg=30.0,
+        current_tilt_deg=69.6
+    )
+
+    # Panel count, tables, and total installed DC kWp must be identical
+    assert summer_layout.total_panels > 0
+    assert summer_layout.total_panels == winter_layout.total_panels
+    assert summer_layout.total_tables == winter_layout.total_tables
+    assert summer_layout.installed_dc_kw == winter_layout.installed_dc_kw
+    assert summer_layout.row_pitch_m == winter_layout.row_pitch_m
+
+    # Table center locations, widths, and panel counts must be identical across seasons
+    for t_s, t_w in zip(summer_layout.tables, winter_layout.tables):
+        assert t_s.center_wgs84 == t_w.center_wgs84
+        assert t_s.width_m == t_w.width_m
+        assert t_s.panel_count == t_w.panel_count
+        assert t_s.table_id == t_w.table_id
+        assert t_s.row_index == t_w.row_index
+
+        # Only tilt angle and operational slant footprint depth vary
+        assert t_s.tilt_deg == 22.7
+        assert t_w.tilt_deg == 69.6
+        assert t_s.depth_m != t_w.depth_m
+

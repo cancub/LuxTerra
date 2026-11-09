@@ -164,12 +164,13 @@ class SimulationOrchestrator:
             daylight_canopy_masks = []
             daylight_irradiance = []
 
-        # 4b. Synthesize maximal ground-mount solar panel layout
+        # 4b. Synthesize maximal ground-mount solar panel layout (fixed civil layout with seasonal table tilt)
         boundary_target = request.polygon if (request.polygon and len(request.polygon) >= 3) else bbox
         layout = self.packing_engine.generate_layout(
             boundary=boundary_target,
             latitude=center_lat,
-            tilt_deg=seasonal_tilt
+            design_tilt_deg=30.0,
+            current_tilt_deg=seasonal_tilt
         )
 
         # 5. PV System Configuration (incorporating overrides without duplicating schema defaults)

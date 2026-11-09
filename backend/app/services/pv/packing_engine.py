@@ -86,21 +86,34 @@ class PVPackingEngine:
         self,
         boundary: Union[List[List[float]], GeoBoundingBox],
         latitude: float,
-        tilt_deg: float = 30.0,
+        design_tilt_deg: float = 30.0,
+        current_tilt_deg: Optional[float] = None,
+        tilt_deg: Optional[float] = None,
         buffer_m: float = 0.5
     ) -> PVLayoutResult:
         """
         Synthesizes the maximal ground-mount solar table layout within the given boundary.
+        The physical layout (row pitch, table locations, panel count, installed DC capacity)
+        is permanently locked to the site civil design tilt (default: 30° True South).
+        If current_tilt_deg is provided (e.g. seasonal optimal tilt), each table tilts around
+        its fixed ground center without changing its physical placement or panel count.
 
         Args:
             boundary: List of [lon, lat] coordinates defining a closed polygon, or a GeoBoundingBox.
             latitude: Site latitude in degrees North.
-            tilt_deg: Fixed array racking tilt angle from horizontal.
+            design_tilt_deg: Permanent array civil racking design tilt (default: 30.0°).
+            current_tilt_deg: Optional operational/seasonal panel tilt angle for this simulation date.
+            tilt_deg: Backward-compatible alias for current_tilt_deg.
             buffer_m: Extra safety buffer added to self-shading pitch.
 
         Returns:
             PVLayoutResult containing metrics and individual 3D table geometries.
         """
+        if tilt_deg is not None and current_tilt_deg is None:
+            current_tilt_deg = tilt_deg
+        if current_tilt_deg is None:
+            current_tilt_deg = design_tilt_deg
+
         # 1. Construct Shapely polygon in WGS84
         if isinstance(boundary, GeoBoundingBox):
             poly_wgs84 = box(boundary.min_lon, boundary.min_lat, boundary.max_lon, boundary.max_lat)
@@ -123,10 +136,10 @@ class PVPackingEngine:
         poly_utm = transform_geometry(poly_wgs84, "EPSG:4326", utm_crs)
         site_area_m2 = float(poly_utm.area)
 
-        # 3. Calculate pitch and dimensions
-        pitch_m, depth_m, gap_m = calculate_winter_solstice_pitch(
+        # 3. Calculate pitch and dimensions based on permanent site civil design tilt
+        pitch_m, design_depth_m, gap_m = calculate_winter_solstice_pitch(
             latitude=latitude,
-            tilt_deg=tilt_deg,
+            tilt_deg=design_tilt_deg,
             slant_height_m=self.slant_height_m,
             stand_height_m=self.stand_height_m,
             buffer_m=buffer_m
@@ -145,7 +158,12 @@ class PVPackingEngine:
         # Coordinate transformer for fast UTM -> WGS84 batch mapping
         transformer = get_transformer(utm_crs, "EPSG:4326")
 
-        # 5. Pack East-West rows within setback polygon
+        # Operational tilt delta for North-South projection around fixed center
+        curr_tilt_rad = np.radians(current_tilt_deg)
+        half_depth_curr = 0.5 * self.slant_height_m * np.cos(curr_tilt_rad)
+        actual_depth_m = round(float(2.0 * half_depth_curr), 2)
+
+        # 5. Pack East-West rows within setback polygon using permanent design pitch
         min_x, min_y, max_x, max_y = setback_poly.bounds
         y = min_y
         row_index = 0
@@ -153,14 +171,14 @@ class PVPackingEngine:
         tables: List[PVTableGeometry] = []
         min_table_width = self.min_pairs_per_table * self.pair_width_m
 
-        while y + depth_m <= max_y:
-            band = box(min_x - 10.0, y, max_x + 10.0, y + depth_m)
+        while y + design_depth_m <= max_y:
+            band = box(min_x - 10.0, y, max_x + 10.0, y + design_depth_m)
             inter = setback_poly.intersection(band)
 
             if not inter.is_empty:
                 geoms = inter.geoms if hasattr(inter, "geoms") else [inter]
                 for g in geoms:
-                    if g.area < min_table_width * depth_m * 0.8:
+                    if g.area < min_table_width * design_depth_m * 0.8:
                         continue
 
                     gx_min, gy_min, gx_max, gy_max = g.bounds
@@ -171,7 +189,7 @@ class PVPackingEngine:
                         fit_pairs = 0
                         for n in range(self.min_pairs_per_table, self.max_pairs_per_table + 1):
                             cand_width = n * self.pair_width_m
-                            cand_box = box(x, y, x + cand_width, y + depth_m)
+                            cand_box = box(x, y, x + cand_width, y + design_depth_m)
                             if setback_poly.contains(cand_box) or setback_poly.intersection(cand_box).area >= 0.96 * cand_box.area:
                                 fit_pairs = n
                             else:
@@ -179,12 +197,18 @@ class PVPackingEngine:
 
                         if fit_pairs >= self.min_pairs_per_table:
                             tbl_width = round(fit_pairs * self.pair_width_m, 2)
-                            # 4 corners in UTM: SW, SE, NE, NW
+                            # Permanent table center in UTM
+                            c_x = x + tbl_width / 2.0
+                            c_y = y + design_depth_m / 2.0
+
+                            # 4 corners in UTM tilted around fixed center: SW, SE, NE, NW
+                            y_south = c_y - half_depth_curr
+                            y_north = c_y + half_depth_curr
                             utmx = [x, x + tbl_width, x + tbl_width, x]
-                            utmy = [y, y, y + depth_m, y + depth_m]
+                            utmy = [y_south, y_south, y_north, y_north]
 
                             lons, lats = transformer.transform(utmx, utmy)
-                            c_lon, c_lat = transformer.transform(x + tbl_width / 2.0, y + depth_m / 2.0)
+                            c_lon, c_lat = transformer.transform(c_x, c_y)
 
                             corners_wgs84 = [
                                 [round(float(lo), 7), round(float(la), 7)]
@@ -199,11 +223,11 @@ class PVPackingEngine:
                                     corners_wgs84=corners_wgs84,
                                     center_wgs84=[round(float(c_lon), 7), round(float(c_lat), 7)],
                                     azimuth_deg=180.0,
-                                    tilt_deg=round(tilt_deg, 1),
+                                    tilt_deg=round(current_tilt_deg, 1),
                                     stand_height_m=self.stand_height_m,
                                     slant_height_m=self.slant_height_m,
                                     width_m=tbl_width,
-                                    depth_m=depth_m
+                                    depth_m=actual_depth_m
                                 )
                             )
                             table_id += 1
