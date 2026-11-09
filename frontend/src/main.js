@@ -195,6 +195,16 @@ if (appContainer) {
         const maskStr = currentSimulationData.masks[metric.mask_index];
         const canopyMaskStr = currentSimulationData.canopy_masks ? currentSimulationData.canopy_masks[metric.mask_index] : null;
         shadowCanvasLayer.renderFrame(maskStr, meta.grid_rows, meta.grid_cols, canopyMaskStr);
+        solarPanel3DLayer.updateSunPosition(
+          metric.solar_azimuth_deg,
+          metric.solar_elevation_deg,
+          true,
+          maskStr,
+          canopyMaskStr,
+          meta.patch_bounds_wgs84,
+          meta.grid_rows,
+          meta.grid_cols
+        );
       } else if (currentSimulationData.night_mask) {
         // Nighttime: render 100% shade inside the user's selected shape (polygon or rectangle)
         shadowCanvasLayer.renderFrame(
@@ -203,9 +213,19 @@ if (appContainer) {
           meta.grid_cols,
           currentSimulationData.night_canopy_mask
         );
+        solarPanel3DLayer.updateSunPosition(
+          metric.solar_azimuth_deg,
+          metric.solar_elevation_deg,
+          false
+        );
       } else {
         // Fallback: render shade masked to active polygon geometry
         shadowCanvasLayer.renderFullShade(meta.grid_rows, meta.grid_cols, currentPolygon, meta.patch_bounds_wgs84);
+        solarPanel3DLayer.updateSunPosition(
+          metric.solar_azimuth_deg,
+          metric.solar_elevation_deg,
+          false
+        );
       }
     } else {
       shadowCanvasLayer.clear();
