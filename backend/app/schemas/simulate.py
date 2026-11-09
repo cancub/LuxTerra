@@ -6,7 +6,7 @@ from typing import List, Optional
 from datetime import date
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .domain import GeoBoundingBox, DeploymentMode
+from .domain import GeoBoundingBox, DeploymentMode, PVLayoutResult
 from ..services.elevation.geo_utils import calculate_bbox_area_meters, calculate_polygon_area_meters
 
 
@@ -103,6 +103,8 @@ class DailySummary(BaseModel):
     avg_shaded_pct: float = Field(..., description="Average percentage of patch shaded during daylight")
     avg_canopy_shaded_pct: float = Field(default=0.0, description="Average percentage of patch shaded by canopy during daylight")
     optimal_tilt_deg: Optional[float] = Field(default=None, description="Computed fixed seasonal optimal panel tilt in degrees")
+    total_panels: Optional[int] = Field(default=None, description="Total discrete solar panels in layout")
+    installed_dc_kw: Optional[float] = Field(default=None, description="Total installed DC peak capacity in kWp")
 
 
 class TimestepMetric(BaseModel):
@@ -135,5 +137,6 @@ class SimulateResponse(BaseModel):
     masks: List[str] = Field(default_factory=list, description="Base64 encoded bit-packed binary masks for daytime frames (terrain)")
     canopy_masks: List[str] = Field(default_factory=list, description="Base64 encoded bit-packed binary masks for daytime frames (canopy)")
     canopy_transmittance: float = Field(default=0.15, description="Fractional direct beam canopy transmittance")
+    layout: Optional[PVLayoutResult] = Field(default=None, description="Maximal solar panel distribution layout")
     night_mask: Optional[str] = Field(default=None, description="Base64 bitmask for nighttime frames (shaded inside shape, transparent outside)")
     night_canopy_mask: Optional[str] = Field(default=None, description="Base64 bitmask for nighttime frames for canopy layer")

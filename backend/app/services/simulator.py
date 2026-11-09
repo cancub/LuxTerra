@@ -26,6 +26,7 @@ from ..interfaces.pv_model import PVSystemModel
 from .elevation.geo_utils import transform_geometry
 from .serializer import encode_masks_batch, encode_mask_bitmask
 from .solar.phenology import calculate_canopy_transmittance
+from .pv.packing_engine import PVPackingEngine
 
 TZ_QUEBEC = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
 
@@ -40,12 +41,14 @@ class SimulationOrchestrator:
         elevation_provider: ElevationProvider,
         solar_engine: SolarEngine,
         occlusion_engine: OcclusionEngine,
-        pv_model: PVSystemModel
+        pv_model: PVSystemModel,
+        packing_engine: Optional[PVPackingEngine] = None
     ):
         self.elevation_provider = elevation_provider
         self.solar_engine = solar_engine
         self.occlusion_engine = occlusion_engine
         self.pv_model = pv_model
+        self.packing_engine = packing_engine or PVPackingEngine()
 
     def run_simulation(self, request: SimulateRequest) -> SimulateResponse:
         """
@@ -160,6 +163,14 @@ class SimulationOrchestrator:
             daylight_masks = []
             daylight_canopy_masks = []
             daylight_irradiance = []
+
+        # 4b. Synthesize maximal ground-mount solar panel layout
+        boundary_target = request.polygon if (request.polygon and len(request.polygon) >= 3) else bbox
+        layout = self.packing_engine.generate_layout(
+            boundary=boundary_target,
+            latitude=center_lat,
+            tilt_deg=seasonal_tilt
+        )
 
         # 5. PV System Configuration (incorporating overrides without duplicating schema defaults)
         pv_kwargs = {"deployment_mode": request.deployment_mode}
@@ -344,7 +355,9 @@ class SimulationOrchestrator:
             daylight_hours=daylight_hours,
             avg_shaded_pct=avg_shaded,
             avg_canopy_shaded_pct=avg_canopy_shaded,
-            optimal_tilt_deg=seasonal_tilt
+            optimal_tilt_deg=seasonal_tilt,
+            total_panels=layout.total_panels if layout else None,
+            installed_dc_kw=layout.installed_dc_kw if layout else None
         )
 
         effective_area = polygon_area_m2 if polygon_area_m2 is not None else geo_info["patch_area_m2"]
@@ -382,6 +395,7 @@ class SimulationOrchestrator:
             masks=encoded_masks,
             canopy_masks=encoded_canopy_masks,
             canopy_transmittance=canopy_transmittance,
+            layout=layout,
             night_mask=encoded_night_mask,
             night_canopy_mask=encoded_night_canopy_mask
         )

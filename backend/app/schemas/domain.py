@@ -90,6 +90,39 @@ class PVConfig(BaseModel):
         return 1.0 if self.deployment_mode == DeploymentMode.ROOFTOP else 0.45
 
 
+class PVTableGeometry(BaseModel):
+    """
+    3D geometric bounding box and orientation for a single solar panel table rack.
+    """
+    table_id: int
+    row_index: int
+    panel_count: int
+    corners_wgs84: List[List[float]] = Field(..., description="[SW, SE, NE, NW] corners in [lon, lat]")
+    center_wgs84: List[float] = Field(..., description="[center_lon, center_lat]")
+    azimuth_deg: float = Field(default=180.0, description="Racking face azimuth in degrees (180° = True South)")
+    tilt_deg: float = Field(..., description="Panel tilt from horizontal in degrees")
+    stand_height_m: float = Field(default=1.0, description="Ground clearance of bottom edge in meters")
+    slant_height_m: float = Field(default=4.56, description="Total slant length along panel slope in meters")
+    width_m: float = Field(..., description="East-West table width in meters")
+    depth_m: float = Field(..., description="North-South ground footprint depth in meters")
+
+
+class PVLayoutResult(BaseModel):
+    """
+    Maximal distribution layout of standard solar panels within target boundary.
+    """
+    total_panels: int = Field(..., description="Total number of solar panels placed")
+    total_tables: int = Field(..., description="Total number of racking tables placed")
+    installed_dc_kw: float = Field(..., description="Installed DC peak capacity in kWp")
+    module_wattage_w: float = Field(default=550.0, description="Rated nameplate wattage per module in Watts")
+    module_width_m: float = Field(default=1.134, description="Module width in meters")
+    module_length_m: float = Field(default=2.278, description="Module length in meters")
+    row_pitch_m: float = Field(..., description="Inter-row spacing in meters (front-edge to front-edge)")
+    inter_row_gap_m: float = Field(..., description="Free ground clearance gap between rows in meters")
+    physical_gcr: float = Field(..., description="Actual Ground Coverage Ratio (total panel area / site area)")
+    tables: List[PVTableGeometry] = Field(default_factory=list, description="List of individual table geometries")
+
+
 class SimulationTimestep(BaseModel):
     """
     Result metrics for a single simulation timestep.
