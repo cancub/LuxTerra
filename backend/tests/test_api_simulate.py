@@ -372,6 +372,9 @@ async def test_simulate_tree_canopy_dual_masks():
         assert data["canopy_transmittance"] == 0.15
         assert "night_canopy_mask" in data
         assert data["night_canopy_mask"] is not None
+        assert "chm_base64" in data
+        assert data["chm_base64"] is not None
+        assert len(data["chm_base64"]) > 0
 
         # Check daily summary
         summary = data["daily_summary"]

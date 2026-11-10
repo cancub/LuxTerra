@@ -6,6 +6,7 @@ PV yield conversion, and daily integration.
 
 from typing import Optional, List
 from datetime import datetime, date, time
+import base64
 import zoneinfo
 import numpy as np
 import pandas as pd
@@ -717,6 +718,14 @@ class SimulationOrchestrator:
             optimal_tilt_deg=seasonal_tilt
         )
 
+        # Quantize Canopy Height Model (CHM) in 0.5m units for front-end shadow ray-marching
+        chm_base64 = None
+        if has_canopy and "chm" in elev_data:
+            patch_chm = elev_data["chm"][patch_slice_y, patch_slice_x]
+            # Quantize to 0.5m units in uint8 (0..127.5m)
+            chm_uint8 = np.clip(np.round(patch_chm * 2.0), 0, 255).astype(np.uint8)
+            chm_base64 = base64.b64encode(chm_uint8.tobytes()).decode("ascii")
+
         return SimulateResponse(
             metadata=metadata,
             daily_summary=daily_summary,
@@ -727,5 +736,6 @@ class SimulationOrchestrator:
             canopy_transmittance=canopy_transmittance,
             layout=layout,
             night_mask=encoded_night_mask,
-            night_canopy_mask=encoded_night_canopy_mask
+            night_canopy_mask=encoded_night_canopy_mask,
+            chm_base64=chm_base64
         )

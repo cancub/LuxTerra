@@ -177,3 +177,4 @@ class SimulateResponse(BaseModel):
     layout: Optional[PVLayoutResult] = Field(default=None, description="Maximal solar panel distribution layout")
     night_mask: Optional[str] = Field(default=None, description="Base64 bitmask for nighttime frames (shaded inside shape, transparent outside)")
     night_canopy_mask: Optional[str] = Field(default=None, description="Base64 bitmask for nighttime frames for canopy layer")
+    chm_base64: Optional[str] = Field(default=None, description="Base64 encoded uint8 Canopy Height Model array in 0.5m units for the patch")
