@@ -633,8 +633,10 @@ class SimulationOrchestrator:
         self_shading_loss_pct = float(round((self_shading_loss_kwh / unshaded_daily_kwh * 100.0), 1)) if unshaded_daily_kwh > 0 else 0.0
         unshaded_peak_kw = float(max(unshaded_power_values)) if unshaded_power_values else 0.0
 
-        # 7. Encode daytime masks (masking out non-polygon cells as transparent/unshaded)
-        if polygon_mask is not None and daylight_masks:
+        # 7. Encode daytime masks
+        # When context_expansion is active, keep full-frame shading across the entire context window!
+        # Only when NO context expansion is present and an oblong polygon is selected do we clip shadows to the polygon.
+        if polygon_mask is not None and daylight_masks and not has_context_expansion:
             export_masks = []
             export_canopy_masks = []
             for m, cm in zip(daylight_masks, daylight_canopy_masks):
@@ -651,6 +653,7 @@ class SimulationOrchestrator:
             encoded_canopy_masks = encode_masks_batch(daylight_canopy_masks)
 
         # Encode nighttime masks (0 = shaded inside shape, 1 = transparent outside)
+        # When context_expansion is active, night covers the whole visual context boundary!
         night_grid = np.zeros((patch_h, patch_w), dtype=np.uint8)
         night_canopy_grid = np.ones((patch_h, patch_w), dtype=np.uint8)
         if polygon_mask is not None and not has_context_expansion:
