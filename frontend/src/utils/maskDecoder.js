@@ -83,14 +83,16 @@ export function decodeBitmaskToImageData(base64Str, rows, cols, ctx, panelShadow
 /**
  * Decodes dual-channel bit-packed Base64 strings (terrain + canopy) into an HTML5 Canvas ImageData.
  * Directly writes:
- *   - TERRAIN_SHADOW_WORD if terrain is occluded (bit == 0) OR if in panel shadow
- *   - CANOPY_SHADOW_WORD if canopy is occluded (bit == 0 and terrain bit == 1 and not in panel shadow)
+ *   - TERRAIN_SHADOW_WORD if terrain is occluded (bit == 0) OR if in panel shadow on sunlit ground
+ *   - CANOPY_SHADOW_WORD if canopy is occluded (bit == 0 and terrain bit == 1)
  *   - SUN_PIXEL_WORD if unshaded (both bits == 1 and not in panel shadow)
  *
- * Ensures strictly binary shadow coloring:
- *   geological shadow = TERRAIN_SHADOW_WORD
- *   panel shadow = TERRAIN_SHADOW_WORD
- *   geological + panel shadow = TERRAIN_SHADOW_WORD (no darkening)
+ * Ensures strictly binary shadow coloring and physical occlusion precedence:
+ *   - Tree canopy blocks direct sunbeams; panel ground shadows cannot penetrate or override tree canopy shade
+ *   - Panel ground shadows only project onto direct sunlit ground (terrain bit == 1 && canopy bit == 1)
+ *   - geological shadow = TERRAIN_SHADOW_WORD
+ *   - panel shadow = TERRAIN_SHADOW_WORD
+ *   - geological + panel shadow = TERRAIN_SHADOW_WORD (no darkening)
  */
 export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols, ctx, panelShadowBytes = null) {
   const totalPixels = rows * cols;
@@ -118,14 +120,21 @@ export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols,
 
     for (let b = 7; b >= 0 && pixelIdx < totalPixels; b--) {
       const isTerrainSun = (tByte >> b) & 1;
+      const isCanopySun = (cByte >> b) & 1;
       const inPanelShadow = panelShadowBytes ? (panelShadowBytes[pixelIdx] !== 0) : false;
 
-      if (!isTerrainSun || inPanelShadow) {
-        // Geological terrain shadow, panel shadow, or both
+      if (!isTerrainSun) {
+        // Geological terrain shadow always dominates
+        data32[pixelIdx++] = TERRAIN_SHADOW_WORD;
+      } else if (!isCanopySun) {
+        // Tree canopy shadow: trees intercept direct sunbeams, so panel shadow does not penetrate tree canopy shade
+        data32[pixelIdx++] = CANOPY_SHADOW_WORD;
+      } else if (inPanelShadow) {
+        // Panel ground shadow projects onto direct sunlit ground
         data32[pixelIdx++] = TERRAIN_SHADOW_WORD;
       } else {
-        const isCanopySun = (cByte >> b) & 1;
-        data32[pixelIdx++] = isCanopySun ? SUN_PIXEL_WORD : CANOPY_SHADOW_WORD;
+        // Direct sunlight
+        data32[pixelIdx++] = SUN_PIXEL_WORD;
       }
     }
   }

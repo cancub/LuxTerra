@@ -88,6 +88,24 @@ test('decodeDualBitmasksToImageData correctly distinguishes terrain, canopy, and
   assert.equal(data32[7], TERRAIN_SHADOW_WORD);
 });
 
+test('decodeDualBitmasksToImageData clips panel ground shadows against canopy shade', () => {
+  // Pixel 0: T=1, C=1 (Sunlit clearing) -> covered by panel shadow => TERRAIN_SHADOW_WORD
+  // Pixel 1: T=1, C=0 (Canopy shaded tree line) -> covered by panel shadow => CANOPY_SHADOW_WORD (cannot penetrate tree shade)
+  // Pixel 2: T=0, C=1 (Geological shade) -> covered by panel shadow => TERRAIN_SHADOW_WORD
+  // Pixel 3: T=1, C=1 (Sunlit clearing) -> NOT in panel shadow => SUN_PIXEL_WORD
+  const terrainB64 = Buffer.from([0b11010000]).toString('base64');
+  const canopyB64 = Buffer.from([0b10110000]).toString('base64');
+  const panelShadowBytes = new Uint8Array([1, 1, 1, 0]);
+
+  const imgData = decodeDualBitmasksToImageData(terrainB64, canopyB64, 1, 4, null, panelShadowBytes);
+  const data32 = new Uint32Array(imgData.data.buffer);
+
+  assert.equal(data32[0], TERRAIN_SHADOW_WORD, 'Panel shadow on sunlit ground renders as TERRAIN_SHADOW_WORD');
+  assert.equal(data32[1], CANOPY_SHADOW_WORD, 'Tree canopy shade supersedes panel shadow (shadow stops at tree line)');
+  assert.equal(data32[2], TERRAIN_SHADOW_WORD, 'Terrain shadow takes priority');
+  assert.equal(data32[3], SUN_PIXEL_WORD, 'Unshaded ground remains sunny');
+});
+
 test('decodeDualBitmasksToImageData benchmark: 100k pixels completes in under 3ms', () => {
   const rows = 316;
   const cols = 316;
