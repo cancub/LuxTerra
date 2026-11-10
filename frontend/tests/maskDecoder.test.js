@@ -4,6 +4,7 @@ import {
   decodeBitmask,
   decodeBitmaskToImageData,
   decodeDualBitmasksToImageData,
+  rasterizePanelShadowMask,
   base64ToBytes,
   TERRAIN_SHADOW_WORD,
   CANOPY_SHADOW_WORD,
@@ -126,4 +127,60 @@ test('decodeDualBitmasksToImageData benchmark: 100k pixels completes in under 3m
 
   assert.equal(imgData.data.length, rows * cols * 4);
   assert.ok(elapsed < 10.0, `Dual decoding took ${elapsed.toFixed(3)}ms (expected < 10ms)`);
+});
+
+test('rasterizePanelShadowMask truncates panel shadow ray when hitting trees taller than the shadow (Option B)', () => {
+  // 10x10 grid, small patch ~30m x 30m
+  const rows = 10;
+  const cols = 10;
+  const minLon = -73.5002;
+  const maxLon = -73.4998;
+  const minLat = 45.5000;
+  const maxLat = 45.5003;
+  const patchBounds = [minLon, minLat, maxLon, maxLat];
+
+  // Table placed at the southern half (rows 7..8)
+  const layout = {
+    tables: [
+      {
+        table_id: 1,
+        panel_count: 4,
+        tilt_deg: 30,
+        stand_height_m: 1.0,
+        slant_height_m: 4.0,
+        corners_wgs84: [
+          [minLon + 0.0001, minLat + 0.00005],
+          [maxLon - 0.0001, minLat + 0.00005],
+          [maxLon - 0.0001, minLat + 0.00010],
+          [minLon + 0.0001, minLat + 0.00010]
+        ]
+      }
+    ]
+  };
+
+  // Sun in South (Az: 180, El: 10) -> casts shadow strongly Northwards
+  const shadowNoCanopy = rasterizePanelShadowMask(layout, 180.0, 10.0, patchBounds, rows, cols, null);
+  assert.ok(shadowNoCanopy instanceof Uint8Array);
+  const countNoCanopy = shadowNoCanopy.reduce((acc, v) => acc + v, 0);
+  assert.ok(countNoCanopy > 0, 'Must have active shadow pixels on bare ground');
+
+  // Now create a CHM grid with tall forest trees (20m tall = 40 in 0.5m units) right North of the table
+  const chmBytes = new Uint8Array(rows * cols);
+  // Put dense forest across rows 0..5 (north of the panel)
+  for (let r = 0; r <= 5; r++) {
+    for (let c = 0; c < cols; c++) {
+      chmBytes[r * cols + c] = 40; // 20 meters tall
+    }
+  }
+
+  const shadowWithCanopy = rasterizePanelShadowMask(layout, 180.0, 10.0, patchBounds, rows, cols, chmBytes);
+  const countWithCanopy = shadowWithCanopy.reduce((acc, v) => acc + v, 0);
+
+  // The shadow must be truncated by the tall canopy wall and cannot extend into rows 0..5
+  assert.ok(countWithCanopy < countNoCanopy, `Shadow with canopy truncation (${countWithCanopy}) must be less than without canopy (${countNoCanopy})`);
+  for (let r = 0; r <= 5; r++) {
+    for (let c = 0; c < cols; c++) {
+      assert.equal(shadowWithCanopy[r * cols + c], 0, `Row ${r} inside dense 20m forest must have zero panel ground shadow`);
+    }
+  }
 });
