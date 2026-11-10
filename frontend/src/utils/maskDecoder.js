@@ -144,8 +144,9 @@ export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols,
 
 /**
  * Fast scanline quad rasterization into a binary mask array.
+ * If chmBytes is provided, skips marking pixels underneath dense tree canopy (>= 2m).
  */
-function rasterizeQuad(p0, p1, p2, p3, mask, cols, rows) {
+function rasterizeQuad(p0, p1, p2, p3, mask, cols, rows, chmBytes = null) {
   const minX = Math.max(0, Math.floor(Math.min(p0.x, p1.x, p2.x, p3.x)));
   const maxX = Math.min(cols - 1, Math.ceil(Math.max(p0.x, p1.x, p2.x, p3.x)));
   const minY = Math.max(0, Math.floor(Math.min(p0.y, p1.y, p2.y, p3.y)));
@@ -154,8 +155,12 @@ function rasterizeQuad(p0, p1, p2, p3, mask, cols, rows) {
   const poly = [p0, p1, p2, p3];
 
   for (let y = minY; y <= maxY; y++) {
+    const rowOffset = y * cols;
     const cy = y + 0.5;
     for (let x = minX; x <= maxX; x++) {
+      if (chmBytes && (chmBytes[rowOffset + x] * 0.5) >= 2.0) {
+        continue; // Underneath dense tree canopy
+      }
       const cx = x + 0.5;
       let inside = false;
       for (let i = 0, j = 3; i < 4; j = i++) {
@@ -165,18 +170,56 @@ function rasterizeQuad(p0, p1, p2, p3, mask, cols, rows) {
         if (intersect) inside = !inside;
       }
       if (inside) {
-        mask[y * cols + x] = 1;
+        mask[rowOffset + x] = 1;
       }
     }
   }
 }
 
 /**
+ * Marches a shadow ray from (originX, originY) at height `hMeters` along direction (deltaX, deltaY).
+ * Truncates the ray as soon as ray height drops below the local canopy height (Option B).
+ */
+function marchShadowRay(originX, originY, hMeters, deltaX, deltaY, cols, rows, chmBytes = null) {
+  if (!chmBytes || hMeters <= 0) {
+    return { x: originX + deltaX, y: originY + deltaY };
+  }
+
+  const steps = Math.max(1, Math.ceil(Math.hypot(deltaX, deltaY)));
+  let currX = originX + deltaX;
+  let currY = originY + deltaY;
+
+  for (let s = 1; s <= steps; s++) {
+    const u = s / steps;
+    const x = Math.round(originX + u * deltaX);
+    const y = Math.round(originY + u * deltaY);
+
+    if (x < 0 || x >= cols || y < 0 || y >= rows) {
+      break;
+    }
+
+    const rayHeight = hMeters * (1.0 - u);
+    const treeHeight = chmBytes[y * cols + x] * 0.5;
+
+    if (treeHeight >= rayHeight && treeHeight >= 1.5) {
+      // Ray struck tree canopy taller than the shadow! Truncate ray here
+      const uHit = Math.max(0, (s - 1) / steps);
+      currX = originX + uHit * deltaX;
+      currY = originY + uHit * deltaY;
+      break;
+    }
+  }
+
+  return { x: currX, y: currY };
+}
+
+/**
  * Synthesizes a binary ground shadow mask for all 3D solar panel racks in the layout.
  * Returns a Uint8Array of size rows * cols (1 = panel shadow, 0 = no panel shadow),
  * or null if unshaded / nighttime.
+ * If chmBytes is provided, performs Option B ray-marching truncation against tree canopy heights.
  */
-export function rasterizePanelShadowMask(layout, solarAzimuthDeg, solarElevationDeg, patchBounds, rows, cols) {
+export function rasterizePanelShadowMask(layout, solarAzimuthDeg, solarElevationDeg, patchBounds, rows, cols, chmBytes = null) {
   if (!layout || !layout.tables || layout.tables.length === 0 || !patchBounds || rows <= 0 || cols <= 0 || solarElevationDeg <= 0) {
     return null;
   }
@@ -240,21 +283,32 @@ export function rasterizePanelShadowMask(layout, solarAzimuthDeg, solarElevation
       y: ((maxLat - corners[3][1]) / latSpan) * rows
     };
 
-    // Projected elevated corners on ground plane
-    const p0_proj = { x: p0.x + dX_bot, y: p0.y + dY_bot };
-    const p1_proj = { x: p1.x + dX_bot, y: p1.y + dY_bot };
-    const p2_proj = { x: p2.x + dX_top, y: p2.y + dY_top };
-    const p3_proj = { x: p3.x + dX_top, y: p3.y + dY_top };
+    // Subdivide table along width to allow clean per-section CHM canopy shadow truncation
+    const numSegs = chmBytes ? Math.max(1, Math.min(tbl.panel_count || 4, 8)) : 1;
+    for (let seg = 0; seg < numSegs; seg++) {
+      const u0 = seg / numSegs;
+      const u1 = (seg + 1) / numSegs;
 
-    // 1. Rack footprint quad
-    rasterizeQuad(p0, p1, p2, p3, mask, cols, rows);
+      const seg_p0 = { x: (1 - u0) * p0.x + u0 * p1.x, y: (1 - u0) * p0.y + u0 * p1.y };
+      const seg_p1 = { x: (1 - u1) * p0.x + u1 * p1.x, y: (1 - u1) * p0.y + u1 * p1.y };
+      const seg_p2 = { x: (1 - u1) * p3.x + u1 * p2.x, y: (1 - u1) * p3.y + u1 * p2.y };
+      const seg_p3 = { x: (1 - u0) * p3.x + u0 * p2.x, y: (1 - u0) * p3.y + u0 * p2.y };
 
-    // 2. Projected rack face quad
-    rasterizeQuad(p0_proj, p1_proj, p2_proj, p3_proj, mask, cols, rows);
+      const seg_p0_proj = marchShadowRay(seg_p0.x, seg_p0.y, hBottom, dX_bot, dY_bot, cols, rows, chmBytes);
+      const seg_p1_proj = marchShadowRay(seg_p1.x, seg_p1.y, hBottom, dX_bot, dY_bot, cols, rows, chmBytes);
+      const seg_p2_proj = marchShadowRay(seg_p2.x, seg_p2.y, hTop, dX_top, dY_top, cols, rows, chmBytes);
+      const seg_p3_proj = marchShadowRay(seg_p3.x, seg_p3.y, hTop, dX_top, dY_top, cols, rows, chmBytes);
 
-    // 3. Bridging quads
-    rasterizeQuad(p3, p2, p2_proj, p3_proj, mask, cols, rows);
-    rasterizeQuad(p0, p1, p1_proj, p0_proj, mask, cols, rows);
+      // 1. Rack footprint quad
+      rasterizeQuad(seg_p0, seg_p1, seg_p2, seg_p3, mask, cols, rows, chmBytes);
+
+      // 2. Projected rack face quad
+      rasterizeQuad(seg_p0_proj, seg_p1_proj, seg_p2_proj, seg_p3_proj, mask, cols, rows, chmBytes);
+
+      // 3. Bridging quads
+      rasterizeQuad(seg_p3, seg_p2, seg_p2_proj, seg_p3_proj, mask, cols, rows, chmBytes);
+      rasterizeQuad(seg_p0, seg_p1, seg_p1_proj, seg_p0_proj, mask, cols, rows, chmBytes);
+    }
   }
 
   return mask;

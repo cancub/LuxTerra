@@ -17,7 +17,7 @@ import { PlaybackEngine } from './components/PlaybackEngine.js';
 import { PVConfigPanel } from './components/PVConfigPanel.js';
 import { SolarDashboard } from './components/SolarDashboard.js';
 import { SolarPanel3DLayer } from './components/SolarPanel3DLayer.js';
-import { rasterizePanelShadowMask } from './utils/maskDecoder.js';
+import { rasterizePanelShadowMask, base64ToBytes } from './utils/maskDecoder.js';
 import { runSimulation } from './services/api.js';
 import {
   loadAppState,
@@ -174,6 +174,7 @@ if (appContainer) {
   let currentPolygon = null;
   let currentContextBbox = null;
   let currentSimulationData = null;
+  let currentChmBytes = null;
   let baseSimulationConfig = {
     gcr: 1.0,
     moduleEfficiency: 0.20,
@@ -205,7 +206,8 @@ if (appContainer) {
             metric.solar_elevation_deg,
             meta.patch_bounds_wgs84,
             meta.grid_rows,
-            meta.grid_cols
+            meta.grid_cols,
+            currentChmBytes
           );
         }
 
@@ -418,6 +420,7 @@ if (appContainer) {
       const data = await runSimulation(payload, abortController.signal);
       if (abortController.signal.aborted) return;
       currentSimulationData = data;
+      currentChmBytes = data.chm_base64 ? base64ToBytes(data.chm_base64) : null;
       baseSimulationConfig = {
         deploymentMode: data.metadata.deployment_mode,
         gcr: data.metadata.effective_gcr,
@@ -506,6 +509,7 @@ if (appContainer) {
       shadowCanvasLayer.clear();
       solarPanel3DLayer.clear();
       currentSimulationData = null;
+      currentChmBytes = null;
       solarDashboard.setSimulationData(null);
     }
   });
