@@ -86,13 +86,13 @@ export class ShadowCanvasLayer {
    * and requests a MapLibre repaint.
    * Supports single terrain bitmasks, dual terrain + canopy bitmasks, and unified panel ground shadows.
    */
-  renderFrame(base64Mask, rows, cols, canopyMask = null, panelShadowBytes = null) {
+  renderFrame(base64Mask, rows, cols, canopyMask = null, panelShadowBytes = null, canopyShadeLevels = null) {
     if (!base64Mask || rows <= 0 || cols <= 0) {
       this.clear();
       return;
     }
 
-    this.shadowRenderer.renderMask(base64Mask, rows, cols, canopyMask, panelShadowBytes);
+    this.shadowRenderer.renderMask(base64Mask, rows, cols, canopyMask, panelShadowBytes, canopyShadeLevels);
 
     const source = this.map.getSource(this.sourceId);
     if (source && typeof source.play === 'function') {

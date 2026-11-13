@@ -108,3 +108,61 @@ def validate_patch_slices(
 
     return patch_H, patch_W, py_start, px_start
 
+
+REFERENCE_TREE_PATH_M = 5.0
+
+
+def compute_canopy_step_3d_m(step_dist: float, tan_alpha: float) -> float:
+    """
+    Computes the 3D ray path length traversed per horizontal ray step,
+    clamped at 4x horizontal step for near-zenith angles.
+    """
+    return float(step_dist) * min(4.0, math.sqrt(1.0 + float(tan_alpha) * float(tan_alpha)))
+
+
+def compute_canopy_transmittance_grid(
+    canopy_path_m: np.ndarray,
+    canopy_transmittance: float,
+    reference_path_m: float = REFERENCE_TREE_PATH_M
+) -> np.ndarray:
+    """
+    Applies the Beer-Lambert law to cumulative 3D canopy path length (meters):
+      T(r, c) = exp(-mu * L(r, c))
+    where mu = -ln(tau) / reference_path_m, calibrated so a single reference tree
+    of thickness `reference_path_m` (default 5m) transmits `canopy_transmittance`.
+    Two 5m trees along a ray yield L = 10m and T = tau^2, matching one 10m tree.
+    """
+    path = np.asarray(canopy_path_m, dtype=np.float32)
+    tau = float(canopy_transmittance)
+    if tau >= 1.0:
+        return np.ones(path.shape, dtype=np.float32)
+    if tau <= 0.0:
+        return np.where(path > 0.0, np.float32(0.0), np.float32(1.0)).astype(np.float32)
+
+    mu = np.float32(-math.log(tau) / max(0.5, float(reference_path_m)))
+    return np.exp(-mu * np.maximum(path, np.float32(0.0))).astype(np.float32)
+
+
+def quantize_canopy_shade_levels(
+    canopy_path_m: np.ndarray,
+    canopy_transmittance: float,
+    reference_path_m: float = REFERENCE_TREE_PATH_M
+) -> np.ndarray:
+    """
+    Quantizes stacked canopy shade (1 - T_canopy) into discrete step-function levels:
+      - 0: unshaded (T >= 0.99)
+      - 1..6: progressively darker green canopy shade steps
+      - 7: maximum shade (T < 0.015, effectively blocked by stacked trees)
+    """
+    t_grid = compute_canopy_transmittance_grid(canopy_path_m, canopy_transmittance, reference_path_m)
+    shade = 1.0 - t_grid
+    levels = np.zeros(t_grid.shape, dtype=np.uint8)
+    # 6 green steps across (0.01, 0.985]
+    in_green = (t_grid < 0.99) & (t_grid >= 0.015)
+    if np.any(in_green):
+        # Map shade in (0.01, 0.985] -> 1..6
+        scaled = np.clip(np.ceil((shade[in_green] / 0.985) * 6.0), 1, 6).astype(np.uint8)
+        levels[in_green] = scaled
+    levels[t_grid < 0.015] = 7
+    return levels
+

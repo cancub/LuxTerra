@@ -7,7 +7,12 @@ from typing import List, Tuple
 import numpy as np
 
 from ...interfaces.occlusion_engine import OcclusionEngine
-from .ray_math import calculate_ray_step, compute_receiver_altitude_grid, validate_patch_slices
+from .ray_math import (
+    calculate_ray_step,
+    compute_canopy_step_3d_m,
+    compute_receiver_altitude_grid,
+    validate_patch_slices,
+)
 
 
 class NumPyOcclusionEngine(OcclusionEngine):
@@ -115,7 +120,7 @@ class NumPyOcclusionEngine(OcclusionEngine):
             for az, el in sun_angles
         ]
 
-    def compute_dual_shadow_mask(
+    def _compute_dual_shadow_with_path(
         self,
         dtm_grid: np.ndarray,
         dsm_grid: np.ndarray,
@@ -129,16 +134,18 @@ class NumPyOcclusionEngine(OcclusionEngine):
         ground_stand_height_m: float = 1.5,
         include_tree_canopy: bool = True,
         top_of_canopy: bool = False
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Computes dual binary shadow masks (terrain_mask, canopy_mask) on CPU.
+        Computes dual binary shadow masks (terrain_mask, canopy_mask) and
+        cumulative 3D canopy path length in meters (canopy_path_m) on CPU.
         """
         patch_H, patch_W, y_offset, x_offset = self._validate_slices(dtm_grid, patch_slice_y, patch_slice_x)
         ray_params = calculate_ray_step(solar_azimuth_deg, solar_elevation_deg, resolution_m, max_search_radius_m)
 
         if not ray_params.is_daylight:
-            zeros = np.zeros((patch_H, patch_W), dtype=np.uint8)
-            return zeros, zeros.copy()
+            zeros_u8 = np.zeros((patch_H, patch_W), dtype=np.uint8)
+            zeros_f32 = np.zeros((patch_H, patch_W), dtype=np.float32)
+            return zeros_u8, zeros_u8.copy(), zeros_f32
 
         H, W = dtm_grid.shape
 
@@ -155,6 +162,7 @@ class NumPyOcclusionEngine(OcclusionEngine):
 
         terrain_unshaded = np.ones((patch_H, patch_W), dtype=bool)
         canopy_unshaded = np.ones((patch_H, patch_W), dtype=bool)
+        canopy_path_m = np.zeros((patch_H, patch_W), dtype=np.float32)
 
         r0_f = r0.astype(np.float32)
         c0_f = c0.astype(np.float32)
@@ -162,6 +170,7 @@ class NumPyOcclusionEngine(OcclusionEngine):
         s_dc = np.float32(ray_params.step_dc)
         t_alpha = np.float32(ray_params.tan_alpha)
         s_dist = np.float32(ray_params.step_dist)
+        step_3d_m = np.float32(compute_canopy_step_3d_m(ray_params.step_dist, ray_params.tan_alpha))
 
         for s in range(1, ray_params.max_steps + 1):
             if not np.any(terrain_unshaded):
@@ -224,8 +233,65 @@ class NumPyOcclusionEngine(OcclusionEngine):
                     cr = active_r[canopy_occluded]
                     cc = active_c[canopy_occluded]
                     canopy_unshaded[cr, cc] = False
+                    canopy_path_m[cr, cc] += step_3d_m
 
-        return terrain_unshaded.astype(np.uint8), canopy_unshaded.astype(np.uint8)
+        return terrain_unshaded.astype(np.uint8), canopy_unshaded.astype(np.uint8), canopy_path_m
+
+    def compute_dual_shadow_mask(
+        self,
+        dtm_grid: np.ndarray,
+        dsm_grid: np.ndarray,
+        patch_slice_y: slice,
+        patch_slice_x: slice,
+        solar_azimuth_deg: float,
+        solar_elevation_deg: float,
+        resolution_m: float = 1.0,
+        max_search_radius_m: float = 1000.0,
+        is_rooftop: bool = True,
+        ground_stand_height_m: float = 1.5,
+        include_tree_canopy: bool = True,
+        top_of_canopy: bool = False
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Computes dual binary shadow masks (terrain_mask, canopy_mask) on CPU.
+        """
+        t_m, c_m, _ = self._compute_dual_shadow_with_path(
+            dtm_grid, dsm_grid, patch_slice_y, patch_slice_x,
+            solar_azimuth_deg, solar_elevation_deg, resolution_m, max_search_radius_m,
+            is_rooftop, ground_stand_height_m, include_tree_canopy, top_of_canopy
+        )
+        return t_m, c_m
+
+    def compute_dual_shadow_masks_with_path_batch(
+        self,
+        dtm_grid: np.ndarray,
+        dsm_grid: np.ndarray,
+        patch_slice_y: slice,
+        patch_slice_x: slice,
+        sun_angles: List[Tuple[float, float]],
+        resolution_m: float = 1.0,
+        max_search_radius_m: float = 1000.0,
+        is_rooftop: bool = True,
+        ground_stand_height_m: float = 1.5,
+        include_tree_canopy: bool = True,
+        top_of_canopy: bool = False,
+        include_path: bool = True
+    ) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
+        terrain_list = []
+        canopy_list = []
+        path_list = []
+        for az, el in sun_angles:
+            t_m, c_m, p_m = self._compute_dual_shadow_with_path(
+                dtm_grid, dsm_grid, patch_slice_y, patch_slice_x,
+                az, el, resolution_m, max_search_radius_m,
+                is_rooftop, ground_stand_height_m, include_tree_canopy,
+                top_of_canopy=top_of_canopy
+            )
+            terrain_list.append(t_m)
+            canopy_list.append(c_m)
+            if include_path:
+                path_list.append(p_m)
+        return terrain_list, canopy_list, path_list
 
     def compute_dual_shadow_masks_batch(
         self,

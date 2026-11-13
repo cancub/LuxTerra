@@ -10,6 +10,17 @@ export const SHADOW_PIXEL_WORD = TERRAIN_SHADOW_WORD; // Backwards compatibility
 // RGBA: (22, 60, 45, 0.45) => Little-endian 32-bit unsigned word: (115 << 24) | (45 << 16) | (60 << 8) | 22
 export const CANOPY_SHADOW_WORD = (((115 << 24) | (45 << 16) | (60 << 8) | 22) >>> 0);  // 0x732d3c16
 
+// Stepped green-to-dark-shadow canopy gradient (levels 1..6); level 7+ saturates to TERRAIN_SHADOW_WORD
+const rgbaWord = (r, g, b, a) => (((a << 24) | (b << 16) | (g << 8) | r) >>> 0);
+export const CANOPY_SHADE_WORDS = [
+  CANOPY_SHADOW_WORD,             // Level 1: light tree canopy (baseline tau)
+  rgbaWord(20, 54, 43, 126),      // Level 2
+  rgbaWord(19, 48, 42, 137),      // Level 3
+  rgbaWord(17, 42, 40, 148),      // Level 4
+  rgbaWord(16, 36, 39, 159),      // Level 5
+  rgbaWord(15, 30, 38, 170),      // Level 6: dense stacked canopy
+];
+
 export const SUN_PIXEL_WORD = 0x00000000; // 100% transparent
 
 /**
@@ -94,7 +105,7 @@ export function decodeBitmaskToImageData(base64Str, rows, cols, ctx, panelShadow
  *   - panel shadow = TERRAIN_SHADOW_WORD
  *   - geological + panel shadow = TERRAIN_SHADOW_WORD (no darkening)
  */
-export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols, ctx, panelShadowBytes = null) {
+export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols, ctx, panelShadowBytes = null, canopyShadeB64 = null) {
   const totalPixels = rows * cols;
   const imgData = ctx ? ctx.createImageData(cols, rows) : { data: new Uint8ClampedArray(totalPixels * 4) };
   const data32 = new Uint32Array(imgData.data.buffer);
@@ -103,6 +114,9 @@ export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols,
 
   const packedTerrain = terrainB64 ? base64ToBytes(terrainB64) : null;
   const packedCanopy = canopyB64 ? base64ToBytes(canopyB64) : null;
+  const canopyShadeBytes = canopyShadeB64
+    ? (typeof canopyShadeB64 === 'string' ? base64ToBytes(canopyShadeB64) : canopyShadeB64)
+    : null;
 
   if (!packedCanopy) {
     return decodeBitmaskToImageData(terrainB64, rows, cols, ctx, panelShadowBytes);
@@ -126,8 +140,19 @@ export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols,
       if (!isTerrainSun || inPanelShadow) {
         // Geological terrain shadow and panel ground shadow take precedence over tree canopy shade
         data32[pixelIdx++] = TERRAIN_SHADOW_WORD;
+      } else if (canopyShadeBytes && pixelIdx < canopyShadeBytes.length) {
+        const shadeLevel = canopyShadeBytes[pixelIdx];
+        if (shadeLevel >= 7) {
+          data32[pixelIdx++] = TERRAIN_SHADOW_WORD;
+        } else if (shadeLevel >= 1) {
+          data32[pixelIdx++] = CANOPY_SHADE_WORDS[shadeLevel - 1];
+        } else if (!isCanopySun) {
+          data32[pixelIdx++] = CANOPY_SHADOW_WORD;
+        } else {
+          data32[pixelIdx++] = SUN_PIXEL_WORD;
+        }
       } else if (!isCanopySun) {
-        // Tree canopy shadow
+        // Legacy binary tree canopy shadow
         data32[pixelIdx++] = CANOPY_SHADOW_WORD;
       } else {
         // Direct sunlight

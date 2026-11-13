@@ -68,12 +68,14 @@ void raymarch_dual_surface_kernel(
     const float* __restrict__ dsm,            // Surface elevation (canopy + structures): (H, W)
     unsigned char* __restrict__ terrain_mask, // Output: 1 = unshaded, 0 = terrain shaded (patch_H, patch_W)
     unsigned char* __restrict__ canopy_mask,  // Output: 1 = unshaded, 0 = canopy shaded (patch_H, patch_W)
+    float* __restrict__ canopy_path_m,        // Output: cumulative 3D canopy path length in meters
     int H, int W,
     int patch_y_offset, int patch_x_offset,
     int patch_H, int patch_W,
     float step_dr, float step_dc,
     float tan_alpha,
     float step_dist,
+    float step_3d_m,
     int max_steps,
     int is_rooftop,                           // 1 = rooftop, 0 = ground mount
     float ground_stand_height_m,              // e.g. 1.5m
@@ -100,6 +102,7 @@ void raymarch_dual_surface_kernel(
 
     unsigned char is_terrain_unshaded = 1;
     unsigned char is_canopy_unshaded = 1;
+    float acc_canopy_path_m = 0.0f;
 
     for (int s = 1; s <= max_steps; ++s) {
         float r_f = (float)r0 + (float)s * step_dr;
@@ -147,6 +150,7 @@ void raymarch_dual_surface_kernel(
             if (z_dsm_sampled > z_ray) {
                 // Blocked by tree canopy or elevated structure
                 is_canopy_unshaded = 0;
+                acc_canopy_path_m += step_3d_m;
             }
         }
     }
@@ -154,6 +158,9 @@ void raymarch_dual_surface_kernel(
     int out_idx = py * patch_W + px;
     terrain_mask[out_idx] = is_terrain_unshaded;
     canopy_mask[out_idx] = is_canopy_unshaded;
+    if (canopy_path_m != 0) {
+        canopy_path_m[out_idx] = acc_canopy_path_m;
+    }
 }
 
 extern "C" __global__

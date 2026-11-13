@@ -8,6 +8,7 @@ import {
   base64ToBytes,
   TERRAIN_SHADOW_WORD,
   CANOPY_SHADOW_WORD,
+  CANOPY_SHADE_WORDS,
   SHADOW_PIXEL_WORD,
   SUN_PIXEL_WORD
 } from '../src/utils/maskDecoder.js';
@@ -183,4 +184,21 @@ test('rasterizePanelShadowMask truncates panel shadow ray when hitting trees tal
       assert.equal(shadowWithCanopy[r * cols + c], 0, `Row ${r} inside dense 20m forest must have zero panel ground shadow`);
     }
   }
+});
+
+test('decodeDualBitmasksToImageData renders stepped green canopy shade levels and max shade saturation', () => {
+  const terrainB64 = Buffer.from([0xFF]).toString('base64');
+  const canopyB64 = Buffer.from([0x80]).toString('base64');
+  const shadeLevels = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7]);
+  const shadeB64 = Buffer.from(shadeLevels).toString('base64');
+
+  const imgData = decodeDualBitmasksToImageData(terrainB64, canopyB64, 1, 8, null, null, shadeB64);
+  const data32 = new Uint32Array(imgData.data.buffer);
+
+  assert.equal(data32[0], SUN_PIXEL_WORD, 'Level 0 is transparent sun');
+  assert.equal(data32[1], CANOPY_SHADOW_WORD, 'Level 1 matches baseline green canopy word');
+  for (let lvl = 1; lvl <= 6; lvl++) {
+    assert.equal(data32[lvl], CANOPY_SHADE_WORDS[lvl - 1], `Level ${lvl} uses CANOPY_SHADE_WORDS[${lvl - 1}]`);
+  }
+  assert.equal(data32[7], TERRAIN_SHADOW_WORD, 'Level 7+ saturates to TERRAIN_SHADOW_WORD');
 });

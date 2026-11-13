@@ -198,6 +198,10 @@ if (appContainer) {
         const canopyMaskStr = (currentSimulationData.visual_canopy_masks && currentSimulationData.visual_canopy_masks[metric.mask_index])
           || (currentSimulationData.canopy_masks ? currentSimulationData.canopy_masks[metric.mask_index] : null);
 
+        const canopyShadeStr = currentSimulationData.canopy_shade_levels
+          ? currentSimulationData.canopy_shade_levels[metric.mask_index]
+          : null;
+
         let panelShadowBytes = null;
         if (solarPanel3DLayer.isVisible() && currentSimulationData.layout) {
           panelShadowBytes = rasterizePanelShadowMask(
@@ -211,7 +215,7 @@ if (appContainer) {
           );
         }
 
-        shadowCanvasLayer.renderFrame(maskStr, meta.grid_rows, meta.grid_cols, canopyMaskStr, panelShadowBytes);
+        shadowCanvasLayer.renderFrame(maskStr, meta.grid_rows, meta.grid_cols, canopyMaskStr, panelShadowBytes, canopyShadeStr);
         solarPanel3DLayer.updateSunPosition(
           metric.solar_azimuth_deg,
           metric.solar_elevation_deg,

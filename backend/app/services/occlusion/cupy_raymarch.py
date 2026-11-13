@@ -12,7 +12,7 @@ from .cuda_kernels import (
     get_compiled_dual_raymarch_kernel,
     get_compiled_svf_kernel,
 )
-from .ray_math import calculate_ray_step, validate_patch_slices
+from .ray_math import calculate_ray_step, compute_canopy_step_3d_m, validate_patch_slices
 
 
 class CuPyOcclusionEngine(OcclusionEngine):
@@ -191,6 +191,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
             1
         )
 
+        step_3d_m = compute_canopy_step_3d_m(ray_params.step_dist, ray_params.tan_alpha)
         self.dual_kernel(
             grid_dim,
             block_dim,
@@ -199,6 +200,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
                 d_dsm,
                 d_terrain_mask,
                 d_canopy_mask,
+                np.uintp(0),
                 np.int32(H),
                 np.int32(W),
                 np.int32(y_offset),
@@ -209,6 +211,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
                 np.float32(ray_params.step_dc),
                 np.float32(ray_params.tan_alpha),
                 np.float32(ray_params.step_dist),
+                np.float32(step_3d_m),
                 np.int32(ray_params.max_steps),
                 np.int32(1 if is_rooftop else 0),
                 np.float32(ground_stand_height_m),
@@ -233,9 +236,31 @@ class CuPyOcclusionEngine(OcclusionEngine):
         include_tree_canopy: bool = True,
         top_of_canopy: bool = False
     ) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        t_list, c_list, _ = self.compute_dual_shadow_masks_with_path_batch(
+            dtm_grid, dsm_grid, patch_slice_y, patch_slice_x, sun_angles,
+            resolution_m, max_search_radius_m, is_rooftop, ground_stand_height_m,
+            include_tree_canopy, top_of_canopy, include_path=False
+        )
+        return t_list, c_list
+
+    def compute_dual_shadow_masks_with_path_batch(
+        self,
+        dtm_grid: np.ndarray,
+        dsm_grid: np.ndarray,
+        patch_slice_y: slice,
+        patch_slice_x: slice,
+        sun_angles: List[Tuple[float, float]],
+        resolution_m: float = 1.0,
+        max_search_radius_m: float = 1000.0,
+        is_rooftop: bool = True,
+        ground_stand_height_m: float = 1.5,
+        include_tree_canopy: bool = True,
+        top_of_canopy: bool = False,
+        include_path: bool = True
+    ) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
         """
-        Batch-computes dual shadow masks across multiple sun angles.
-        Uploads both DTM and DSM fields to VRAM ONCE.
+        Batch-computes dual shadow masks (and optional 3D canopy path length in meters)
+        across multiple sun angles. Uploads both DTM and DSM fields to VRAM ONCE.
         """
         patch_H, patch_W, y_offset, x_offset = self._validate_slices(dtm_grid, patch_slice_y, patch_slice_x)
         cp = self.cp
@@ -256,11 +281,15 @@ class CuPyOcclusionEngine(OcclusionEngine):
         num_angles = len(sun_angles)
         d_terrain_batch = cp.zeros((num_angles, patch_H, patch_W), dtype=cp.uint8)
         d_canopy_batch = cp.zeros((num_angles, patch_H, patch_W), dtype=cp.uint8)
+        d_path_batch = cp.zeros((num_angles, patch_H, patch_W), dtype=cp.float32) if include_path else None
 
         for idx, (azimuth, elevation) in enumerate(sun_angles):
             ray_params = calculate_ray_step(azimuth, elevation, resolution_m, max_search_radius_m)
             if not ray_params.is_daylight:
                 continue
+
+            step_3d_m = compute_canopy_step_3d_m(ray_params.step_dist, ray_params.tan_alpha)
+            path_ptr = d_path_batch[idx] if include_path else np.uintp(0)
 
             self.dual_kernel(
                 grid_dim,
@@ -270,6 +299,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
                     d_dsm,
                     d_terrain_batch[idx],
                     d_canopy_batch[idx],
+                    path_ptr,
                     np.int32(H),
                     np.int32(W),
                     np.int32(y_offset),
@@ -280,6 +310,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
                     np.float32(ray_params.step_dc),
                     np.float32(ray_params.tan_alpha),
                     np.float32(ray_params.step_dist),
+                    np.float32(step_3d_m),
                     np.int32(ray_params.max_steps),
                     np.int32(1 if is_rooftop else 0),
                     np.float32(ground_stand_height_m),
@@ -291,11 +322,12 @@ class CuPyOcclusionEngine(OcclusionEngine):
         # Single device-to-host PCIe transfer for all timesteps
         h_terrain = cp.asnumpy(d_terrain_batch)
         h_canopy = cp.asnumpy(d_canopy_batch)
+        h_path = cp.asnumpy(d_path_batch) if include_path else None
 
-        terrain_results = [h_terrain[i] for i in range(num_angles)]
-        canopy_results = [h_canopy[i] for i in range(num_angles)]
-
-        return terrain_results, canopy_results
+        t_list = [h_terrain[i] for i in range(num_angles)]
+        c_list = [h_canopy[i] for i in range(num_angles)]
+        p_list = [h_path[i] for i in range(num_angles)] if include_path else []
+        return t_list, c_list, p_list
 
     def compute_sky_view_factor(
         self,

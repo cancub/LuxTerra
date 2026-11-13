@@ -27,6 +27,7 @@ from ..interfaces.pv_model import PVSystemModel
 from .elevation.geo_utils import transform_geometry
 from .serializer import encode_masks_batch, encode_mask_bitmask
 from .solar.phenology import calculate_canopy_transmittance
+from .occlusion.ray_math import compute_canopy_transmittance_grid, quantize_canopy_shade_levels
 from .pv.packing_engine import PVPackingEngine
 from .pv.self_shading import (
     calculate_array_self_shading_fraction,
@@ -181,23 +182,8 @@ class SimulationOrchestrator:
             is_rooftop = (request.deployment_mode == DeploymentMode.ROOFTOP)
             stand_height = 0.0 if is_rooftop else 1.5
 
-            daylight_masks, daylight_canopy_masks = self.occlusion_engine.compute_dual_shadow_masks_batch(
-                dtm_grid=dtm_grid,
-                dsm_grid=dsm_grid,
-                patch_slice_y=patch_slice_y,
-                patch_slice_x=patch_slice_x,
-                sun_angles=daylight_angle_pairs,
-                resolution_m=request.resolution_m,
-                max_search_radius_m=request.buffer_meters,
-                is_rooftop=is_rooftop,
-                ground_stand_height_m=stand_height,
-                include_tree_canopy=has_canopy
-            )
-
-            visual_daylight_masks = None
-            visual_daylight_canopy_masks = None
-            if has_canopy and not is_rooftop:
-                visual_daylight_masks, visual_daylight_canopy_masks = self.occlusion_engine.compute_dual_shadow_masks_batch(
+            if has_canopy and hasattr(self.occlusion_engine, "compute_dual_shadow_masks_with_path_batch"):
+                daylight_masks, daylight_canopy_masks, daylight_canopy_paths = self.occlusion_engine.compute_dual_shadow_masks_with_path_batch(
                     dtm_grid=dtm_grid,
                     dsm_grid=dsm_grid,
                     patch_slice_y=patch_slice_y,
@@ -207,9 +193,60 @@ class SimulationOrchestrator:
                     max_search_radius_m=request.buffer_meters,
                     is_rooftop=is_rooftop,
                     ground_stand_height_m=stand_height,
-                    include_tree_canopy=True,
-                    top_of_canopy=True
+                    include_tree_canopy=has_canopy
                 )
+            else:
+                daylight_masks, daylight_canopy_masks = self.occlusion_engine.compute_dual_shadow_masks_batch(
+                    dtm_grid=dtm_grid,
+                    dsm_grid=dsm_grid,
+                    patch_slice_y=patch_slice_y,
+                    patch_slice_x=patch_slice_x,
+                    sun_angles=daylight_angle_pairs,
+                    resolution_m=request.resolution_m,
+                    max_search_radius_m=request.buffer_meters,
+                    is_rooftop=is_rooftop,
+                    ground_stand_height_m=stand_height,
+                    include_tree_canopy=has_canopy
+                )
+                daylight_canopy_paths = []
+
+            daylight_canopy_transmittance = [
+                compute_canopy_transmittance_grid(p, canopy_transmittance)
+                for p in daylight_canopy_paths
+            ] if daylight_canopy_paths else []
+
+            visual_daylight_masks = None
+            visual_daylight_canopy_masks = None
+            visual_daylight_paths = daylight_canopy_paths if (has_canopy and is_rooftop and daylight_canopy_paths) else None
+            if has_canopy and not is_rooftop:
+                if hasattr(self.occlusion_engine, "compute_dual_shadow_masks_with_path_batch"):
+                    visual_daylight_masks, visual_daylight_canopy_masks, visual_daylight_paths = self.occlusion_engine.compute_dual_shadow_masks_with_path_batch(
+                        dtm_grid=dtm_grid,
+                        dsm_grid=dsm_grid,
+                        patch_slice_y=patch_slice_y,
+                        patch_slice_x=patch_slice_x,
+                        sun_angles=daylight_angle_pairs,
+                        resolution_m=request.resolution_m,
+                        max_search_radius_m=request.buffer_meters,
+                        is_rooftop=is_rooftop,
+                        ground_stand_height_m=stand_height,
+                        include_tree_canopy=True,
+                        top_of_canopy=True
+                    )
+                else:
+                    visual_daylight_masks, visual_daylight_canopy_masks = self.occlusion_engine.compute_dual_shadow_masks_batch(
+                        dtm_grid=dtm_grid,
+                        dsm_grid=dsm_grid,
+                        patch_slice_y=patch_slice_y,
+                        patch_slice_x=patch_slice_x,
+                        sun_angles=daylight_angle_pairs,
+                        resolution_m=request.resolution_m,
+                        max_search_radius_m=request.buffer_meters,
+                        is_rooftop=is_rooftop,
+                        ground_stand_height_m=stand_height,
+                        include_tree_canopy=True,
+                        top_of_canopy=True
+                    )
 
             # Vectorized calculation of clear-sky irradiance for all daytime frames
             daylight_times = timestamps[daylight_indices]
@@ -219,8 +256,11 @@ class SimulationOrchestrator:
         else:
             daylight_masks = []
             daylight_canopy_masks = []
+            daylight_canopy_paths = []
+            daylight_canopy_transmittance = []
             visual_daylight_masks = None
             visual_daylight_canopy_masks = None
+            visual_daylight_paths = None
             daylight_irradiance = []
 
         # 4b. Synthesize maximal ground-mount solar panel layout (fixed civil layout with seasonal table tilt)
@@ -418,6 +458,11 @@ class SimulationOrchestrator:
 
                 mask = daylight_masks[daylight_counter]
                 canopy_m = daylight_canopy_masks[daylight_counter] if has_canopy else None
+                canopy_t_grid = (
+                    daylight_canopy_transmittance[daylight_counter]
+                    if (has_canopy and daylight_counter < len(daylight_canopy_transmittance))
+                    else None
+                )
                 irradiance = daylight_irradiance[daylight_counter]
 
                 if use_discrete_panels:
@@ -502,7 +547,16 @@ class SimulationOrchestrator:
 
                             unblocked_direct = max(0.0, direct_mod_w - self_loss)
 
-                            if not canopy_lit and unblocked_direct > 0.0:
+                            if canopy_t_grid is not None:
+                                local_tau = float(canopy_t_grid[r, c])
+                                if local_tau < 0.999 and unblocked_direct > 0.0:
+                                    num_canopy_shaded += 1
+                                    canopy_loss = unblocked_direct * (1.0 - local_tau)
+                                    direct_reaching = unblocked_direct * local_tau
+                                else:
+                                    canopy_loss = 0.0
+                                    direct_reaching = unblocked_direct
+                            elif not canopy_lit and unblocked_direct > 0.0:
                                 num_canopy_shaded += 1
                                 canopy_loss = unblocked_direct * (1.0 - canopy_transmittance)
                                 direct_reaching = unblocked_direct * canopy_transmittance
@@ -575,10 +629,14 @@ class SimulationOrchestrator:
                     canopy_shaded_pct_list.append(canopy_shaded_pct)
 
                     if t_unshaded_cells > 0:
-                        canopy_loss_kw = round(
-                            (canopy_shaded_cells / t_unshaded_cells) * unblocked_direct_kw * (1.0 - canopy_transmittance),
-                            3
-                        )
+                        if canopy_t_grid is not None:
+                            avg_canopy_loss_frac = float(np.mean(1.0 - canopy_t_grid[t_unshaded]))
+                            canopy_loss_kw = round(unblocked_direct_kw * avg_canopy_loss_frac, 3)
+                        else:
+                            canopy_loss_kw = round(
+                                (canopy_shaded_cells / t_unshaded_cells) * unblocked_direct_kw * (1.0 - canopy_transmittance),
+                                3
+                            )
                     else:
                         canopy_loss_kw = 0.0
 
@@ -678,6 +736,16 @@ class SimulationOrchestrator:
                 visual_daylight_masks, visual_daylight_canopy_masks
             )
 
+        encoded_canopy_shade_levels = None
+        if visual_daylight_paths:
+            encoded_canopy_shade_levels = []
+            for p_grid in visual_daylight_paths:
+                lvl = quantize_canopy_shade_levels(p_grid, canopy_transmittance)
+                if polygon_mask is not None and not has_context_expansion:
+                    lvl = lvl.copy()
+                    lvl[~polygon_mask] = 0
+                encoded_canopy_shade_levels.append(base64.b64encode(lvl.tobytes()).decode("ascii"))
+
         # Encode nighttime masks (0 = shaded inside shape, 1 = transparent outside)
         # When context_expansion is active, night covers the whole visual context boundary!
         night_grid = np.zeros((patch_h, patch_w), dtype=np.uint8)
@@ -760,6 +828,7 @@ class SimulationOrchestrator:
             canopy_masks=encoded_canopy_masks,
             visual_masks=encoded_visual_masks,
             visual_canopy_masks=encoded_visual_canopy_masks,
+            canopy_shade_levels=encoded_canopy_shade_levels,
             canopy_transmittance=canopy_transmittance,
             layout=layout,
             night_mask=encoded_night_mask,

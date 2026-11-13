@@ -24,7 +24,7 @@ export class ShadowRenderer {
    * Supports single terrain bitmasks, dual terrain + canopy bitmasks, and unified panel ground shadows.
    * Returns the updated canvas element or ImageData.
    */
-  renderMask(base64Str, rows, cols, canopyBase64Str = null, panelShadowBytes = null) {
+  renderMask(base64Str, rows, cols, canopyBase64Str = null, panelShadowBytes = null, canopyShadeBase64Str = null) {
     if (!base64Str || rows <= 0 || cols <= 0) {
       this.clear();
       return this.canvas;
@@ -40,7 +40,7 @@ export class ShadowRenderer {
     }
 
     const imgData = canopyBase64Str
-      ? decodeDualBitmasksToImageData(base64Str, canopyBase64Str, rows, cols, this.ctx, panelShadowBytes)
+      ? decodeDualBitmasksToImageData(base64Str, canopyBase64Str, rows, cols, this.ctx, panelShadowBytes, canopyShadeBase64Str)
       : decodeBitmaskToImageData(base64Str, rows, cols, this.ctx, panelShadowBytes);
 
     if (this.ctx) {

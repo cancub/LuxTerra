@@ -524,4 +524,74 @@ def test_top_of_canopy_visual_shadows():
         assert np.array_equal(c_over_gpu, c_over)
 
 
+def test_stacked_canopy_beer_lambert_equivalence():
+    """
+    Verifies Beer-Lambert canopy path accumulation:
+    1. Two 5m trees in series produce the same accumulated path length and
+       transmittance as one 10m tree.
+    2. Transmittance drops monotonically with stacked trees.
+    3. Quantization maps 0 shade -> 0, single tree -> 1..6, and saturation -> 7.
+    4. CPU and GPU path-length ray-marchers match closely.
+    """
+    from app.services.occlusion.ray_math import (
+        compute_canopy_transmittance_grid,
+        quantize_canopy_shade_levels,
+    )
+
+    dtm = np.full((100, 100), 100.0, dtype=np.float32)
+
+    # Case A: Two 5m-wide trees (cols 50..54 and 60..64)
+    dsm_two_5m = dtm.copy()
+    dsm_two_5m[:, 50:55] = 125.0
+    dsm_two_5m[:, 60:65] = 125.0
+
+    # Case B: One 10m-wide tree (cols 55..64)
+    dsm_one_10m = dtm.copy()
+    dsm_one_10m[:, 55:65] = 125.0
+
+    # Case C: One 5m-wide tree (cols 55..59)
+    dsm_one_5m = dtm.copy()
+    dsm_one_5m[:, 55:60] = 125.0
+
+    patch_y = slice(40, 60)
+    patch_x = slice(20, 35)
+    angles = [(90.0, 20.0)]
+
+    cpu_engine = NumPyOcclusionEngine()
+    _, c_two_5m, p_two_5m = cpu_engine.compute_dual_shadow_masks_with_path_batch(
+        dtm, dsm_two_5m, patch_y, patch_x, angles, is_rooftop=False, ground_stand_height_m=1.5
+    )
+    _, c_one_10m, p_one_10m = cpu_engine.compute_dual_shadow_masks_with_path_batch(
+        dtm, dsm_one_10m, patch_y, patch_x, angles, is_rooftop=False, ground_stand_height_m=1.5
+    )
+    _, c_one_5m, p_one_5m = cpu_engine.compute_dual_shadow_masks_with_path_batch(
+        dtm, dsm_one_5m, patch_y, patch_x, angles, is_rooftop=False, ground_stand_height_m=1.5
+    )
+
+    tau = 0.25
+    t_two_5m = compute_canopy_transmittance_grid(p_two_5m[0], tau)
+    t_one_10m = compute_canopy_transmittance_grid(p_one_10m[0], tau)
+    t_one_5m = compute_canopy_transmittance_grid(p_one_5m[0], tau)
+
+    # At col 25 (local col 5), ray passes completely through both tree zones
+    assert np.isclose(p_two_5m[0][10, 5], p_one_10m[0][10, 5], atol=1.5)
+    assert np.isclose(t_two_5m[10, 5], t_one_10m[10, 5], rtol=0.15)
+    assert t_one_5m[10, 5] > t_two_5m[10, 5] > 0.0
+
+    # Quantization check (path lengths in meters: 0m -> 0, 1m < 5m < 20m -> 7)
+    levels = quantize_canopy_shade_levels(np.array([[0.0, 1.0, 5.0, 20.0]], dtype=np.float32), tau)
+    assert levels[0, 0] == 0
+    assert 1 <= levels[0, 1] < levels[0, 2] <= 6
+    assert levels[0, 3] == 7
+
+    if is_gpu_available():
+        gpu_engine = CuPyOcclusionEngine()
+        _, cg_two_5m, pg_two_5m = gpu_engine.compute_dual_shadow_masks_with_path_batch(
+            dtm, dsm_two_5m, patch_y, patch_x, angles, is_rooftop=False, ground_stand_height_m=1.5
+        )
+        assert np.array_equal(cg_two_5m[0], c_two_5m[0])
+        assert np.allclose(pg_two_5m[0], p_two_5m[0], atol=1e-4)
+
+
+
 
