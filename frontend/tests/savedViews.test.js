@@ -5,7 +5,8 @@ import {
   STORAGE_KEY,
   filterLegacyPresets,
   areShapesEqual,
-  areViewsEqual
+  areViewsEqual,
+  ShapeHistory
 } from '../src/components/ShapeToolbar.js';
 
 test('filterLegacyPresets removes default presets and preserves user shapes', () => {
@@ -110,4 +111,48 @@ test('areViewsEqual tolerates tiny flyTo rounding and detects camera changes', (
     areViewsEqual(baseView, { center: [-73.75123, 45.56456], zoom: 17.2, pitch: 50, bearing: -20 }),
     false
   );
+});
+
+test('ShapeHistory supports undo, redo, and truncating forward history on new edits', () => {
+  const s0 = {
+    bbox: [-73.755, 45.560, -73.748, 45.568],
+    polygon: [[-73.755, 45.560], [-73.750, 45.568], [-73.748, 45.563], [-73.755, 45.560]],
+    contextBbox: null
+  };
+  const s1 = { ...s0, contextBbox: [-73.756, 45.559, -73.747, 45.569] };
+  const s2 = {
+    ...s1,
+    polygon: [[-73.756, 45.560], [-73.750, 45.568], [-73.748, 45.563], [-73.756, 45.560]]
+  };
+  const s3 = {
+    ...s0,
+    polygon: [[-73.754, 45.560], [-73.750, 45.568], [-73.748, 45.563], [-73.754, 45.560]]
+  };
+
+  const history = new ShapeHistory();
+  history.reset(s0);
+  assert.equal(history.canUndo(), false);
+  assert.equal(history.canRedo(), false);
+
+  // Duplicate push is ignored
+  assert.equal(history.push({ ...s0 }), false);
+
+  assert.equal(history.push(s1), true);
+  assert.equal(history.push(s2), true);
+  assert.equal(history.canUndo(), true);
+  assert.equal(history.canRedo(), false);
+
+  assert.equal(areShapesEqual(history.undo(), s1), true);
+  assert.equal(history.canUndo(), true);
+  assert.equal(history.canRedo(), true);
+
+  assert.equal(areShapesEqual(history.undo(), s0), true);
+  assert.equal(history.canUndo(), false);
+  assert.equal(history.canRedo(), true);
+
+  assert.equal(areShapesEqual(history.redo(), s1), true);
+  // New edit while in middle truncates forward s2
+  assert.equal(history.push(s3), true);
+  assert.equal(history.canRedo(), false);
+  assert.equal(areShapesEqual(history.current(), s3), true);
 });

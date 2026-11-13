@@ -70,6 +70,65 @@ export function areViewsEqual(a, b) {
   return dLng < 1e-4 && dLat < 1e-4 && dZoom < 0.05 && dPitch < 1.0 && dBearing < 1.0;
 }
 
+/**
+ * Pure history stack for shape snapshots supporting undo (back), redo (forward),
+ * and pushing new snapshots while truncating any forward branch.
+ */
+export class ShapeHistory {
+  constructor() {
+    this.entries = [];
+    this.index = -1;
+  }
+
+  reset(initialSnapshot = null) {
+    if (initialSnapshot) {
+      this.entries = [initialSnapshot];
+      this.index = 0;
+    } else {
+      this.entries = [];
+      this.index = -1;
+    }
+  }
+
+  push(snapshot) {
+    if (!snapshot) return false;
+    const current = this.current();
+    if (current && areShapesEqual(current, snapshot)) {
+      return false;
+    }
+    this.entries = this.entries.slice(0, this.index + 1);
+    this.entries.push(snapshot);
+    this.index = this.entries.length - 1;
+    return true;
+  }
+
+  current() {
+    return this.index >= 0 && this.index < this.entries.length
+      ? this.entries[this.index]
+      : null;
+  }
+
+  canUndo() {
+    return this.index > 0;
+  }
+
+  canRedo() {
+    return this.index >= 0 && this.index < this.entries.length - 1;
+  }
+
+  undo() {
+    if (!this.canUndo()) return null;
+    this.index -= 1;
+    return this.current();
+  }
+
+  redo() {
+    if (!this.canRedo()) return null;
+    this.index += 1;
+    return this.current();
+  }
+}
+
 export class ShapeToolbar {
   constructor({
     map,
@@ -94,6 +153,8 @@ export class ShapeToolbar {
     this.isViewModified = false;
     this.isSavingNewName = false;
     this.isRestoringCamera = false;
+    this.isApplyingHistory = false;
+    this.shapeHistory = new ShapeHistory();
 
     this.render();
     this.bindEvents();
@@ -152,7 +213,11 @@ export class ShapeToolbar {
         pitch: matchedView.pitch,
         bearing: matchedView.bearing
       };
+      this.shapeHistory.reset(this.loadedShapeSnapshot);
+      this.shapeHistory.push(currentShape);
       this.refreshModificationState();
+    } else {
+      this.shapeHistory.reset(currentShape);
     }
   }
 
@@ -240,6 +305,27 @@ export class ShapeToolbar {
           </svg>
           <span class="context-label">+ Shadow Box</span>
         </button>
+        <div class="edit-bar-divider"></div>
+        <button class="btn btn-sm btn-history-back" title="Back (undo last shape change)" disabled>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 14 4 9 9 4"></polyline>
+            <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
+          </svg>
+        </button>
+        <button class="btn btn-sm btn-history-forward" title="Forward (redo shape change)" disabled>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 14 20 9 15 4"></polyline>
+            <path d="M4 20v-7a4 4 0 0 1 4-4h12"></path>
+          </svg>
+        </button>
+        <button class="btn btn-sm btn-shape-reset" title="Reset shape to original state" disabled>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path>
+            <polyline points="3 3 3 8 8 8"></polyline>
+          </svg>
+          <span>Reset</span>
+        </button>
+        <div class="edit-bar-divider"></div>
         <button class="btn btn-sm btn-save-shape" title="Save changes to shape" disabled>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
@@ -282,6 +368,9 @@ export class ShapeToolbar {
     this.editBar = this.element.querySelector('.shape-edit-bar');
     this.btnContextToggle = this.element.querySelector('.btn-context-toggle');
     this.contextLabel = this.element.querySelector('.context-label');
+    this.btnHistoryBack = this.element.querySelector('.btn-history-back');
+    this.btnHistoryForward = this.element.querySelector('.btn-history-forward');
+    this.btnShapeReset = this.element.querySelector('.btn-shape-reset');
     this.btnSaveShape = this.element.querySelector('.btn-save-shape');
     this.btnSaveView = this.element.querySelector('.btn-save-view');
     this.btnClear = this.element.querySelector('.btn-shape-clear');
@@ -329,6 +418,7 @@ export class ShapeToolbar {
       this.setActiveViewId(null);
       this.loadedShapeSnapshot = null;
       this.loadedViewSnapshot = null;
+      this.shapeHistory.reset();
       this.hideSaveNamePopover();
       this.boxDrawer.startDrawing('rectangle');
     });
@@ -339,6 +429,7 @@ export class ShapeToolbar {
       this.setActiveViewId(null);
       this.loadedShapeSnapshot = null;
       this.loadedViewSnapshot = null;
+      this.shapeHistory.reset();
       this.hideSaveNamePopover();
       this.boxDrawer.startDrawing('polygon');
     });
@@ -375,6 +466,32 @@ export class ShapeToolbar {
       this.saveChangesToActiveView();
     });
 
+    // History Back / Forward / Reset
+    this.btnHistoryBack.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const prev = this.shapeHistory.undo();
+      if (prev) {
+        this.applyShapeSnapshot(prev);
+      }
+    });
+
+    this.btnHistoryForward.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const next = this.shapeHistory.redo();
+      if (next) {
+        this.applyShapeSnapshot(next);
+      }
+    });
+
+    this.btnShapeReset.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const original = this.getOriginalShapeSnapshot();
+      if (!original) return;
+      this.shapeHistory.push(original);
+      this.applyShapeSnapshot(original);
+      this.showToast('Reset shape to original state', 'info');
+    });
+
     // Clear shape
     this.btnClear.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -382,6 +499,7 @@ export class ShapeToolbar {
       this.setActiveViewId(null);
       this.loadedShapeSnapshot = null;
       this.loadedViewSnapshot = null;
+      this.shapeHistory.reset();
       this.hideSaveNamePopover();
       this.refreshModificationState();
     });
@@ -466,6 +584,26 @@ export class ShapeToolbar {
     };
   }
 
+  getOriginalShapeSnapshot() {
+    return this.loadedShapeSnapshot || this.shapeHistory.entries[0] || null;
+  }
+
+  applyShapeSnapshot(snapshot) {
+    if (!snapshot) return;
+    this.isApplyingHistory = true;
+    try {
+      this.boxDrawer.setSelection({
+        bbox: snapshot.bbox ? [...snapshot.bbox] : null,
+        polygon: snapshot.polygon ? snapshot.polygon.map(pt => [...pt]) : null,
+        contextBbox: snapshot.contextBbox ? [...snapshot.contextBbox] : null,
+        shapeType: 'polygon'
+      });
+    } finally {
+      this.isApplyingHistory = false;
+    }
+    this.refreshModificationState();
+  }
+
   updateDrawerState(state) {
     if (!state) return;
 
@@ -477,6 +615,12 @@ export class ShapeToolbar {
 
     if (state.hasShape && state.dimensions) {
       this.editBar.style.display = 'flex';
+      if (!this.isApplyingHistory) {
+        const currentShape = this.getCurrentShapeSnapshot();
+        if (currentShape) {
+          this.shapeHistory.push(currentShape);
+        }
+      }
       if (state.hasContext) {
         this.btnContextToggle.classList.add('active', 'btn-accent');
         this.contextLabel.textContent = 'Shadow Box ✓';
@@ -512,6 +656,13 @@ export class ShapeToolbar {
           : false;
       }
     }
+
+    // Update Back / Forward / Reset buttons
+    this.btnHistoryBack.disabled = !this.shapeHistory.canUndo();
+    this.btnHistoryForward.disabled = !this.shapeHistory.canRedo();
+    const original = this.getOriginalShapeSnapshot();
+    const canReset = Boolean(currentShape && original && !areShapesEqual(currentShape, original));
+    this.btnShapeReset.disabled = !canReset;
 
     // Update Save shape button highlight
     this.btnSaveShape.disabled = !this.isShapeModified;
@@ -635,6 +786,7 @@ export class ShapeToolbar {
       pitch: view.pitch,
       bearing: view.bearing
     };
+    this.shapeHistory.reset(this.loadedShapeSnapshot);
     this.isRestoringCamera = true;
     this.closeDropdowns();
     this.hideSaveNamePopover();

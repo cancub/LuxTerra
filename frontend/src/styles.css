@@ -170,6 +170,13 @@ body, html {
   border-radius: 8px;
 }
 
+.edit-bar-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border-card);
+  margin: 0 2px;
+}
+
 .shape-edit-bar .btn:disabled {
   opacity: 0.38;
   cursor: not-allowed;
