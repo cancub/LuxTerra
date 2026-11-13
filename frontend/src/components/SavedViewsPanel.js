@@ -84,7 +84,6 @@ export class SavedViewsPanel {
           <span>Projects</span>
         </span>
         <div class="panel-header-actions">
-          <span class="views-count-badge pill">${this.savedViews.length} saved</span>
           <button class="collapse-btn" title="Collapse / Expand Panel">
             <svg class="chevron-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="18 15 12 9 6 15"></polyline>
@@ -159,7 +158,6 @@ export class SavedViewsPanel {
     this.header = this.element.querySelector('.panel-header');
     this.body = this.element.querySelector('.panel-body');
     this.chevron = this.element.querySelector('.chevron-icon');
-    this.countBadge = this.element.querySelector('.views-count-badge');
     this.geocoderSlot = this.element.querySelector('.geocoder-slot');
 
     this.btnPolygon = this.element.querySelector('.btn-polygon');
@@ -353,7 +351,6 @@ export class SavedViewsPanel {
 
   renderSavedList() {
     this.savedListContainer.innerHTML = '';
-    this.countBadge.textContent = `${this.savedViews.length} saved`;
 
     if (this.savedViews.length === 0) {
       this.savedListContainer.innerHTML = `
