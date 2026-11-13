@@ -128,8 +128,8 @@ test('BoxDrawer click-and-hold (drag to draw) creates screen-parallel rectangle'
   assert.equal(drawer.isDrawingActive, false);
   assert.equal(drawer.rectState, 'idle');
   assert.ok(selectionResult !== null);
-  assert.equal(selectionResult.shapeType, 'rectangle');
-  assert.equal(selectionResult.isRectangle, true);
+  assert.equal(selectionResult.shapeType, 'polygon');
+  assert.equal(selectionResult.isRectangle, false);
   assert.equal(selectionResult.polygon.length, 5); // 4 corners + closed ring
   assert.ok(selectionResult.dimensions.areaM2 > 0);
 });
@@ -164,8 +164,8 @@ test('BoxDrawer click-and-release (click to start, click to finish) mode', () =>
   assert.equal(drawer.isDrawingActive, false);
   assert.equal(drawer.rectState, 'idle');
   assert.ok(selectionResult !== null);
-  assert.equal(selectionResult.shapeType, 'rectangle');
-  assert.equal(selectionResult.isRectangle, true);
+  assert.equal(selectionResult.shapeType, 'polygon');
+  assert.equal(selectionResult.isRectangle, false);
   assert.equal(selectionResult.polygon.length, 5);
 });
 
@@ -214,7 +214,7 @@ test('BoxDrawer follows map orientation under rotated bearing (bearing 45)', () 
   map.trigger('mouseup', { point: p2, lngLat: lngLat2 });
 
   assert.ok(selectionResult !== null);
-  assert.equal(selectionResult.shapeType, 'rectangle');
+  assert.equal(selectionResult.shapeType, 'polygon');
 
   // Project the 4 resulting polygon corners back to screen coordinates
   const screenCorners = selectionResult.polygon.slice(0, 4).map(pt => map.project(pt));
@@ -467,5 +467,30 @@ test('BoxDrawer: edge vertex handles only appear when mouse hovers within 10px s
   assert.equal(drawer.handlesVisible, true);
   map.trigger('mouseout', {});
   assert.equal(drawer.handlesVisible, false);
+});
+
+test('BoxDrawer: rectangle-created shape can delete a vertex into a triangle and insert midpoints', () => {
+  const map = createMockMap(0);
+  const drawer = new BoxDrawer(map, null, () => {});
+
+  drawer.startDrawing('rectangle');
+  const p1 = { x: 100, y: 100 };
+  const p2 = { x: 200, y: 200 };
+  map.trigger('mousedown', { point: p1, lngLat: map.unproject(p1) });
+  map.trigger('mousemove', { point: p2, lngLat: map.unproject(p2), originalEvent: { clientX: 200, clientY: 200 } });
+  map.trigger('mouseup', { point: p2, lngLat: map.unproject(p2) });
+
+  assert.equal(drawer.currentPolygon.length, 5); // 4 corners + closing point
+
+  // Delete one corner -> becomes a 3-vertex triangle (4 coords with closing point)
+  drawer.deletePolygonVertex(1);
+  assert.equal(drawer.currentPolygon.length, 4);
+
+  // Hover near an edge -> midpoint appears and can be inserted
+  const v0 = map.project(drawer.currentPolygon[0]);
+  const v1 = map.project(drawer.currentPolygon[1]);
+  const midPt = { x: (v0.x + v1.x) / 2, y: (v0.y + v1.y) / 2 };
+  map.trigger('mousemove', { point: midPt, lngLat: map.unproject(midPt), originalEvent: { clientX: midPt.x, clientY: midPt.y } });
+  assert.ok(drawer.activeMidpoint !== null, 'Midpoint handle must appear on edge of rectangle-originated shape');
 });
 

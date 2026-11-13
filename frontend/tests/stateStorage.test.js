@@ -142,7 +142,7 @@ test('stateStorage: saves and loads full application state', () => {
   assert.equal(loaded.map.pitch, 52.4);
   assert.equal(loaded.map.bearing, -35.2);
   assert.equal(loaded.layer, 'esri');
-  assert.equal(loaded.selection.shapeType, 'rectangle');
+  assert.equal(loaded.selection.shapeType, 'polygon');
   assert.equal(loaded.selection.polygon.length, 5);
   assert.equal(loaded.date, '2026-09-22');
 });
