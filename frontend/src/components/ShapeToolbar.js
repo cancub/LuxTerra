@@ -361,7 +361,9 @@ export class ShapeToolbar {
       this.map.on('moveend', () => {
         if (this.isRestoringCamera) {
           this.isRestoringCamera = false;
-          return;
+          if (this.activeViewId !== null) {
+            this.loadedViewSnapshot = this.getCurrentCameraSnapshot();
+          }
         }
         this.refreshModificationState();
       });
@@ -443,10 +445,14 @@ export class ShapeToolbar {
       this.isViewModified = false;
     } else {
       this.isShapeModified = !areShapesEqual(currentShape, this.loadedShapeSnapshot);
-      const currentView = this.getCurrentCameraSnapshot();
-      this.isViewModified = this.loadedViewSnapshot
-        ? !areViewsEqual(currentView, this.loadedViewSnapshot)
-        : false;
+      if (this.isRestoringCamera) {
+        this.isViewModified = false;
+      } else {
+        const currentView = this.getCurrentCameraSnapshot();
+        this.isViewModified = this.loadedViewSnapshot
+          ? !areViewsEqual(currentView, this.loadedViewSnapshot)
+          : false;
+      }
     }
 
     // Update Save shape button highlight
@@ -576,6 +582,17 @@ export class ShapeToolbar {
     this.hideSaveNamePopover();
     this.renderSavedList();
     this.onRestoreView(view);
+    if (areViewsEqual(this.getCurrentCameraSnapshot(), this.loadedViewSnapshot)) {
+      this.isRestoringCamera = false;
+    } else {
+      setTimeout(() => {
+        if (this.isRestoringCamera) {
+          this.isRestoringCamera = false;
+          this.loadedViewSnapshot = this.getCurrentCameraSnapshot();
+          this.refreshModificationState();
+        }
+      }, 1600);
+    }
     this.refreshModificationState();
   }
 
