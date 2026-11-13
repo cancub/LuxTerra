@@ -103,13 +103,13 @@ export class SavedViewsPanel {
         <!-- Section 2: Shape Selection Type -->
         <div class="panel-section">
           <div class="shape-type-buttons">
-            <button class="btn btn-sm btn-shape-type btn-polygon" title="Draw multi-point oblong area. Hold Shift or click #1 to close, Enter to finish.">
+            <button class="btn btn-sm btn-shape-type btn-polygon" title="Free-draw multi-point solar area. Hold Shift or click #1 to close, Enter to finish.">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
                 <polyline points="2 17 12 22 22 17"></polyline>
                 <polyline points="2 12 12 17 22 12"></polyline>
               </svg>
-              <span>Oblong</span>
+              <span>Free-draw</span>
             </button>
             <button class="btn btn-sm btn-shape-type btn-rectangle" title="Click & drag on the map to draw a rectangular solar area.">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -314,15 +314,9 @@ export class SavedViewsPanel {
     const selection = this.boxDrawer.getSelection();
     let detail = '📷 Camera View';
 
-    if (selection.shapeType === 'rectangle' || selection.isRectangle) {
+    if ((selection.polygon || selection.bbox) && selection.dimensions) {
       const area = Math.round(selection.dimensions.areaM2).toLocaleString('en-US');
-      detail = `⬛ Rectangle • ${area} m²`;
-    } else if (selection.polygon && selection.dimensions) {
-      const area = Math.round(selection.dimensions.areaM2).toLocaleString('en-US');
-      detail = `🔷 Oblong • ${area} m²`;
-    } else if (selection.bbox && selection.dimensions) {
-      const area = Math.round(selection.dimensions.areaM2).toLocaleString('en-US');
-      detail = `⬛ Rectangle • ${area} m²`;
+      detail = `🔷 Area • ${area} m²`;
     }
 
     const defaultName = selection.bbox
@@ -343,7 +337,7 @@ export class SavedViewsPanel {
       bbox: selection.bbox ? selection.bbox.map(n => Number(n.toFixed(5))) : null,
       polygon: selection.polygon ? selection.polygon.map(pt => [Number(pt[0].toFixed(5)), Number(pt[1].toFixed(5))]) : null,
       contextBbox: selection.contextBbox ? selection.contextBbox.map(n => Number(n.toFixed(5))) : null,
-      shapeType: selection.shapeType || (selection.isRectangle ? 'rectangle' : (selection.polygon ? 'polygon' : null)),
+      shapeType: (selection.polygon || selection.bbox) ? 'polygon' : null,
       date: date,
       createdAt: new Date().toISOString()
     };
