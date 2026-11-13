@@ -316,7 +316,7 @@ export class SavedViewsPanel {
 
     if ((selection.polygon || selection.bbox) && selection.dimensions) {
       const area = Math.round(selection.dimensions.areaM2).toLocaleString('en-US');
-      detail = `🔷 Area • ${area} m²`;
+      detail = `${area} m²`;
     }
 
     const defaultName = selection.bbox
@@ -384,7 +384,7 @@ export class SavedViewsPanel {
         </div>
       `;
       item.querySelector('.view-item-name').textContent = view.name;
-      item.querySelector('.view-item-detail').textContent = view.detail || 'View & Shape';
+      item.querySelector('.view-item-detail').textContent = (view.detail || 'View & Shape').replace(/^.*•\s*/, '');
 
       // Click to fly & restore
       const triggerRestore = (e) => {
