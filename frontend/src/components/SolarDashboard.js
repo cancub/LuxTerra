@@ -18,6 +18,7 @@ export class SolarDashboard {
     this.currentMetric = null;
     this.canopyTransmittance = 0.15;
     this.isShadeExpanded = true;
+    this.isArrayDetailsExpanded = false;
 
     this.render();
   }
@@ -34,29 +35,50 @@ export class SolarDashboard {
     this.element.style.transition = 'all 0.25s ease';
 
     this.element.innerHTML = `
-      <!-- Daily Energy Card (Displays daily energy, fixed optimal tilt, and panel array specs) -->
+      <!-- Daily Energy Card (Displays daily energy and an expandable Array Details section) -->
       <div class="daily-energy-card" style="background: rgba(0,0,0,0.25); border-radius: 8px; padding: 8px 12px; border: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; gap: 4px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-          <div style="display: flex; flex-direction: column; gap: 2px;">
-            <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Daily Energy</span>
-            <span class="optimal-tilt-badge" style="font-size: 0.68rem; color: #38bdf8; font-family: var(--font-mono); font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
-              Tilt: <span class="tilt-val">--°</span>
-            </span>
-          </div>
+          <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Daily Energy</span>
           <div style="display: flex; align-items: baseline; gap: 4px; white-space: nowrap; font-family: var(--font-mono); font-weight: 700; color: #10b981; font-size: 1.25rem; line-height: 1;">
             <span class="kwh-total">0.0</span> <span style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-left: 2px;">kWh</span>
           </div>
         </div>
 
-        <!-- Solar Array Specifications Row (Displays Panels, Installed DC kWp, and GCR) -->
-        <div class="array-specs-row" style="display: none; font-size: 0.68rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px; padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.06); justify-content: space-between; align-items: center;">
-          <div style="display: flex; gap: 5px; align-items: center; white-space: nowrap;">
-            <span class="array-panels-badge" style="color: #38bdf8; font-weight: 600;">-- Panels</span>
-            <span style="color: rgba(255,255,255,0.3);">•</span>
-            <span class="array-dc-badge" style="color: #fbbf24; font-weight: 600;">-- kWp</span>
-            <span class="array-dcac-badge" style="color: #a78bfa; font-weight: 500; font-size: 0.65rem;"></span>
+        <!-- Expandable Array Specifications Section -->
+        <div class="array-specs-row" style="display: none; flex-direction: column; gap: 4px; margin-top: 2px; padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.06);">
+          <div class="array-specs-header-row" role="button" tabindex="0" title="Click to toggle array details" style="display: flex; justify-content: space-between; align-items: center; font-size: 0.68rem; color: var(--text-muted); cursor: pointer; user-select: none; border-radius: 4px; padding: 2px 2px;">
+            <span style="display: flex; align-items: center; gap: 4px; font-weight: 600; letter-spacing: 0.02em;">
+              <span class="array-specs-chevron" style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; transition: transform 0.2s ease; transform: rotate(-90deg); color: #94a3b8;">
+                <svg style="width: 10px; height: 10px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </span>
+              <span>Array Details</span>
+            </span>
           </div>
-          <span class="array-gcr-badge" style="color: #94a3b8; font-size: 0.65rem;">GCR --%</span>
+
+          <div class="array-specs-details-container" style="display: none; flex-direction: column; gap: 3px; padding-left: 18px; border-left: 1px dashed rgba(255,255,255,0.12); margin-left: 6px; font-family: var(--font-mono); font-size: 0.72rem;">
+            <div class="array-spec-line" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
+              <span>Tilt</span>
+              <span class="tilt-val" style="color: #38bdf8; font-weight: 600;">--°</span>
+            </div>
+            <div class="array-spec-line" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
+              <span>Panels</span>
+              <span class="array-panels-badge" style="color: #38bdf8; font-weight: 600;">--</span>
+            </div>
+            <div class="array-spec-line" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
+              <span>Installed DC</span>
+              <span class="array-dc-badge" style="color: #fbbf24; font-weight: 600;">-- kWp</span>
+            </div>
+            <div class="array-spec-line array-dcac-row" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
+              <span>DC/AC Ratio</span>
+              <span class="array-dcac-badge" style="color: #a78bfa; font-weight: 600;">--</span>
+            </div>
+            <div class="array-spec-line" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
+              <span>GCR</span>
+              <span class="array-gcr-badge" style="color: #94a3b8; font-weight: 600;">--%</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -185,10 +207,27 @@ export class SolarDashboard {
     this.kwhTotal = this.element.querySelector('.kwh-total');
     this.tiltVal = this.element.querySelector('.tilt-val');
     this.arraySpecsRow = this.element.querySelector('.array-specs-row');
+    this.arraySpecsHeaderRow = this.element.querySelector('.array-specs-header-row');
+    this.arraySpecsDetails = this.element.querySelector('.array-specs-details-container');
+    this.arraySpecsChevron = this.element.querySelector('.array-specs-chevron');
     this.arrayPanelsBadge = this.element.querySelector('.array-panels-badge');
     this.arrayDcBadge = this.element.querySelector('.array-dc-badge');
+    this.arrayDcAcRow = this.element.querySelector('.array-dcac-row');
     this.arrayDcAcBadge = this.element.querySelector('.array-dcac-badge');
     this.arrayGcrBadge = this.element.querySelector('.array-gcr-badge');
+
+    if (this.arraySpecsHeaderRow) {
+      this.arraySpecsHeaderRow.addEventListener('click', () => {
+        this.toggleArrayDetailsExpanded();
+      });
+      this.arraySpecsHeaderRow.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          this.toggleArrayDetailsExpanded();
+        }
+      });
+    }
+    this.toggleArrayDetailsExpanded(false);
     this.diffuseOnlyOverlay = this.element.querySelector('.diffuse-only-overlay');
     this.subIncidentVal = this.element.querySelector('.sub-incident-val');
     this.subClearSkyVal = this.subIncidentVal; // Compatibility alias
@@ -239,6 +278,16 @@ export class SolarDashboard {
     }
     if (this.shadeChevron) {
       this.shadeChevron.style.transform = this.isShadeExpanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+    }
+  }
+
+  toggleArrayDetailsExpanded(forceState) {
+    this.isArrayDetailsExpanded = forceState !== undefined ? forceState : !this.isArrayDetailsExpanded;
+    if (this.arraySpecsDetails) {
+      this.arraySpecsDetails.style.display = this.isArrayDetailsExpanded ? 'flex' : 'none';
+    }
+    if (this.arraySpecsChevron) {
+      this.arraySpecsChevron.style.transform = this.isArrayDetailsExpanded ? 'rotate(0deg)' : 'rotate(-90deg)';
     }
   }
 
@@ -301,19 +350,20 @@ export class SolarDashboard {
 
     if (totalPanels && installedDcKw) {
       if (this.arraySpecsRow) this.arraySpecsRow.style.display = 'flex';
-      if (this.arrayPanelsBadge) this.arrayPanelsBadge.textContent = `${totalPanels.toLocaleString()} Panels`;
+      if (this.arrayPanelsBadge) this.arrayPanelsBadge.textContent = `${totalPanels.toLocaleString()}`;
       if (this.arrayDcBadge) this.arrayDcBadge.textContent = `${installedDcKw.toFixed(1)} kWp`;
       if (this.arrayGcrBadge) {
-        this.arrayGcrBadge.textContent = physicalGcr !== undefined ? `GCR ${(physicalGcr * 100).toFixed(1)}%` : '';
+        this.arrayGcrBadge.textContent = physicalGcr !== undefined ? `${(physicalGcr * 100).toFixed(1)}%` : '--%';
       }
       if (this.arrayDcAcBadge) {
         const peakKw = this.dailySummary.unshaded_peak_kw || this.dailySummary.peak_power_kw;
         if (peakKw && peakKw > 0) {
           const ratio = (installedDcKw / peakKw).toFixed(2);
-          this.arrayDcAcBadge.textContent = `(DC/AC ${ratio})`;
-          this.arrayDcAcBadge.style.display = 'inline';
+          this.arrayDcAcBadge.textContent = `${ratio}`;
+          if (this.arrayDcAcRow) this.arrayDcAcRow.style.display = 'flex';
         } else {
-          this.arrayDcAcBadge.style.display = 'none';
+          this.arrayDcAcBadge.textContent = '--';
+          if (this.arrayDcAcRow) this.arrayDcAcRow.style.display = 'none';
         }
       }
     } else {

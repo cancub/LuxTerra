@@ -189,12 +189,26 @@ test('SolarDashboard: displays ground-mount layout specifications in Daily Energ
   dashboard.setSimulationData(mockGroundMountData);
 
   assert.equal(dashboard.arraySpecsRow.style.display, 'flex');
-  assert.equal(dashboard.arrayPanelsBadge.textContent, '480 Panels');
-  assert.equal(dashboard.arrayDcBadge.textContent, '264.0 kWp');
-  assert.equal(dashboard.arrayGcrBadge.textContent, 'GCR 42.2%');
-  assert.equal(dashboard.arrayDcAcBadge.textContent, '(DC/AC 1.20)');
+  assert.equal(dashboard.isArrayDetailsExpanded, false);
+  assert.equal(dashboard.arraySpecsDetails.style.display, 'none');
 
-  // When cleared, layout row is hidden
+  // Expand array details section
+  dashboard.toggleArrayDetailsExpanded();
+  assert.equal(dashboard.isArrayDetailsExpanded, true);
+  assert.equal(dashboard.arraySpecsDetails.style.display, 'flex');
+
+  assert.equal(dashboard.tiltVal.textContent, '30.0°');
+  assert.equal(dashboard.arrayPanelsBadge.textContent, '480');
+  assert.equal(dashboard.arrayDcBadge.textContent, '264.0 kWp');
+  assert.equal(dashboard.arrayGcrBadge.textContent, '42.2%');
+  assert.equal(dashboard.arrayDcAcBadge.textContent, '1.20');
+
+  // Collapse again
+  dashboard.toggleArrayDetailsExpanded();
+  assert.equal(dashboard.isArrayDetailsExpanded, false);
+  assert.equal(dashboard.arraySpecsDetails.style.display, 'none');
+
+  // When cleared, layout section is hidden
   dashboard.setSimulationData(null);
   assert.equal(dashboard.arraySpecsRow.style.display, 'none');
 });
