@@ -139,13 +139,11 @@ export function validateSelection(selection) {
 
   if (!validBbox && !validPolygon) return null;
 
-  const shapeType = selection.shapeType === 'polygon' ? 'polygon' : 'rectangle';
-
   return {
     bbox: validBbox,
     polygon: validPolygon,
     contextBbox: validContextBbox,
-    shapeType
+    shapeType: 'polygon'
   };
 }
 

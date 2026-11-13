@@ -497,7 +497,7 @@ if (appContainer) {
         bbox: selection.bbox,
         polygon: selection.polygon,
         contextBbox: selection.contextBbox,
-        shapeType: selection.shapeType || (selection.isRectangle ? 'rectangle' : 'polygon')
+        shapeType: 'polygon'
       });
       triggerSimulation();
     } else {
@@ -544,7 +544,7 @@ if (appContainer) {
           bbox: view.bbox,
           polygon: view.polygon,
           contextBbox: view.contextBbox || null,
-          shapeType: view.shapeType || (view.detail && view.detail.includes('Rectangle') ? 'rectangle' : (view.polygon && view.polygon.length !== 5 ? 'polygon' : 'rectangle'))
+          shapeType: 'polygon'
         });
       } else {
         boxDrawer.clearSelection();
