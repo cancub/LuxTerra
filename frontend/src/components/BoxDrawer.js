@@ -517,21 +517,21 @@ export class BoxDrawer {
       return;
     }
 
-    this.shapeType = 'rectangle';
+    this.shapeType = 'polygon';
     this.currentPolygon = rectData.coordinates;
     this.currentBbox = rectData.bbox;
 
+    this.stopDrawing();
     this.renderFinalShape(rectData.coordinates, rectData.isClamped);
     this.updateHandles(rectData.coordinates, rectData.isClamped);
-    this.stopDrawing();
     this.notifyState();
 
     this.onSelectionComplete({
       bbox: rectData.bbox,
       polygon: rectData.coordinates,
       dimensions: rectData.dimensions,
-      shapeType: 'rectangle',
-      isRectangle: true
+      shapeType: 'polygon',
+      isRectangle: false
     });
   }
 
@@ -1297,27 +1297,6 @@ export class BoxDrawer {
   }
 
   onVertexDrag(newLngLat) {
-    if (this.shapeType === 'rectangle' && this.currentPolygon && this.currentPolygon.length >= 4) {
-      const idx = this.activeVertexIndex;
-      if (idx !== null && idx !== undefined && idx >= 0 && idx < 4) {
-        // Diagonally opposite corner is the fixed anchor: (idx + 2) % 4
-        const anchorPt = this.currentPolygon[(idx + 2) % 4];
-        const anchorLngLat = { lng: anchorPt[0], lat: anchorPt[1] };
-        const curScreen = this.map.project(newLngLat);
-        const rectData = this.computeScreenRectangle(anchorLngLat, curScreen);
-        if (rectData) {
-          this.currentPolygon = rectData.coordinates;
-          this.currentBbox = rectData.bbox;
-          this.renderFinalShape(rectData.coordinates, rectData.isClamped);
-          this.updateHandles(rectData.coordinates, rectData.isClamped);
-
-          const msg = `Resize: ${rectData.widthM.toFixed(0)}m × ${rectData.heightM.toFixed(0)}m · ${rectData.areaM2.toLocaleString('en-US', { maximumFractionDigits: 0 })} m²${rectData.isClamped ? ' (Max 100,000 m² reached)' : ''}`;
-          this.showTooltip(curScreen.x, curScreen.y, msg, rectData.isClamped);
-          return;
-        }
-      }
-    }
-
     const newCoord = [newLngLat.lng, newLngLat.lat];
 
     if (this.currentPolygon) {
@@ -1464,7 +1443,7 @@ export class BoxDrawer {
     }
     this.currentBbox = targetBbox;
     this.isClamped = targetBbox !== bbox;
-    this.shapeType = 'rectangle';
+    this.shapeType = 'polygon';
     const [w, s, e, n] = targetBbox;
     this.currentPolygon = [
       [w, n],
@@ -1480,8 +1459,8 @@ export class BoxDrawer {
       bbox: targetBbox,
       polygon: this.currentPolygon,
       dimensions: dims,
-      shapeType: 'rectangle',
-      isRectangle: true
+      shapeType: 'polygon',
+      isRectangle: false
     });
   }
 
@@ -1505,7 +1484,7 @@ export class BoxDrawer {
       isClamped = true;
     }
 
-    this.shapeType = shapeType || (finalPoints.length === 5 ? 'rectangle' : 'polygon');
+    this.shapeType = 'polygon';
     this.currentPolygon = finalPoints;
     this.currentBbox = dims.bbox;
     this.isClamped = isClamped;
@@ -1518,8 +1497,8 @@ export class BoxDrawer {
       bbox: dims.bbox,
       polygon: finalPoints,
       dimensions: dims,
-      shapeType: this.shapeType,
-      isRectangle: this.shapeType === 'rectangle'
+      shapeType: 'polygon',
+      isRectangle: false
     });
   }
 
@@ -1716,10 +1695,8 @@ export class BoxDrawer {
     let handleFeatures = [];
 
     if (Array.isArray(target) && target.length > 0 && Array.isArray(target[0])) {
-      // Polygon or screen-aligned rectangle vertices
+      // Unified polygon vertices
       const pts = openPolygonRing(target);
-
-      const rectCursors = ['nwse-resize', 'nesw-resize', 'nwse-resize', 'nesw-resize'];
 
       handleFeatures = pts.map((pt, idx) => ({
         type: 'Feature',
@@ -1727,7 +1704,7 @@ export class BoxDrawer {
         properties: {
           id: idx + 1,
           vertexIndex: idx,
-          cursor: this.shapeType === 'rectangle' ? rectCursors[idx % 4] : 'grab'
+          cursor: 'grab'
         },
         geometry: {
           type: 'Point',
