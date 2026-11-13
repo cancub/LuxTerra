@@ -9,7 +9,7 @@ import './styles.css';
 import { initMap } from './components/MapViewer.js';
 import { LayerToggle } from './components/LayerToggle.js';
 import { BoxDrawer } from './components/BoxDrawer.js';
-import { SavedViewsPanel } from './components/SavedViewsPanel.js';
+import { ShapeToolbar } from './components/ShapeToolbar.js';
 import { ShadowCanvasLayer } from './components/ShadowCanvasLayer.js';
 import { DateSelector } from './components/DateSelector.js';
 import { TimeScrubber } from './components/TimeScrubber.js';
@@ -34,28 +34,31 @@ if (appContainer) {
   appContainer.innerHTML = `
     <div id="map"></div>
     <div class="top-bar">
-      <div class="top-left-group" style="display: flex; align-items: center; gap: 8px;">
-        <button id="settings-cog-btn" class="glass-panel settings-cog-btn" title="PV System Configuration" aria-label="Settings">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-          </svg>
-        </button>
-        <div class="glass-panel brand-badge">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="5"></circle>
-            <line x1="12" y1="1" x2="12" y2="3"></line>
-            <line x1="12" y1="21" x2="12" y2="23"></line>
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-            <line x1="1" y1="12" x2="3" y2="12"></line>
-            <line x1="21" y1="12" x2="23" y2="12"></line>
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-          </svg>
-          <span>LuxTerra</span>
-          <span class="pill">QC Solar 1m</span>
+      <div class="top-left-column">
+        <div class="top-left-group" style="display: flex; align-items: center; gap: 8px;">
+          <button id="settings-cog-btn" class="glass-panel settings-cog-btn" title="PV System Configuration" aria-label="Settings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </button>
+          <div class="glass-panel brand-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <span>LuxTerra</span>
+            <span class="pill">QC Solar 1m</span>
+          </div>
         </div>
+        <div id="shape-toolbar-mount"></div>
       </div>
       <div class="top-right-controls" id="top-right-controls"></div>
     </div>
@@ -84,11 +87,6 @@ if (appContainer) {
     <!-- Notification Toasts -->
     <div class="toast-container" id="toast-container"></div>
 
-    <!-- Floating Right Sidebar Dock -->
-    <div class="right-dock" id="right-dock">
-      <div id="views-panel-mount"></div>
-    </div>
-
     <!-- Bottom Timeline Dock -->
     <div class="bottom-dock" id="bottom-dock">
       <div class="energy-metrics-mount" id="energy-metrics-mount"></div>
@@ -109,7 +107,7 @@ if (appContainer) {
     bearing: savedState.map.bearing,
     activeLayer: savedState.layer
   });
-  const viewsPanelMount = document.getElementById('views-panel-mount');
+  const shapeToolbarMount = document.getElementById('shape-toolbar-mount');
   const topRightControls = document.getElementById('top-right-controls');
   const dateSelectorMount = document.getElementById('date-selector-mount');
   const playbackControlsMount = document.getElementById('playback-controls-mount');
@@ -519,9 +517,9 @@ if (appContainer) {
     boxDrawer.setSelection(savedState.selection);
   }
 
-  new SavedViewsPanel({
+  new ShapeToolbar({
     map,
-    container: viewsPanelMount,
+    container: shapeToolbarMount,
     boxDrawer,
     dateSelector,
     onRestoreView: (view) => {
@@ -552,6 +550,7 @@ if (appContainer) {
     },
     showToast
   });
+  boxDrawer.notifyState();
 
   // 3D Solar Panels Toggle Button
   const panelsToggleBtn = document.createElement('button');

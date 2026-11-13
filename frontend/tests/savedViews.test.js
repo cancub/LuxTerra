@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 
 import {
   STORAGE_KEY,
-  filterLegacyPresets
-} from '../src/components/SavedViewsPanel.js';
+  filterLegacyPresets,
+  areShapesEqual,
+  areViewsEqual
+} from '../src/components/ShapeToolbar.js';
 
 test('filterLegacyPresets removes default presets and preserves user shapes', () => {
   const legacyData = [
@@ -55,4 +57,57 @@ test('Saved view serialization preserves camera, bbox, and polygon precision', (
   assert.deepEqual(parsed[0].center, [-73.75123, 45.56456]);
   assert.equal(parsed[0].polygon.length, 4);
   assert.equal(parsed[0].date, '2026-06-21');
+});
+
+test('areShapesEqual detects polygon and shadow container box modifications', () => {
+  const base = {
+    bbox: [-73.755, 45.560, -73.748, 45.568],
+    polygon: [
+      [-73.755, 45.560],
+      [-73.750, 45.568],
+      [-73.748, 45.563],
+      [-73.755, 45.560]
+    ],
+    contextBbox: null
+  };
+
+  assert.equal(areShapesEqual(base, { ...base }), true);
+  assert.equal(
+    areShapesEqual(base, { ...base, contextBbox: [-73.756, 45.559, -73.747, 45.569] }),
+    false
+  );
+  assert.equal(
+    areShapesEqual(base, {
+      ...base,
+      polygon: [
+        [-73.756, 45.560],
+        [-73.750, 45.568],
+        [-73.748, 45.563],
+        [-73.756, 45.560]
+      ]
+    }),
+    false
+  );
+});
+
+test('areViewsEqual tolerates tiny flyTo rounding and detects camera changes', () => {
+  const baseView = {
+    center: [-73.75123, 45.56456],
+    zoom: 16.5,
+    pitch: 50,
+    bearing: -20
+  };
+
+  assert.equal(
+    areViewsEqual(baseView, { center: [-73.75124, 45.56455], zoom: 16.51, pitch: 50, bearing: -20 }),
+    true
+  );
+  assert.equal(
+    areViewsEqual(baseView, { center: [-73.75223, 45.56456], zoom: 16.5, pitch: 50, bearing: -20 }),
+    false
+  );
+  assert.equal(
+    areViewsEqual(baseView, { center: [-73.75123, 45.56456], zoom: 17.2, pitch: 50, bearing: -20 }),
+    false
+  );
 });
