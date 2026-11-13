@@ -27,6 +27,7 @@ import { BoxDrawer } from '../src/components/BoxDrawer.js';
 function createMockMap(bearing = 0) {
   const eventHandlers = {};
   const sources = {};
+  const layers = {};
   const rad = (bearing * Math.PI) / 180;
   const cosB = Math.cos(rad);
   const sinB = Math.sin(rad);
@@ -40,7 +41,18 @@ function createMockMap(bearing = 0) {
         setData: (d) => { sources[id].data = d; }
       };
     },
-    addLayer: () => {},
+    addLayer: (layer) => {
+      layers[layer.id] = {
+        ...layer,
+        layout: { ...(layer.layout || {}) }
+      };
+    },
+    getLayer: (id) => layers[id],
+    setLayoutProperty: (id, prop, val) => {
+      if (layers[id]) {
+        layers[id].layout[prop] = val;
+      }
+    },
     setFeatureState: () => {},
     getCanvas: () => ({ style: {} }),
     dragPan: { disable: () => {}, enable: () => {} },
@@ -404,5 +416,56 @@ test('BoxDrawer: restores saved selection when style finishes loading', () => {
   assert.equal(mockMap.getSource('draw-box-source').data.features.length, 1);
   assert.ok(mockMap.getSource('draw-handles-source'));
   assert.equal(mockMap.getSource('draw-handles-source').data.features.length, 4);
+});
+
+test('BoxDrawer: edge vertex handles only appear when mouse hovers within 10px shell of shape', () => {
+  const map = createMockMap(0);
+  const drawer = new BoxDrawer(map, null, () => {});
+
+  // Create a rectangle from screen (500, 500) to (600, 600)
+  const p0 = map.unproject({ x: 500, y: 500 });
+  const p1 = map.unproject({ x: 600, y: 500 });
+  const p2 = map.unproject({ x: 600, y: 600 });
+  const p3 = map.unproject({ x: 500, y: 600 });
+
+  drawer.setSelection({
+    polygon: [
+      [p0.lng, p0.lat],
+      [p1.lng, p1.lat],
+      [p2.lng, p2.lat],
+      [p3.lng, p3.lat],
+      [p0.lng, p0.lat]
+    ],
+    shapeType: 'polygon'
+  });
+
+  // Initially (no mouse hover), handles must be hidden
+  assert.equal(drawer.handlesVisible, false);
+  assert.equal(map.getLayer('draw-handles-core').layout.visibility, 'none');
+
+  // Mouse > 10px outside the shape (e.g. 15px left of x=500 -> x=485, y=550) => hidden
+  map.trigger('mousemove', { point: { x: 485, y: 550 }, lngLat: map.unproject({ x: 485, y: 550 }) });
+  assert.equal(drawer.handlesVisible, false);
+  assert.equal(map.getLayer('draw-handles-core').layout.visibility, 'none');
+
+  // Mouse inside the 10px outside shell (e.g. 8px left of x=500 -> x=492, y=550) => visible
+  map.trigger('mousemove', { point: { x: 492, y: 550 }, lngLat: map.unproject({ x: 492, y: 550 }) });
+  assert.equal(drawer.handlesVisible, true);
+  assert.equal(map.getLayer('draw-handles-core').layout.visibility, 'visible');
+
+  // Mouse inside the shape (550, 550) => visible
+  map.trigger('mousemove', { point: { x: 550, y: 550 }, lngLat: map.unproject({ x: 550, y: 550 }) });
+  assert.equal(drawer.handlesVisible, true);
+
+  // Mouse moves > 10px outside again (480, 550) => hidden
+  map.trigger('mousemove', { point: { x: 480, y: 550 }, lngLat: map.unproject({ x: 480, y: 550 }) });
+  assert.equal(drawer.handlesVisible, false);
+  assert.equal(map.getLayer('draw-handles-core').layout.visibility, 'none');
+
+  // Mouse enters shell then leaves map => hidden
+  map.trigger('mousemove', { point: { x: 505, y: 505 }, lngLat: map.unproject({ x: 505, y: 505 }) });
+  assert.equal(drawer.handlesVisible, true);
+  map.trigger('mouseout', {});
+  assert.equal(drawer.handlesVisible, false);
 });
 
