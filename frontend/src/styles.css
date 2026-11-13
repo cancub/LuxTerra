@@ -312,14 +312,13 @@ body, html {
   justify-content: center;
   color: var(--text-primary);
   cursor: pointer;
-  border-radius: var(--radius-md);
+  border-radius: 10px;
   transition: all 0.2s ease;
 }
 
 .settings-cog-btn:hover {
   background: var(--panel-bg-hover);
   color: var(--accent-solar);
-  transform: rotate(30deg);
 }
 
 /* PV Configuration Settings Modal */
