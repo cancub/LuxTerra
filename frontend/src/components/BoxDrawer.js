@@ -68,6 +68,7 @@ export class BoxDrawer {
     this.hoveredHandleId = null;
     this.hoveredVertexIndex = null;
     this.activeMidpoint = null;
+    this.handlesVisible = false;
 
     this.initLayers();
     this.initTooltip();
@@ -219,10 +220,13 @@ export class BoxDrawer {
         }
       });
 
+      const initialVis = this.handlesVisible ? 'visible' : 'none';
+
       this.map.addLayer({
         id: 'draw-handles-glow',
         type: 'circle',
         source: 'draw-handles-source',
+        layout: { visibility: initialVis },
         paint: {
           'circle-radius': [
             'case',
@@ -248,6 +252,7 @@ export class BoxDrawer {
         id: 'draw-handles-core',
         type: 'circle',
         source: 'draw-handles-source',
+        layout: { visibility: initialVis },
         paint: {
           'circle-radius': [
             'case',
@@ -281,6 +286,7 @@ export class BoxDrawer {
         id: 'draw-handles-hit',
         type: 'circle',
         source: 'draw-handles-source',
+        layout: { visibility: initialVis },
         paint: {
           'circle-radius': 16,
           'circle-color': '#000000',
@@ -393,6 +399,7 @@ export class BoxDrawer {
     this.map.dragPan.disable();
     this.map.doubleClickZoom.disable();
     this.removeHandles();
+    this.setHandlesVisible(true);
 
     if (mode === 'rectangle') {
       this.showTooltip(0, 0, 'Click & drag, or click to start rectangle • Esc to cancel');
@@ -614,14 +621,17 @@ export class BoxDrawer {
       this.lastMouseLngLat = e.lngLat;
 
       if (!this.isDrawingActive) {
-        if (!this.isResizing && this.shapeType === 'polygon' && this.currentPolygon && !this.hoveredHandleId) {
+        if (!this.isResizing) {
+          this.updateHandlesHoverVisibility(e.point);
+        }
+        if (!this.isResizing && this.handlesVisible && this.shapeType === 'polygon' && this.currentPolygon && !this.hoveredHandleId) {
           const segData = this.findClosestSegment(e.point);
           if (segData && segData.distancePx <= 18) {
             this.showMidpoint(segData.segmentIndex, segData.midpoint);
           } else {
             this.clearMidpoint();
           }
-        } else if (this.activeMidpoint && this.hoveredHandleId) {
+        } else if (this.activeMidpoint && (this.hoveredHandleId || !this.handlesVisible)) {
           this.clearMidpoint();
         }
         return;
@@ -913,6 +923,13 @@ export class BoxDrawer {
       const segData = this.findClosestSegment(e.point);
       if (segData && segData.distancePx <= 22) {
         this.insertVertexAndStartDrag(segData.segmentIndex, segData.midpoint);
+      }
+    });
+
+    this.map.on('mouseout', () => {
+      if (!this.isDrawingActive && !this.isResizing) {
+        this.setHandlesVisible(false);
+        this.clearMidpoint();
       }
     });
   }
@@ -1233,6 +1250,7 @@ export class BoxDrawer {
 
   startVertexDrag(vertexIndex, cornerId, cursor) {
     this.isResizing = true;
+    this.setHandlesVisible(true);
     this.activeVertexIndex = vertexIndex;
     this.activeCornerId = cornerId;
     this.map.dragPan.disable();
@@ -1368,6 +1386,7 @@ export class BoxDrawer {
     this.activeVertexIndex = null;
     this.activeCornerId = null;
     this.hideTooltip();
+    this.updateHandlesHoverVisibility(this.lastMousePoint);
     if (this.currentPolygon) {
       const dims = computePolygonDimensions(this.currentPolygon);
       this.notifyState();
@@ -1756,6 +1775,101 @@ export class BoxDrawer {
         { clamped: isClamped }
       );
     });
+
+    if (this.isDrawingActive || this.isResizing) {
+      this.setHandlesVisible(true);
+    } else {
+      this.updateHandlesHoverVisibility(this.lastMousePoint);
+    }
+  }
+
+  /**
+   * Shows or hides the edge vertex handle layers.
+   */
+  setHandlesVisible(visible) {
+    this.handlesVisible = Boolean(visible);
+    if (typeof this.map.setLayoutProperty === 'function' && typeof this.map.getLayer === 'function') {
+      const vis = this.handlesVisible ? 'visible' : 'none';
+      ['draw-handles-glow', 'draw-handles-core', 'draw-handles-hit'].forEach((layerId) => {
+        if (this.map.getLayer(layerId)) {
+          this.map.setLayoutProperty(layerId, 'visibility', vis);
+        }
+      });
+    }
+  }
+
+  /**
+   * Updates handle visibility based on whether the cursor is within the 10px hover shell
+   * outside (or inside) the active shape.
+   */
+  updateHandlesHoverVisibility(screenPoint) {
+    if (!screenPoint) {
+      this.setHandlesVisible(false);
+      return;
+    }
+    this.setHandlesVisible(this.isPointInHoverShell(screenPoint, 10));
+  }
+
+  /**
+   * Returns true if `screenPoint` is inside the active shape or within `shellPx` pixels
+   * outside its boundary edges/corners.
+   */
+  isPointInHoverShell(screenPoint, shellPx = 10) {
+    if (!screenPoint) return false;
+
+    let ring = null;
+    if (this.currentPolygon && this.currentPolygon.length >= 3) {
+      ring = openPolygonRing(this.currentPolygon);
+    } else if (this.currentBbox && this.currentBbox.length === 4) {
+      const [lon1, lat1, lon2, lat2] = this.currentBbox;
+      const minLon = Math.min(lon1, lon2);
+      const maxLon = Math.max(lon1, lon2);
+      const minLat = Math.min(lat1, lat2);
+      const maxLat = Math.max(lat1, lat2);
+      ring = [
+        [minLon, maxLat],
+        [maxLon, maxLat],
+        [maxLon, minLat],
+        [minLon, minLat]
+      ];
+    }
+
+    if (!ring || ring.length < 3) return false;
+
+    const screenPts = ring.map((pt) => this.map.project(pt));
+    const n = screenPts.length;
+
+    // 1. Inside polygon check (ray casting)
+    let inside = false;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const xi = screenPts[i].x, yi = screenPts[i].y;
+      const xj = screenPts[j].x, yj = screenPts[j].y;
+      const intersect = ((yi > screenPoint.y) !== (yj > screenPoint.y)) &&
+        (screenPoint.x < ((xj - xi) * (screenPoint.y - yi)) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    if (inside) return true;
+
+    // 2. Within shellPx outside any boundary edge or corner
+    for (let i = 0; i < n; i++) {
+      const s1 = screenPts[i];
+      const s2 = screenPts[(i + 1) % n];
+      const dx = s2.x - s1.x;
+      const dy = s2.y - s1.y;
+      const lenSq = dx * dx + dy * dy;
+
+      let dist;
+      if (lenSq < 1e-6) {
+        dist = Math.hypot(screenPoint.x - s1.x, screenPoint.y - s1.y);
+      } else {
+        const t = Math.max(0, Math.min(1, ((screenPoint.x - s1.x) * dx + (screenPoint.y - s1.y) * dy) / lenSq));
+        dist = Math.hypot(screenPoint.x - (s1.x + t * dx), screenPoint.y - (s1.y + t * dy));
+      }
+
+      if (dist <= shellPx) return true;
+    }
+
+    return false;
   }
 
   showTooltip(x, y, textOrHtml, isClamped = false) {
