@@ -193,8 +193,10 @@ if (appContainer) {
     if (currentSimulationData) {
       const meta = currentSimulationData.metadata;
       if (metric.is_daylight && metric.mask_index !== null && currentSimulationData.masks) {
-        const maskStr = currentSimulationData.masks[metric.mask_index];
-        const canopyMaskStr = currentSimulationData.canopy_masks ? currentSimulationData.canopy_masks[metric.mask_index] : null;
+        const maskStr = (currentSimulationData.visual_masks && currentSimulationData.visual_masks[metric.mask_index])
+          || currentSimulationData.masks[metric.mask_index];
+        const canopyMaskStr = (currentSimulationData.visual_canopy_masks && currentSimulationData.visual_canopy_masks[metric.mask_index])
+          || (currentSimulationData.canopy_masks ? currentSimulationData.canopy_masks[metric.mask_index] : null);
 
         let panelShadowBytes = null;
         if (solarPanel3DLayer.isVisible() && currentSimulationData.layout) {

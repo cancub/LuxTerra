@@ -161,7 +161,8 @@ class CuPyOcclusionEngine(OcclusionEngine):
         max_search_radius_m: float = 1000.0,
         is_rooftop: bool = True,
         ground_stand_height_m: float = 1.5,
-        include_tree_canopy: bool = True
+        include_tree_canopy: bool = True,
+        top_of_canopy: bool = False
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Computes dual binary shadow masks (terrain_mask, canopy_mask) for a single sun angle.
@@ -212,6 +213,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
                 np.int32(1 if is_rooftop else 0),
                 np.float32(ground_stand_height_m),
                 np.int32(1 if include_tree_canopy else 0),
+                np.int32(1 if top_of_canopy else 0),
             )
         )
 
@@ -228,7 +230,8 @@ class CuPyOcclusionEngine(OcclusionEngine):
         max_search_radius_m: float = 1000.0,
         is_rooftop: bool = True,
         ground_stand_height_m: float = 1.5,
-        include_tree_canopy: bool = True
+        include_tree_canopy: bool = True,
+        top_of_canopy: bool = False
     ) -> Tuple[List[np.ndarray], List[np.ndarray]]:
         """
         Batch-computes dual shadow masks across multiple sun angles.
@@ -281,6 +284,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
                     np.int32(1 if is_rooftop else 0),
                     np.float32(ground_stand_height_m),
                     np.int32(1 if include_tree_canopy else 0),
+                    np.int32(1 if top_of_canopy else 0),
                 )
             )
 

@@ -57,7 +57,8 @@ class OcclusionEngine(ABC):
         max_search_radius_m: float = 1000.0,
         is_rooftop: bool = True,
         ground_stand_height_m: float = 1.5,
-        include_tree_canopy: bool = True
+        include_tree_canopy: bool = True,
+        top_of_canopy: bool = False
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Computes dual binary shadow masks (terrain_mask, canopy_mask) for a single sun angle.
@@ -75,7 +76,8 @@ class OcclusionEngine(ABC):
         max_search_radius_m: float = 1000.0,
         is_rooftop: bool = True,
         ground_stand_height_m: float = 1.5,
-        include_tree_canopy: bool = True
+        include_tree_canopy: bool = True,
+        top_of_canopy: bool = False
     ) -> Tuple[List[np.ndarray], List[np.ndarray]]:
         """
         Batch computes dual shadow masks across multiple sun angles.

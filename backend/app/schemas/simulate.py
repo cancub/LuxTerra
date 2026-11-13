@@ -173,6 +173,8 @@ class SimulateResponse(BaseModel):
     mask_encoding: str = Field(default="bitmask_base64", description="Encoding format for 2D shadow masks")
     masks: List[str] = Field(default_factory=list, description="Base64 encoded bit-packed binary masks for daytime frames (terrain)")
     canopy_masks: List[str] = Field(default_factory=list, description="Base64 encoded bit-packed binary masks for daytime frames (canopy)")
+    visual_masks: Optional[List[str]] = Field(default=None, description="Optional top-of-canopy terrain shadow masks for top-down map rendering")
+    visual_canopy_masks: Optional[List[str]] = Field(default=None, description="Optional top-of-canopy canopy shadow masks for top-down map rendering")
     canopy_transmittance: float = Field(default=0.15, description="Fractional direct beam canopy transmittance")
     layout: Optional[PVLayoutResult] = Field(default=None, description="Maximal solar panel distribution layout")
     night_mask: Optional[str] = Field(default=None, description="Base64 bitmask for nighttime frames (shaded inside shape, transparent outside)")

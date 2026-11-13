@@ -127,7 +127,8 @@ class NumPyOcclusionEngine(OcclusionEngine):
         max_search_radius_m: float = 1000.0,
         is_rooftop: bool = True,
         ground_stand_height_m: float = 1.5,
-        include_tree_canopy: bool = True
+        include_tree_canopy: bool = True,
+        top_of_canopy: bool = False
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Computes dual binary shadow masks (terrain_mask, canopy_mask) on CPU.
@@ -148,7 +149,8 @@ class NumPyOcclusionEngine(OcclusionEngine):
         z_dtm_0 = dtm_grid[r0, c0]
         z_dsm_0 = dsm_grid[r0, c0]
         z0 = compute_receiver_altitude_grid(
-            z_dtm_0, z_dsm_0, is_rooftop=is_rooftop, ground_stand_height_m=ground_stand_height_m
+            z_dtm_0, z_dsm_0, is_rooftop=is_rooftop, ground_stand_height_m=ground_stand_height_m,
+            top_of_canopy=(top_of_canopy and include_tree_canopy)
         )
 
         terrain_unshaded = np.ones((patch_H, patch_W), dtype=bool)
@@ -236,7 +238,8 @@ class NumPyOcclusionEngine(OcclusionEngine):
         max_search_radius_m: float = 1000.0,
         is_rooftop: bool = True,
         ground_stand_height_m: float = 1.5,
-        include_tree_canopy: bool = True
+        include_tree_canopy: bool = True,
+        top_of_canopy: bool = False
     ) -> Tuple[List[np.ndarray], List[np.ndarray]]:
         terrain_list = []
         canopy_list = []
@@ -244,7 +247,8 @@ class NumPyOcclusionEngine(OcclusionEngine):
             t_m, c_m = self.compute_dual_shadow_mask(
                 dtm_grid, dsm_grid, patch_slice_y, patch_slice_x,
                 az, el, resolution_m, max_search_radius_m,
-                is_rooftop, ground_stand_height_m, include_tree_canopy
+                is_rooftop, ground_stand_height_m, include_tree_canopy,
+                top_of_canopy=top_of_canopy
             )
             terrain_list.append(t_m)
             canopy_list.append(c_m)

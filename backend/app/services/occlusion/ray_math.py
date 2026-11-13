@@ -20,28 +20,29 @@ def compute_receiver_altitude_grid(
     dtm: np.ndarray,
     dsm: Optional[np.ndarray] = None,
     is_rooftop: bool = True,
-    ground_stand_height_m: float = 1.5
+    ground_stand_height_m: float = 1.5,
+    top_of_canopy: bool = False
 ) -> np.ndarray:
     """
     Computes the receiver origin altitude z0(r, c) across the target grid.
     
     Physical logic:
       - Rooftop Mode (is_rooftop=True): Solar panels sit directly on building rooftops or atop
-        canopy structures at z0 = z_dsm. The building surface itself does not self-shadow the panels,
-        but taller overhanging trees or adjacent elevated buildings will cast shadows if the solar ray
-        intersects them. If DSM is not provided, defaults to bare DTM.
-      - Ground-Mount Mode (is_rooftop=False): Solar panels sit on ground racking elevated by
-        ground_stand_height_m (default 1.5m) above bare earth: z0 = z_dtm + 1.5m.
-        Any nearby tree, canopy grove, or building taller than 1.5m above ground will cast shade.
+        canopy structures at z0 = max(z_dtm, z_dsm).
+      - Ground-Mount Mode (is_rooftop=False):
+        - PV receiver altitude (top_of_canopy=False): z0 = z_dtm + ground_stand_height_m.
+        - Visual top-of-canopy mode (top_of_canopy=True): z0 = max(z_dtm + ground_stand_height_m, z_dsm)
+          so shadows are only shown on canopy squares if they fall *on top of* the canopy element.
     """
     if is_rooftop:
         if dsm is not None:
-            # Panels sit on top of surface structures/roofs (z_dsm >= z_dtm)
             return np.maximum(dtm, dsm).astype(np.float32)
         return dtm.astype(np.float32)
     else:
-        # Panels sit on ground racking 1.5m above bare earth
-        return (dtm + float(ground_stand_height_m)).astype(np.float32)
+        base = (dtm + float(ground_stand_height_m)).astype(np.float32)
+        if top_of_canopy and dsm is not None:
+            return np.maximum(base, dsm.astype(np.float32))
+        return base
 
 
 def calculate_ray_step(

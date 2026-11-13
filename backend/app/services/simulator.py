@@ -194,6 +194,23 @@ class SimulationOrchestrator:
                 include_tree_canopy=has_canopy
             )
 
+            visual_daylight_masks = None
+            visual_daylight_canopy_masks = None
+            if has_canopy and not is_rooftop:
+                visual_daylight_masks, visual_daylight_canopy_masks = self.occlusion_engine.compute_dual_shadow_masks_batch(
+                    dtm_grid=dtm_grid,
+                    dsm_grid=dsm_grid,
+                    patch_slice_y=patch_slice_y,
+                    patch_slice_x=patch_slice_x,
+                    sun_angles=daylight_angle_pairs,
+                    resolution_m=request.resolution_m,
+                    max_search_radius_m=request.buffer_meters,
+                    is_rooftop=is_rooftop,
+                    ground_stand_height_m=stand_height,
+                    include_tree_canopy=True,
+                    top_of_canopy=True
+                )
+
             # Vectorized calculation of clear-sky irradiance for all daytime frames
             daylight_times = timestamps[daylight_indices]
             daylight_irradiance = self.solar_engine.calculate_irradiance_series(
@@ -202,6 +219,8 @@ class SimulationOrchestrator:
         else:
             daylight_masks = []
             daylight_canopy_masks = []
+            visual_daylight_masks = None
+            visual_daylight_canopy_masks = None
             daylight_irradiance = []
 
         # 4b. Synthesize maximal ground-mount solar panel layout (fixed civil layout with seasonal table tilt)
@@ -637,21 +656,27 @@ class SimulationOrchestrator:
         # 7. Encode daytime masks
         # When context_expansion is active, keep full-frame shading across the entire context window!
         # Only when NO context expansion is present and an oblong polygon is selected do we clip shadows to the polygon.
-        if polygon_mask is not None and daylight_masks and not has_context_expansion:
-            export_masks = []
-            export_canopy_masks = []
-            for m, cm in zip(daylight_masks, daylight_canopy_masks):
-                em = m.copy()
-                em[~polygon_mask] = 1 # 1 = transparent in UI canvas
-                export_masks.append(em)
-                ecm = cm.copy()
-                ecm[~polygon_mask] = 1
-                export_canopy_masks.append(ecm)
-            encoded_masks = encode_masks_batch(export_masks)
-            encoded_canopy_masks = encode_masks_batch(export_canopy_masks)
-        else:
-            encoded_masks = encode_masks_batch(daylight_masks)
-            encoded_canopy_masks = encode_masks_batch(daylight_canopy_masks)
+        def _clip_and_encode(t_masks, c_masks):
+            if polygon_mask is not None and t_masks and not has_context_expansion:
+                exp_t = []
+                exp_c = []
+                for m, cm in zip(t_masks, c_masks):
+                    em = m.copy()
+                    em[~polygon_mask] = 1  # 1 = transparent in UI canvas
+                    exp_t.append(em)
+                    ecm = cm.copy()
+                    ecm[~polygon_mask] = 1
+                    exp_c.append(ecm)
+                return encode_masks_batch(exp_t), encode_masks_batch(exp_c)
+            return encode_masks_batch(t_masks), encode_masks_batch(c_masks)
+
+        encoded_masks, encoded_canopy_masks = _clip_and_encode(daylight_masks, daylight_canopy_masks)
+        encoded_visual_masks = None
+        encoded_visual_canopy_masks = None
+        if visual_daylight_masks is not None and visual_daylight_canopy_masks is not None:
+            encoded_visual_masks, encoded_visual_canopy_masks = _clip_and_encode(
+                visual_daylight_masks, visual_daylight_canopy_masks
+            )
 
         # Encode nighttime masks (0 = shaded inside shape, 1 = transparent outside)
         # When context_expansion is active, night covers the whole visual context boundary!
@@ -733,6 +758,8 @@ class SimulationOrchestrator:
             mask_encoding="bitmask_base64",
             masks=encoded_masks,
             canopy_masks=encoded_canopy_masks,
+            visual_masks=encoded_visual_masks,
+            visual_canopy_masks=encoded_visual_canopy_masks,
             canopy_transmittance=canopy_transmittance,
             layout=layout,
             night_mask=encoded_night_mask,

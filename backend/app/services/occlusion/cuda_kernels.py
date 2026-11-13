@@ -77,7 +77,8 @@ void raymarch_dual_surface_kernel(
     int max_steps,
     int is_rooftop,                           // 1 = rooftop, 0 = ground mount
     float ground_stand_height_m,              // e.g. 1.5m
-    int include_tree_canopy                   // 1 = raymarch DSM canopy, 0 = ignore canopy
+    int include_tree_canopy,                  // 1 = raymarch DSM canopy, 0 = ignore canopy
+    int top_of_canopy                         // 1 = start ground rays at max(z_base, z_dsm)
 ) {
     int px = blockDim.x * blockIdx.x + threadIdx.x;
     int py = blockDim.y * blockIdx.y + threadIdx.y;
@@ -90,8 +91,12 @@ void raymarch_dual_surface_kernel(
     float z_dtm_0 = dtm[r0 * W + c0];
     float z_dsm_0 = dsm[r0 * W + c0];
 
-    // Receiver origin altitude: rooftop array sits at z_dsm, ground array sits at z_dtm + stand_height
-    float z0 = (is_rooftop != 0) ? fmaxf(z_dtm_0, z_dsm_0) : (z_dtm_0 + ground_stand_height_m);
+    // Receiver origin altitude: rooftop array sits at max(z_dtm, z_dsm);
+    // ground-mount sits at z_dtm + stand_height, or max(z_base, z_dsm) in visual top-of-canopy mode.
+    float z_base = z_dtm_0 + ground_stand_height_m;
+    float z0 = (is_rooftop != 0)
+        ? fmaxf(z_dtm_0, z_dsm_0)
+        : ((top_of_canopy != 0 && include_tree_canopy != 0) ? fmaxf(z_base, z_dsm_0) : z_base);
 
     unsigned char is_terrain_unshaded = 1;
     unsigned char is_canopy_unshaded = 1;

@@ -439,4 +439,89 @@ def test_sky_view_factor_3d_horizon_and_gpu_cpu_parity():
         assert np.allclose(svf_gpu, svf_canopy_summer, atol=1e-4)
 
 
+def test_top_of_canopy_visual_shadows():
+    """
+    In top_of_canopy=True mode, a tree does not shade its own top, and a shadow
+    is only shown on a canopy square if another feature casts a shadow higher than
+    the canopy height at that square.
+    """
+    dtm = np.full((100, 100), 100.0, dtype=np.float32)
+    dsm = np.full((100, 100), 100.0, dtype=np.float32)
+
+    # 10m canopy block at cols 40..44 (height 110m)
+    dsm[:, 40:45] = 110.0
+    # 30m taller tree at col 55 (height 130m), 11m east of col 44
+    dsm[:, 55:57] = 130.0
+
+    cpu_engine = NumPyOcclusionEngine()
+    patch_y = slice(20, 80)
+    patch_x = slice(20, 80)
+
+    # Sun from East (90 deg) at 45 deg elevation:
+    # At col 44 (11m west of col 55), 30m tree casts shadow at 130 - 11 = 119m (> 110m) -> SHADED on top!
+    # At col 40 (15m west of col 55), 30m tree casts shadow at 130 - 15 = 115m (> 110m) -> SHADED on top!
+    # Now test with only the 10m canopy block (no taller 30m tree)
+    dsm_no_tall = np.full((100, 100), 100.0, dtype=np.float32)
+    dsm_no_tall[:, 40:45] = 110.0
+
+    _, c_self = cpu_engine.compute_dual_shadow_mask(
+        dtm_grid=dtm,
+        dsm_grid=dsm_no_tall,
+        patch_slice_y=patch_y,
+        patch_slice_x=patch_x,
+        solar_azimuth_deg=90.0,
+        solar_elevation_deg=45.0,
+        is_rooftop=False,
+        ground_stand_height_m=1.5,
+        include_tree_canopy=True,
+        top_of_canopy=True,
+    )
+    # Canopy block cols 40..44 (local 20..24) must NOT be self-shaded on top
+    assert np.all(c_self[:, 20:25] == 1)
+
+    _, c_over = cpu_engine.compute_dual_shadow_mask(
+        dtm_grid=dtm,
+        dsm_grid=dsm,
+        patch_slice_y=patch_y,
+        patch_slice_x=patch_x,
+        solar_azimuth_deg=90.0,
+        solar_elevation_deg=45.0,
+        is_rooftop=False,
+        ground_stand_height_m=1.5,
+        include_tree_canopy=True,
+        top_of_canopy=True,
+    )
+    # Taller 30m tree casts shadow > 10m onto cols 40..44 (local 20..24) -> shaded on top
+    assert np.all(c_over[:, 20:25] == 0)
+
+    if is_gpu_available():
+        gpu_engine = CuPyOcclusionEngine()
+        _, c_self_gpu = gpu_engine.compute_dual_shadow_mask(
+            dtm_grid=dtm,
+            dsm_grid=dsm_no_tall,
+            patch_slice_y=patch_y,
+            patch_slice_x=patch_x,
+            solar_azimuth_deg=90.0,
+            solar_elevation_deg=45.0,
+            is_rooftop=False,
+            ground_stand_height_m=1.5,
+            include_tree_canopy=True,
+            top_of_canopy=True,
+        )
+        _, c_over_gpu = gpu_engine.compute_dual_shadow_mask(
+            dtm_grid=dtm,
+            dsm_grid=dsm,
+            patch_slice_y=patch_y,
+            patch_slice_x=patch_x,
+            solar_azimuth_deg=90.0,
+            solar_elevation_deg=45.0,
+            is_rooftop=False,
+            ground_stand_height_m=1.5,
+            include_tree_canopy=True,
+            top_of_canopy=True,
+        )
+        assert np.array_equal(c_self_gpu, c_self)
+        assert np.array_equal(c_over_gpu, c_over)
+
+
 
