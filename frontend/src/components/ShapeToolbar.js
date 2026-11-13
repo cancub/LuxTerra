@@ -14,6 +14,7 @@
 import { computePolygonDimensions } from '../utils/geometry.js';
 
 export const STORAGE_KEY = 'luxterra_saved_views';
+export const ACTIVE_VIEW_STORAGE_KEY = 'luxterra_active_view_id';
 
 export function filterLegacyPresets(views) {
   if (!Array.isArray(views)) return [];
@@ -96,6 +97,63 @@ export class ShapeToolbar {
 
     this.render();
     this.bindEvents();
+    this.restoreActiveViewContext();
+  }
+
+  setActiveViewId(id) {
+    this.activeViewId = id || null;
+    try {
+      if (this.activeViewId) {
+        localStorage.setItem(ACTIVE_VIEW_STORAGE_KEY, this.activeViewId);
+      } else {
+        localStorage.removeItem(ACTIVE_VIEW_STORAGE_KEY);
+      }
+    } catch (e) {
+      // Ignore storage errors
+    }
+  }
+
+  restoreActiveViewContext() {
+    const currentShape = this.getCurrentShapeSnapshot();
+    if (!currentShape) return;
+
+    let matchedView = null;
+    try {
+      const storedId = localStorage.getItem(ACTIVE_VIEW_STORAGE_KEY);
+      if (storedId) {
+        matchedView = this.savedViews.find(v => v.id === storedId) || null;
+      }
+    } catch (e) {
+      // Ignore storage errors
+    }
+
+    if (!matchedView) {
+      matchedView = this.savedViews.find(v =>
+        areShapesEqual(currentShape, {
+          bbox: v.bbox,
+          polygon: v.polygon,
+          contextBbox: v.contextBbox || null
+        })
+      ) || null;
+    }
+
+    if (matchedView) {
+      this.setActiveViewId(matchedView.id);
+      this.loadedShapeSnapshot = (matchedView.polygon || matchedView.bbox)
+        ? {
+            bbox: normalizeBbox(matchedView.bbox),
+            polygon: normalizePolygon(matchedView.polygon),
+            contextBbox: normalizeBbox(matchedView.contextBbox || null)
+          }
+        : null;
+      this.loadedViewSnapshot = {
+        center: [...matchedView.center],
+        zoom: matchedView.zoom,
+        pitch: matchedView.pitch,
+        bearing: matchedView.bearing
+      };
+      this.refreshModificationState();
+    }
   }
 
   loadSavedViews() {
@@ -268,7 +326,7 @@ export class ShapeToolbar {
     this.btnDrawRectangle.addEventListener('click', (e) => {
       e.stopPropagation();
       this.closeDropdowns();
-      this.activeViewId = null;
+      this.setActiveViewId(null);
       this.loadedShapeSnapshot = null;
       this.loadedViewSnapshot = null;
       this.hideSaveNamePopover();
@@ -278,7 +336,7 @@ export class ShapeToolbar {
     this.btnDrawFreedraw.addEventListener('click', (e) => {
       e.stopPropagation();
       this.closeDropdowns();
-      this.activeViewId = null;
+      this.setActiveViewId(null);
       this.loadedShapeSnapshot = null;
       this.loadedViewSnapshot = null;
       this.hideSaveNamePopover();
@@ -321,7 +379,7 @@ export class ShapeToolbar {
     this.btnClear.addEventListener('click', (e) => {
       e.stopPropagation();
       this.boxDrawer.clearSelection();
-      this.activeViewId = null;
+      this.setActiveViewId(null);
       this.loadedShapeSnapshot = null;
       this.loadedViewSnapshot = null;
       this.hideSaveNamePopover();
@@ -503,7 +561,7 @@ export class ShapeToolbar {
 
     this.savedViews.unshift(newView);
     this.saveToStorage(this.savedViews);
-    this.activeViewId = newView.id;
+    this.setActiveViewId(newView.id);
     this.loadedShapeSnapshot = this.getCurrentShapeSnapshot();
     this.loadedViewSnapshot = camera;
 
@@ -563,7 +621,7 @@ export class ShapeToolbar {
   }
 
   loadView(view) {
-    this.activeViewId = view.id;
+    this.setActiveViewId(view.id);
     this.loadedShapeSnapshot = (view.polygon || view.bbox)
       ? {
           bbox: normalizeBbox(view.bbox),
@@ -642,7 +700,7 @@ export class ShapeToolbar {
     const deleted = this.savedViews.find(v => v.id === id);
     this.savedViews = this.savedViews.filter(v => v.id !== id);
     if (this.activeViewId === id) {
-      this.activeViewId = null;
+      this.setActiveViewId(null);
       this.loadedShapeSnapshot = null;
       this.loadedViewSnapshot = null;
       this.refreshModificationState();
