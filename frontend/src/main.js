@@ -437,6 +437,18 @@ if (appContainer) {
     lastSimulationKey = simKey;
   }
 
+  function roundCoord5(n) {
+    return Number(Number(n).toFixed(5));
+  }
+
+  function normalizeBboxKey(bbox) {
+    return Array.isArray(bbox) ? bbox.map(roundCoord5) : null;
+  }
+
+  function normalizePolygonKey(polygon) {
+    return Array.isArray(polygon) ? polygon.map(pt => [roundCoord5(pt[0]), roundCoord5(pt[1])]) : null;
+  }
+
   async function triggerSimulation() {
     if (!currentBbox) return;
     const seqId = ++latestSimulationSeqId;
@@ -452,9 +464,9 @@ if (appContainer) {
     const date = dateSelector.getDate();
 
     const simKey = JSON.stringify({
-      bbox: currentBbox,
-      polygon: currentPolygon,
-      contextBbox: currentContextBbox,
+      bbox: normalizeBboxKey(currentBbox),
+      polygon: normalizePolygonKey(currentPolygon),
+      contextBbox: normalizeBboxKey(currentContextBbox),
       date: date,
       deployment_mode: pvConfig.deploymentMode,
       module_efficiency: pvConfig.moduleEfficiency,
