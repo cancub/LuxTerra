@@ -1024,12 +1024,12 @@ input:focus, select:focus {
   transition: transform 0.2s ease;
 }
 
-/* Redesigned 2-Row Top-Left Command Bar & Compact Edit Pill */
+/* Borderless Top-Left Command Bar */
 .top-command-bar {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
+  align-items: stretch;
+  gap: 0;
+  padding: 3px 4px;
   border-radius: 12px;
   pointer-events: auto;
   width: fit-content;
@@ -1040,7 +1040,7 @@ input:focus, select:focus {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 2px 6px 2px 4px;
+  padding: 5px 10px 5px 8px;
   font-weight: 700;
   font-size: 0.88rem;
   letter-spacing: -0.01em;
@@ -1048,84 +1048,320 @@ input:focus, select:focus {
   white-space: nowrap;
 }
 
+.brand-badge-inline svg {
+  color: var(--accent-solar);
+}
+
+.command-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 5px 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
 .shape-toolbar-primary {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: stretch;
+  gap: 0;
 }
 
-.command-switcher-btn,
-.command-action-btn,
-.command-icon-btn {
+.command-nav-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 9px;
+  justify-content: center;
+  padding: 5px 12px;
+  border: none;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-primary);
-  font-size: 0.78rem;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.16s ease, color 0.16s ease;
   white-space: nowrap;
 }
 
-.command-icon-btn {
-  width: 28px;
-  padding: 0;
-  justify-content: center;
-  color: var(--text-secondary);
-}
-
-.command-switcher-btn:hover,
-.command-action-btn:hover,
-.command-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.18);
+.command-nav-btn:hover,
+.command-nav-btn.active {
+  background: rgba(255, 255, 255, 0.11);
   color: var(--text-primary);
 }
 
-.switcher-pin-icon {
-  color: var(--accent-solar);
-  flex-shrink: 0;
+.command-icon-btn {
+  width: 32px;
+  padding: 5px 0;
 }
 
-.active-shape-name {
-  max-width: 190px;
+/* Unified Morphing Load / New / Edit Card */
+.shape-card {
+  width: 348px;
+  max-width: calc(100vw - 32px);
+  border-radius: 14px;
+  padding: 12px;
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.985);
+  transition: opacity 0.18s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), height 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+}
+
+.shape-card.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.shape-card.mode-load {
+  height: 290px;
+}
+
+.shape-card.mode-new {
+  height: auto;
+}
+
+.shape-card.mode-edit {
+  height: auto;
+}
+
+.shape-card-content {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  transition: opacity 0.14s ease;
+}
+
+.shape-card-pane {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+/* Load Mode List (Hidden Scrollbar) */
+.shape-load-pane .load-shape-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.shape-load-pane .load-shape-list::-webkit-scrollbar {
+  display: none;
+}
+
+.shape-load-pane .saved-view-item {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 8px;
+  height: 52px;
+  min-height: 52px;
+  padding: 0 0 0 10px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.shape-load-pane .saved-view-item:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.shape-load-pane .saved-view-item.active {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: var(--accent-solar);
+}
+
+.shape-load-pane .view-item-info {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+  padding: 6px 0;
+  margin-right: 0;
+}
+
+.shape-load-pane .view-item-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.view-item-location {
+  font-size: 0.69rem;
+  color: var(--text-muted);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.active-shape-area {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 6px;
-  border-radius: 999px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: var(--accent-solar);
-  background: rgba(56, 189, 248, 0.14);
-  border: 1px solid rgba(56, 189, 248, 0.28);
-}
-
-.dropdown-caret {
-  opacity: 0.7;
+.shape-load-pane .view-item-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
   flex-shrink: 0;
+}
+
+.shape-load-pane .btn-delete-view {
+  align-self: center;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.shape-load-pane .saved-view-item:hover .btn-delete-view {
+  opacity: 1;
+}
+
+.view-item-thumb {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  background: rgba(15, 23, 42, 0.7);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.view-item-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.view-item-thumb.is-placeholder {
+  background-image: radial-gradient(rgba(56, 189, 248, 0.25) 1px, transparent 1px);
+  background-size: 8px 8px;
+}
+
+/* 100x100 Thumbnail Hover Preview */
+.thumb-hover-preview {
+  position: fixed;
+  z-index: 2000;
+  padding: 3px;
+  border-radius: 8px;
+  pointer-events: none;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+}
+
+.thumb-hover-img {
+  width: 100px;
+  height: 100px;
+  border-radius: 5px;
+  display: block;
+  object-fit: cover;
+}
+
+/* New Mode Tools */
+.new-shape-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.new-tool-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.new-tool-btn:hover {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.new-tool-btn svg {
+  color: var(--accent-solar);
+  flex-shrink: 0;
+}
+
+.new-tool-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.new-tool-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.new-tool-desc {
+  font-size: 0.69rem;
+  color: var(--text-muted);
+}
+
+/* Edit Mode */
+.shape-edit-pane {
+  gap: 8px;
+}
+
+.shape-name-row {
+  display: flex;
+  align-items: center;
+}
+
+.shape-name-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 5px 8px;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 600;
+  outline: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.shape-name-input::placeholder {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.shape-name-input:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.shape-name-input:focus {
+  background: rgba(15, 23, 42, 0.65);
+  border-color: rgba(56, 189, 248, 0.5);
 }
 
 .shape-edit-bar {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 7px;
-  border-radius: 11px;
-  pointer-events: auto;
-  width: fit-content;
+  padding: 0;
+  width: 100%;
 }
 
 .btn-icon-only {
@@ -1154,4 +1390,47 @@ input:focus, select:focus {
   color: var(--accent-solar);
   border-color: rgba(56, 189, 248, 0.5);
   background: rgba(56, 189, 248, 0.16);
+}
+
+/* Flat Daily Energy & Array Details inside Edit Card */
+.shape-daily-energy-mount {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+}
+
+.daily-energy-flat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.daily-energy-flat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.daily-energy-flat-title {
+  font-size: 0.70rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.daily-energy-flat-value {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: #10b981;
+  font-size: 1.18rem;
+  line-height: 1;
+}
+
+.daily-energy-flat-unit {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
 }
