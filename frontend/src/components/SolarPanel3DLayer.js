@@ -310,18 +310,19 @@ export class SolarPanel3DLayer {
   /**
    * Calculates row-to-row direct beam self-shading fraction for interior rows.
    */
-  calculateRowSelfShadeFraction(rowPitchM, slantHM, tiltDeg, azDeg, elDeg) {
+  calculateRowSelfShadeFraction(rowPitchM, slantHM, tiltDeg, azDeg, elDeg, southTiltDeg = null) {
     if (elDeg <= 0.0) return 1.0;
     const azDeltaRad = ((azDeg - 180.0) * Math.PI) / 180.0;
     const cosAzDelta = Math.cos(azDeltaRad);
     if (cosAzDelta <= 0.001) return 0.0;
 
     const tiltRad = (tiltDeg * Math.PI) / 180.0;
+    const southRad = ((southTiltDeg !== null && southTiltDeg !== undefined ? southTiltDeg : tiltDeg) * Math.PI) / 180.0;
     const tanAlphaP = Math.tan((elDeg * Math.PI) / 180.0) / cosAzDelta;
     if (tanAlphaP <= 1e-5) return 1.0;
 
-    const dGap = rowPitchM - slantHM * Math.cos(tiltRad);
-    const hRise = slantHM * Math.sin(tiltRad);
+    const dGap = rowPitchM - slantHM * Math.cos(southRad);
+    const hRise = slantHM * Math.sin(southRad);
     const sY = hRise / tanAlphaP;
 
     if (sY <= dGap) return 0.0;
@@ -527,6 +528,7 @@ export class SolarPanel3DLayer {
             const deltaLon = mPerDegLon > 0 ? deltaXM / mPerDegLon : 0.0;
             const lonShadowSource = centerLon_B - deltaLon;
 
+            let matchedSouthTable = null;
             for (const st of southTables) {
               const sc = st.corners_wgs84;
               if (!sc || sc.length < 4) continue;
@@ -534,17 +536,22 @@ export class SolarPanel3DLayer {
               const stMaxLon = Math.max(sc[1][0], sc[2][0]);
               if (lonShadowSource >= stMinLon && lonShadowSource <= stMaxLon) {
                 hasSouthObstruction = true;
+                matchedSouthTable = st;
                 break;
               }
             }
 
             if (hasSouthObstruction) {
+              const southTiltDeg = matchedSouthTable && matchedSouthTable.tilt_deg !== undefined
+                ? matchedSouthTable.tilt_deg
+                : tblTiltDeg;
               selfShadeFrac = this.calculateRowSelfShadeFraction(
                 rowPitchM,
                 slantH,
                 tblTiltDeg,
                 solarAz,
-                solarEl
+                solarEl,
+                southTiltDeg
               );
             }
           }

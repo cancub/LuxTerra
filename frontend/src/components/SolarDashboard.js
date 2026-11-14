@@ -390,7 +390,36 @@ export class SolarDashboard {
 
     const optimalTilt = this.dailySummary.optimal_tilt_deg ?? data?.metadata?.optimal_tilt_deg ?? this.timeseries?.[0]?.optimal_tilt_deg;
     if (this.tiltVal) {
-      this.tiltVal.textContent = optimalTilt !== undefined ? `${optimalTilt.toFixed(1)}°` : '--°';
+      const tables = data?.layout?.tables;
+      if (Array.isArray(tables) && tables.length > 0) {
+        const rowTiltMap = new Map();
+        tables.forEach((t) => {
+          if (t && t.row_index !== undefined && t.tilt_deg !== undefined && !rowTiltMap.has(t.row_index)) {
+            rowTiltMap.set(t.row_index, t.tilt_deg);
+          }
+        });
+        const sortedRows = Array.from(rowTiltMap.keys()).sort((a, b) => a - b);
+        const rowTilts = sortedRows.map((r) => rowTiltMap.get(r));
+        const allSame = rowTilts.length <= 1 || rowTilts.every((v) => Math.abs(v - rowTilts[0]) < 0.05);
+        if (allSame && rowTilts.length > 0) {
+          this.tiltVal.textContent = `${rowTilts[0].toFixed(1)}°`;
+          this.tiltVal.title = '';
+        } else if (rowTilts.length > 1) {
+          this.tiltVal.title = sortedRows.map((r, i) => `Row ${i + 1}: ${rowTiltMap.get(r).toFixed(1)}°`).join(' · ');
+          if (rowTilts.length <= 4) {
+            this.tiltVal.textContent = rowTilts.map((v) => `${v.toFixed(1)}°`).join(' / ');
+          } else {
+            const minT = Math.min(...rowTilts);
+            const maxT = Math.max(...rowTilts);
+            this.tiltVal.textContent = `${minT.toFixed(1)}°–${maxT.toFixed(1)}°`;
+          }
+        } else {
+          this.tiltVal.textContent = optimalTilt !== undefined ? `${optimalTilt.toFixed(1)}°` : '--°';
+        }
+      } else {
+        this.tiltVal.textContent = optimalTilt !== undefined ? `${optimalTilt.toFixed(1)}°` : '--°';
+        this.tiltVal.title = '';
+      }
     }
 
     // Solar Panel Array Specifications & Telemetry

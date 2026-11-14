@@ -10,6 +10,7 @@ import base64
 import zoneinfo
 import numpy as np
 import pandas as pd
+import pvlib
 
 from ..schemas.simulate import (
     SimulateRequest,
@@ -123,6 +124,149 @@ def _apply_shade_overrides(
             chm[r0:r1, c0:c1][mask] = 0.0
 
     return dtm, dsm, chm
+
+
+def _optimize_row_tilts(
+    layout,
+    tables_by_row: dict,
+    distinct_rows: list,
+    discrete_modules: list,
+    svf_grid: np.ndarray,
+    daylight_angles: list,
+    daylight_irradiance: list,
+    daylight_masks: list,
+    daylight_canopy_masks: list,
+    daylight_canopy_transmittance: list,
+    has_canopy: bool,
+    canopy_transmittance: float,
+) -> dict:
+    """
+    Optimize panel tilt per row (south-to-north) against full-day energy including
+    terrain/canopy shading, row-to-row self-shading, and diffuse sky-view factor.
+    Returns {row_index: optimal_tilt_deg}.
+    """
+    if not distinct_rows or not daylight_angles or not daylight_irradiance or not discrete_modules:
+        return {r: 30.0 for r in distinct_rows}
+
+    az_arr = np.array([a.azimuth_deg for a in daylight_angles], dtype=np.float64)
+    el_arr = np.array([a.elevation_deg for a in daylight_angles], dtype=np.float64)
+    zen_arr = np.array([a.zenith_deg for a in daylight_angles], dtype=np.float64)
+    dni_arr = np.array([ir.dni_w_m2 for ir in daylight_irradiance], dtype=np.float64)
+    dhi_arr = np.array([ir.dhi_w_m2 for ir in daylight_irradiance], dtype=np.float64)
+
+    n_t = len(daylight_angles)
+    az_delta_rad = np.radians(az_arr - 180.0)
+    cos_az_delta = np.cos(az_delta_rad)
+    tan_az_delta = np.where(cos_az_delta > 0.001, np.tan(az_delta_rad), 0.0)
+    tan_alpha_p = np.where(
+        (el_arr > 0.0) & (cos_az_delta > 0.001),
+        np.tan(np.radians(el_arr)) / np.maximum(cos_az_delta, 1e-6),
+        0.0
+    )
+
+    # Precompute per-module terrain + canopy direct transmission tau_tc[m, t]
+    n_mods = len(discrete_modules)
+    mod_rows = np.array([m["row_idx"] for m in discrete_modules], dtype=np.intp)
+    mod_cols = np.array([m["col_idx"] for m in discrete_modules], dtype=np.intp)
+    tau_tc = np.ones((n_mods, n_t), dtype=np.float64)
+
+    for t_idx in range(n_t):
+        t_lit = daylight_masks[t_idx][mod_rows, mod_cols] > 0
+        if has_canopy and daylight_canopy_transmittance and t_idx < len(daylight_canopy_transmittance):
+            c_tau = daylight_canopy_transmittance[t_idx][mod_rows, mod_cols]
+        elif has_canopy and daylight_canopy_masks and t_idx < len(daylight_canopy_masks):
+            c_lit = daylight_canopy_masks[t_idx][mod_rows, mod_cols] > 0
+            c_tau = np.where(c_lit, 1.0, canopy_transmittance)
+        else:
+            c_tau = 1.0
+        tau_tc[:, t_idx] = np.where(t_lit, c_tau, 0.0)
+
+    # Precompute for each module whether it has a south obstruction at each timestep
+    south_obs_mat = np.zeros((n_mods, n_t), dtype=bool)
+    row_pitch_m = float(layout.row_pitch_m or 10.0)
+    for m_idx, mod in enumerate(discrete_modules):
+        if mod["is_front_row"] or not mod["south_tables"]:
+            continue
+        m_per_deg_lon = 111320.0 * np.cos(np.radians(mod["center_lat"]))
+        delta_lon = (row_pitch_m * tan_az_delta) / m_per_deg_lon if m_per_deg_lon > 0 else np.zeros(n_t)
+        lon_src = mod["center_lon"] - delta_lon
+        obs = np.zeros(n_t, dtype=bool)
+        for st in mod["south_tables"]:
+            sc = st.corners_wgs84
+            if not sc or len(sc) < 4:
+                continue
+            st_min = min(sc[0][0], sc[3][0])
+            st_max = max(sc[1][0], sc[2][0])
+            obs |= (lon_src >= st_min) & (lon_src <= st_max)
+        south_obs_mat[m_idx] = obs & (cos_az_delta > 0.001) & (el_arr > 0.0)
+
+    # Group module indices by row_index
+    mod_indices_by_row = {}
+    for m_idx, mod in enumerate(discrete_modules):
+        mod_indices_by_row.setdefault(mod["table_row_index"], []).append(m_idx)
+
+    row_tilts = {}
+    slant_h = float(layout.tables[0].slant_height_m or 4.56) if layout.tables else 4.56
+
+    def eval_row_energy(r_idx: int, theta_deg: float, south_tilt_deg: Optional[float]) -> float:
+        m_idxs = mod_indices_by_row.get(r_idx, [])
+        if not m_idxs:
+            return 0.0
+        aoi = pvlib.irradiance.aoi(theta_deg, 180.0, zen_arr, az_arr)
+        cos_aoi = np.maximum(0.0, np.cos(np.radians(aoi)))
+        poa_dir = dni_arr * cos_aoi
+        tilt_rad = np.radians(theta_deg)
+        poa_dif = dhi_arr * 0.5 * (1.0 + np.cos(tilt_rad))
+
+        # Vectorized self-shading fraction over daylight timesteps for this (theta, south_tilt)
+        if south_tilt_deg is not None:
+            south_rad = np.radians(south_tilt_deg)
+            d_gap = row_pitch_m - slant_h * np.cos(south_rad)
+            h_rise = slant_h * np.sin(south_rad)
+            s_y = np.where(tan_alpha_p > 1e-5, h_rise / np.maximum(tan_alpha_p, 1e-6), 1e9)
+            denom = np.cos(tilt_rad) + (np.sin(tilt_rad) / np.maximum(tan_alpha_p, 1e-6))
+            rack_f = np.where(
+                (tan_alpha_p > 1e-5) & (s_y > d_gap) & (denom > 1e-5),
+                np.clip(((s_y - d_gap) / np.maximum(denom, 1e-6)) / slant_h, 0.0, 1.0),
+                0.0
+            )
+            bot_f = np.clip(rack_f * 2.0, 0.0, 1.0)
+            top_f = np.clip((rack_f - 0.5) * 2.0, 0.0, 1.0)
+        else:
+            bot_f = np.zeros(n_t, dtype=np.float64)
+            top_f = np.zeros(n_t, dtype=np.float64)
+
+        total_e = 0.0
+        for m_idx in m_idxs:
+            mod = discrete_modules[m_idx]
+            f_mod = top_f if mod["is_top"] else bot_f
+            unblocked = np.where(south_obs_mat[m_idx], 1.0 - f_mod, 1.0)
+            dir_e = float(np.sum(poa_dir * unblocked * tau_tc[m_idx]))
+            rack_svf = calculate_module_rack_sky_view_factor(
+                row_pitch_m=row_pitch_m,
+                slant_height_m=slant_h,
+                tilt_deg=theta_deg,
+                is_top_module=mod["is_top"],
+                has_south_obstruction=mod["has_south_rack"],
+                south_tilt_deg=south_tilt_deg
+            )
+            mod_svf = float(np.clip(float(svf_grid[mod["row_idx"], mod["col_idx"]]) * rack_svf, 0.05, 1.0))
+            dif_e = float(np.sum(poa_dif * mod_svf))
+            total_e += dir_e + dif_e
+        return total_e
+
+    for pos, r_idx in enumerate(distinct_rows):
+        south_tilt = row_tilts[distinct_rows[pos - 1]] if pos > 0 else None
+        # Coarse sweep 0..84 deg in 2 deg steps, then 0.2 deg refinement around peak
+        coarse_grid = np.arange(0.0, 86.0, 2.0)
+        best_t = float(max(coarse_grid, key=lambda t: eval_row_energy(r_idx, float(t), south_tilt)))
+        fine_lo = max(0.0, best_t - 2.0)
+        fine_hi = min(85.0, best_t + 2.0)
+        fine_grid = np.arange(fine_lo, fine_hi + 0.05, 0.2)
+        best_t = float(max(fine_grid, key=lambda t: eval_row_energy(r_idx, float(t), south_tilt)))
+        row_tilts[r_idx] = round(best_t, 1)
+
+    return row_tilts
 
 
 class SimulationOrchestrator:
@@ -525,8 +669,10 @@ class SimulationOrchestrator:
                         discrete_modules.append({
                             "row_idx": row_b,
                             "col_idx": col_b,
+                            "table_row_index": tbl.row_index,
                             "is_front_row": is_front_row,
                             "is_top": False,
+                            "has_south_rack": has_south_rack,
                             "center_lon": c_lon_b,
                             "center_lat": c_lat_b,
                             "south_tables": south_tables,
@@ -535,8 +681,10 @@ class SimulationOrchestrator:
                         discrete_modules.append({
                             "row_idx": row_t,
                             "col_idx": col_t,
+                            "table_row_index": tbl.row_index,
                             "is_front_row": is_front_row,
                             "is_top": True,
+                            "has_south_rack": has_south_rack,
                             "center_lon": c_lon_t,
                             "center_lat": c_lat_t,
                             "south_tables": south_tables,
@@ -544,6 +692,69 @@ class SimulationOrchestrator:
                         })
 
                 tbl.module_svf = table_svfs
+
+        # 5d. Optimize panel tilt per row against full-day real-world energy
+        row_tilts = {}
+        south_tilt_by_row = {}
+        if use_discrete_panels and discrete_modules and daylight_angles and daylight_irradiance:
+            row_tilts = _optimize_row_tilts(
+                layout=layout,
+                tables_by_row=tables_by_row,
+                distinct_rows=distinct_rows,
+                discrete_modules=discrete_modules,
+                svf_grid=svf_grid,
+                daylight_angles=daylight_angles,
+                daylight_irradiance=daylight_irradiance,
+                daylight_masks=daylight_masks,
+                daylight_canopy_masks=daylight_canopy_masks,
+                daylight_canopy_transmittance=daylight_canopy_transmittance,
+                has_canopy=has_canopy,
+                canopy_transmittance=transmittance.direct,
+            )
+            for pos, r_idx in enumerate(distinct_rows):
+                south_tilt_by_row[r_idx] = row_tilts[distinct_rows[pos - 1]] if pos > 0 else None
+
+            # Update layout table tilts & recompute per-module SVF with optimized row tilts
+            mod_cursor = 0
+            total_tilt_weighted = 0.0
+            total_mods_weighted = 0
+            for tbl in layout.tables:
+                corners = tbl.corners_wgs84
+                if not corners or len(corners) < 4:
+                    continue
+                opt_t = row_tilts.get(tbl.row_index, seasonal_tilt)
+                tbl.tilt_deg = opt_t
+                s_tilt = south_tilt_by_row.get(tbl.row_index)
+                total_tilt_weighted += opt_t * tbl.num_modules
+                total_mods_weighted += tbl.num_modules
+                new_table_svfs = []
+                for _ in range(tbl.num_columns):
+                    m_b = discrete_modules[mod_cursor]
+                    m_t = discrete_modules[mod_cursor + 1]
+                    mod_cursor += 2
+                    r_svf_b = calculate_module_rack_sky_view_factor(
+                        row_pitch_m=layout.row_pitch_m,
+                        slant_height_m=tbl.slant_height_m or 4.56,
+                        tilt_deg=opt_t,
+                        is_top_module=False,
+                        has_south_obstruction=m_b["has_south_rack"],
+                        south_tilt_deg=s_tilt
+                    )
+                    r_svf_t = calculate_module_rack_sky_view_factor(
+                        row_pitch_m=layout.row_pitch_m,
+                        slant_height_m=tbl.slant_height_m or 4.56,
+                        tilt_deg=opt_t,
+                        is_top_module=True,
+                        has_south_obstruction=m_t["has_south_rack"],
+                        south_tilt_deg=s_tilt
+                    )
+                    m_b["svf"] = float(np.clip(float(svf_grid[m_b["row_idx"], m_b["col_idx"]]) * r_svf_b, 0.05, 1.0))
+                    m_t["svf"] = float(np.clip(float(svf_grid[m_t["row_idx"], m_t["col_idx"]]) * r_svf_t, 0.05, 1.0))
+                    new_table_svfs.extend([round(m_b["svf"], 4), round(m_t["svf"], 4)])
+                tbl.module_svf = new_table_svfs
+
+            if total_mods_weighted > 0:
+                seasonal_tilt = round(total_tilt_weighted / total_mods_weighted, 1)
 
         if use_discrete_panels and discrete_modules:
             sum_mod_svf = float(sum(m["svf"] for m in discrete_modules))
@@ -602,32 +813,43 @@ class SimulationOrchestrator:
                     cos_az_delta = np.cos(az_delta_rad)
                     tan_az_delta = np.tan(az_delta_rad) if cos_az_delta > 0.001 else 0.0
 
-                    # Pre-calculate row self-shade fraction if sun is facing array from the south
-                    rack_self_frac = 0.0
-                    if cos_az_delta > 0.001 and angles.elevation_deg > 0.0 and layout.tables:
-                        ref_table = layout.tables[0]
-                        rack_self_frac = calculate_row_self_shading_fraction(
-                            row_pitch_m=layout.row_pitch_m,
-                            slant_height_m=ref_table.slant_height_m,
-                            tilt_deg=ref_table.tilt_deg,
-                            solar_azimuth_deg=angles.azimuth_deg,
-                            solar_elevation_deg=angles.elevation_deg,
-                            rack_azimuth_deg=ref_table.azimuth_deg
-                        )
+                    # Pre-calculate per-row POA irradiance and self-shading fraction
+                    poa_dir_by_row = {}
+                    poa_dif_by_row = {}
+                    rack_self_by_row = {}
+                    ref_slant = layout.tables[0].slant_height_m if layout.tables else 4.56
+                    ref_az = layout.tables[0].azimuth_deg if layout.tables else 180.0
+                    for r_idx in distinct_rows:
+                        r_tilt = row_tilts.get(r_idx, seasonal_tilt)
+                        aoi_val = float(pvlib.irradiance.aoi(r_tilt, ref_az, angles.zenith_deg, angles.azimuth_deg))
+                        cos_inc = max(0.0, float(np.cos(np.radians(aoi_val))))
+                        poa_dir_by_row[r_idx] = irradiance.dni_w_m2 * cos_inc
+                        poa_dif_by_row[r_idx] = irradiance.dhi_w_m2 * 0.5 * (1.0 + float(np.cos(np.radians(r_tilt))))
+                        if cos_az_delta > 0.001 and angles.elevation_deg > 0.0:
+                            rack_self_by_row[r_idx] = calculate_row_self_shading_fraction(
+                                row_pitch_m=layout.row_pitch_m,
+                                slant_height_m=ref_slant,
+                                tilt_deg=r_tilt,
+                                solar_azimuth_deg=angles.azimuth_deg,
+                                solar_elevation_deg=angles.elevation_deg,
+                                rack_azimuth_deg=ref_az,
+                                south_tilt_deg=south_tilt_by_row.get(r_idx)
+                            )
+                        else:
+                            rack_self_by_row[r_idx] = 0.0
 
-                    poa_direct = irradiance.poa_direct_w_m2
-                    poa_diffuse = irradiance.poa_diffuse_w_m2
-
-                    direct_mod_w = poa_direct * module_conv
-                    base_diffuse_mod_w = poa_diffuse * module_conv
-                    incident_power_kw = round(num_mods * direct_mod_w, 3)
-                    diffuse_power_kw = round(sum_mod_svf * base_diffuse_mod_w, 3)
-                    unshaded_power_kw = round(incident_power_kw + diffuse_power_kw, 3)
+                    incident_total = 0.0
+                    diffuse_total = 0.0
 
                     for mod in discrete_modules:
                         r = mod["row_idx"]
                         c = mod["col_idx"]
-                        mod_diffuse_w = base_diffuse_mod_w * mod["svf"]
+                        r_idx = mod["table_row_index"]
+                        direct_mod_w = poa_dir_by_row[r_idx] * module_conv
+                        mod_diffuse_w = poa_dif_by_row[r_idx] * module_conv * mod["svf"]
+                        incident_total += direct_mod_w
+                        diffuse_total += mod_diffuse_w
+                        rack_self_frac = rack_self_by_row[r_idx]
 
                         terrain_lit = bool(mask[r, c] > 0)
                         canopy_lit = bool(canopy_m[r, c] > 0) if canopy_m is not None else True
@@ -693,6 +915,9 @@ class SimulationOrchestrator:
                         total_self_loss_kw += self_loss
                         total_power_kw += mod_pwr
 
+                    incident_power_kw = round(incident_total, 3)
+                    diffuse_power_kw = round(diffuse_total, 3)
+                    unshaded_power_kw = round(incident_power_kw + diffuse_power_kw, 3)
                     percent_shaded = round((num_terrain_shaded / num_mods) * 100.0, 2)
                     canopy_shaded_pct = round((num_canopy_shaded / num_mods) * 100.0, 2)
                     shaded_pct_list.append(percent_shaded)

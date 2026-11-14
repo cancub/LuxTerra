@@ -4,6 +4,7 @@ Calculates direct beam inter-row obstruction based on solar profile angle,
 row pitch, rack slant height, and tilt angle.
 """
 
+from typing import Optional
 import numpy as np
 
 from ...schemas.domain import PVLayoutResult
@@ -35,11 +36,12 @@ def calculate_row_self_shading_fraction(
     tilt_deg: float,
     solar_azimuth_deg: float,
     solar_elevation_deg: float,
-    rack_azimuth_deg: float = 180.0
+    rack_azimuth_deg: float = 180.0,
+    south_tilt_deg: Optional[float] = None
 ) -> float:
     """
     Computes the fraction of direct beam radiation blocked on interior/northern rows (rows >= 1)
-    by the row immediately to their south.
+    by the row immediately to their south. Supports independent south_tilt_deg and north tilt_deg.
 
     Returns:
         float between 0.0 (completely unshaded) and 1.0 (completely shaded).
@@ -54,16 +56,17 @@ def calculate_row_self_shading_fraction(
         return 0.0
 
     tilt_rad = np.radians(tilt_deg)
+    south_rad = np.radians(south_tilt_deg if south_tilt_deg is not None else tilt_deg)
     tan_alpha_p = np.tan(np.radians(solar_elevation_deg)) / cos_az_delta
 
     if tan_alpha_p <= 1e-5:
         return 1.0
 
     # Ground gap between top edge of south row and bottom edge of north row
-    d_gap = row_pitch_m - slant_height_m * np.cos(tilt_rad)
-    h_rise = slant_height_m * np.sin(tilt_rad)
+    d_gap = row_pitch_m - slant_height_m * np.cos(south_rad)
+    h_rise = slant_height_m * np.sin(south_rad)
 
-    # Northward shadow extension at ground level of north row
+    # Northward shadow extension from south row's top edge
     s_y = h_rise / tan_alpha_p
 
     if s_y <= d_gap:
@@ -84,7 +87,8 @@ def calculate_module_rack_sky_view_factor(
     slant_height_m: float,
     tilt_deg: float,
     is_top_module: bool,
-    has_south_obstruction: bool = True
+    has_south_obstruction: bool = True,
+    south_tilt_deg: Optional[float] = None
 ) -> float:
     """
     Calculates the inter-row diffuse Sky View Factor multiplier (0..1) for a module
@@ -97,11 +101,11 @@ def calculate_module_rack_sky_view_factor(
         return 1.0
 
     tilt_rad = np.radians(tilt_deg)
+    south_rad = np.radians(south_tilt_deg if south_tilt_deg is not None else tilt_deg)
     frac_up_slant = 0.75 if is_top_module else 0.25
-    delta_slant = (1.0 - frac_up_slant) * slant_height_m
 
-    dz = delta_slant * np.sin(tilt_rad)
-    dy = row_pitch_m - delta_slant * np.cos(tilt_rad)
+    dz = slant_height_m * np.sin(south_rad) - frac_up_slant * slant_height_m * np.sin(tilt_rad)
+    dy = row_pitch_m - slant_height_m * np.cos(south_rad) + frac_up_slant * slant_height_m * np.cos(tilt_rad)
 
     if dy <= 0.1 or dz <= 0.0:
         return 1.0
