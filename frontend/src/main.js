@@ -134,6 +134,10 @@ if (appContainer) {
 
   const renderScrubFrame = () => {
     pendingRenderRafId = null;
+    if (overrideViewMode === 'canopy') {
+      renderCanopyOnlyFrame();
+      return;
+    }
     const metric = latestScrubMetric;
     if (!metric || !currentSimulationData) return;
 
@@ -539,6 +543,94 @@ if (appContainer) {
   });
 
   window.addEventListener('beforeunload', persistCamera);
+
+  let overrideViewMode = null; // 'canopy' | 'shadow' | null
+  let overrideSaved3DVisible = true;
+  let overrideToggleEl = null;
+
+  function renderCanopyOnlyFrame() {
+    if (currentSimulationData && currentChmBytes) {
+      const meta = currentSimulationData.metadata;
+      shadowCanvasLayer.renderCanopyOnly(currentChmBytes, meta.grid_rows, meta.grid_cols);
+    } else {
+      shadowCanvasLayer.clear();
+    }
+  }
+
+  function ensureOverrideToggleEl() {
+    if (overrideToggleEl) return overrideToggleEl;
+    const el = document.createElement('div');
+    el.id = 'override-view-toggle';
+    el.className = 'override-view-toggle';
+    el.style.display = 'none';
+    el.innerHTML = `
+      <span class="override-view-badge"></span>
+      <div class="override-view-segmented">
+        <button type="button" class="override-view-btn" data-mode="canopy">Canopy View</button>
+        <button type="button" class="override-view-btn" data-mode="shadow">Shadow View</button>
+      </div>
+    `;
+    el.querySelectorAll('.override-view-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const mode = btn.getAttribute('data-mode');
+        if (overrideViewMode && mode) {
+          applyOverrideViewMode(mode);
+        }
+      });
+    });
+    document.body.appendChild(el);
+    overrideToggleEl = el;
+    return el;
+  }
+
+  function applyOverrideViewMode(mode) {
+    overrideViewMode = mode;
+    if (mode === 'canopy') {
+      solarPanel3DLayer.setVisibility(false);
+      boxDrawer.setShapeVisibility(false);
+      renderCanopyOnlyFrame();
+    } else {
+      solarPanel3DLayer.setVisibility(overrideSaved3DVisible);
+      boxDrawer.setShapeVisibility(true);
+      if (latestScrubMetric && currentSimulationData) {
+        renderScrubFrame();
+      } else {
+        shadowCanvasLayer.clear();
+      }
+    }
+    if (overrideToggleEl) {
+      overrideToggleEl.querySelectorAll('.override-view-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
+      });
+    }
+  }
+
+  function setOverrideToggleVisible(visible, overrideType) {
+    const el = ensureOverrideToggleEl();
+    if (visible) {
+      const badge = el.querySelector('.override-view-badge');
+      if (badge) {
+        badge.textContent = overrideType === 'to_geology' ? 'Mark Geology' : 'Remove Canopy';
+        badge.classList.toggle('is-geology', overrideType === 'to_geology');
+        badge.classList.toggle('is-canopy', overrideType === 'remove_canopy');
+      }
+      el.style.display = 'flex';
+    } else {
+      el.style.display = 'none';
+    }
+  }
+
+  boxDrawer.onOverrideModeChange = (active, type) => {
+    if (active) {
+      overrideSaved3DVisible = solarPanel3DLayer.isVisible();
+      setOverrideToggleVisible(true, type);
+      applyOverrideViewMode('canopy');
+    } else {
+      setOverrideToggleVisible(false, null);
+      applyOverrideViewMode(null);
+    }
+  };
 
   let shapeToolbar = null;
   const dateSelector = new DateSelector(dateSelectorMount, savedState.date || '2026-06-21', () => {

@@ -110,6 +110,47 @@ export class ShadowRenderer {
     return this.canvas;
   }
 
+  /**
+   * Renders a pure canopy-height visualization from CHM bytes (0.5m units).
+   */
+  renderCanopyOnly(chmBytes, rows, cols) {
+    if (!chmBytes || rows <= 0 || cols <= 0 || chmBytes.length < rows * cols) {
+      this.clear();
+      return this.canvas;
+    }
+
+    if (this.canvas) {
+      if (this.canvas.width !== cols || this.canvas.height !== rows) {
+        this.canvas.width = cols;
+        this.canvas.height = rows;
+        this.rows = rows;
+        this.cols = cols;
+      }
+    }
+
+    if (this.ctx) {
+      const imgData = this.ctx.createImageData(cols, rows);
+      const data32 = new Uint32Array(imgData.data.buffer);
+      const total = rows * cols;
+      for (let i = 0; i < total; i++) {
+        const val = chmBytes[i];
+        if (val > 0) {
+          const t = Math.min(1, val / 30); // 0..15m+
+          const r = Math.round(16 + 18 * (1 - t));
+          const g = Math.round(185 + 50 * t);
+          const b = Math.round(80 + 40 * (1 - t));
+          const a = Math.round(135 + 85 * t);
+          data32[i] = ((a << 24) | (b << 16) | (g << 8) | r) >>> 0;
+        }
+      }
+      this.ctx.putImageData(imgData, 0, 0);
+    }
+
+    this.currentMaskBase64 = '__CANOPY_ONLY__';
+    this.currentCanopyBase64 = null;
+    return this.canvas;
+  }
+
   clear() {
     if (this.canvas && this.canvas.width > 0 && this.canvas.height > 0 && this.ctx) {
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);

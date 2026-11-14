@@ -1479,6 +1479,70 @@ input:focus, select:focus {
   background: rgba(239, 68, 68, 0.12);
 }
 
+.override-view-toggle {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 12px;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+
+.override-view-badge {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.override-view-badge.is-geology {
+  color: #fbbf24;
+}
+
+.override-view-badge.is-canopy {
+  color: #f87171;
+}
+
+.override-view-segmented {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 3px;
+  border-radius: 999px;
+}
+
+.override-view-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+}
+
+.override-view-btn:hover {
+  color: var(--text-primary);
+}
+
+.override-view-btn.active {
+  background: var(--accent-primary, #3b82f6);
+  color: #ffffff;
+}
+
 .save-menu {
   min-width: 185px;
 }

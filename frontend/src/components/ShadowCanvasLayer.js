@@ -128,6 +128,24 @@ export class ShadowCanvasLayer {
     this.map.triggerRepaint();
   }
 
+  /**
+   * Renders pure canopy height visualization (CHM bytes) onto the map-projected canvas.
+   */
+  renderCanopyOnly(chmBytes, rows, cols) {
+    if (!chmBytes || rows <= 0 || cols <= 0) {
+      this.clear();
+      return;
+    }
+
+    this.shadowRenderer.renderCanopyOnly(chmBytes, rows, cols);
+
+    const source = this.map.getSource(this.sourceId);
+    if (source && typeof source.play === 'function') {
+      source.play();
+    }
+    this.map.triggerRepaint();
+  }
+
   clear() {
     this.shadowRenderer.clear();
     const source = this.map.getSource(this.sourceId);

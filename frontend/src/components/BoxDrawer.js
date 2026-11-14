@@ -74,6 +74,7 @@ export class BoxDrawer {
     this.overrideCircles = [];
     this.overrideDrawType = null;
     this.overrideDrawCallback = null;
+    this.onOverrideModeChange = null;
 
     this.initLayers();
     this.initTooltip();
@@ -341,6 +342,70 @@ export class BoxDrawer {
           }
         });
       }
+
+      if (!this.map.getSource('draw-override-preview-source')) {
+        this.map.addSource('draw-override-preview-source', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] }
+        });
+
+        this.map.addLayer({
+          id: 'draw-override-preview-fill',
+          type: 'fill',
+          source: 'draw-override-preview-source',
+          filter: ['==', '$type', 'Polygon'],
+          paint: {
+            'fill-color': [
+              'match',
+              ['get', 'overrideType'],
+              'to_geology', 'rgba(245, 158, 11, 0.25)',
+              'remove_canopy', 'rgba(239, 68, 68, 0.22)',
+              'rgba(56, 189, 248, 0.22)'
+            ]
+          }
+        });
+
+        this.map.addLayer({
+          id: 'draw-override-preview-stroke',
+          type: 'line',
+          source: 'draw-override-preview-source',
+          filter: ['==', '$type', 'LineString'],
+          paint: {
+            'line-width': 2.5,
+            'line-color': [
+              'match',
+              ['get', 'overrideType'],
+              'to_geology', '#f59e0b',
+              'remove_canopy', '#ef4444',
+              '#38bdf8'
+            ]
+          }
+        });
+
+        this.map.addLayer({
+          id: 'draw-override-preview-points',
+          type: 'circle',
+          source: 'draw-override-preview-source',
+          filter: ['==', '$type', 'Point'],
+          paint: {
+            'circle-radius': ['case', ['boolean', ['get', 'snapped'], false], 7, 5],
+            'circle-color': [
+              'case',
+              ['boolean', ['get', 'snapped'], false],
+              '#38bdf8',
+              '#ffffff'
+            ],
+            'circle-stroke-width': 2,
+            'circle-stroke-color': [
+              'match',
+              ['get', 'overrideType'],
+              'to_geology', '#f59e0b',
+              'remove_canopy', '#ef4444',
+              '#38bdf8'
+            ]
+          }
+        });
+      }
       this.renderOverrideCircles();
 
       if (this.currentPolygon) {
@@ -475,10 +540,20 @@ export class BoxDrawer {
     this.rectStartPoint = null;
     this.rectStartLngLat = null;
 
+    const wasOverrideMode = this.drawMode === 'override-polygon';
     this.overrideDrawType = null;
     this.overrideDrawCallback = null;
-    if (this.drawMode === 'override-polygon') {
+    if (wasOverrideMode) {
       this.drawMode = 'polygon';
+      const previewSrc = typeof this.map.getSource === 'function'
+        ? this.map.getSource('draw-override-preview-source')
+        : null;
+      if (previewSrc) {
+        previewSrc.setData({ type: 'FeatureCollection', features: [] });
+      }
+      if (typeof this.onOverrideModeChange === 'function') {
+        this.onOverrideModeChange(false, null);
+      }
     }
 
     if (this.button) {
@@ -512,8 +587,30 @@ export class BoxDrawer {
     this.clearMidpoint();
     const label = type === 'to_geology' ? 'Mark Geology' : 'Remove Canopy';
     this.showTooltip(0, 0, `${label}: click map to place 1st point • Esc to cancel`);
+    if (typeof this.onOverrideModeChange === 'function') {
+      this.onOverrideModeChange(true, type);
+    }
     this.notifyState();
     return true;
+  }
+
+  setShapeVisibility(visible) {
+    if (!this.map || typeof this.map.getLayer !== 'function' || typeof this.map.setLayoutProperty !== 'function') return;
+    const vis = visible ? 'visible' : 'none';
+    const layerIds = [
+      'draw-box-fill',
+      'draw-box-stroke',
+      'draw-handles-dots',
+      'draw-midpoint-dot',
+      'draw-context-stroke',
+      'draw-overrides-fill',
+      'draw-overrides-stroke'
+    ];
+    for (const id of layerIds) {
+      if (this.map.getLayer(id)) {
+        this.map.setLayoutProperty(id, 'visibility', vis);
+      }
+    }
   }
 
   setShadeOverrides(overrides) {
@@ -1103,41 +1200,77 @@ export class BoxDrawer {
       });
     }
 
-    const boxSource = this.map.getSource('draw-box-source');
-    if (boxSource) {
-      boxSource.setData({
-        type: 'FeatureCollection',
-        features
-      });
-    }
-
-    // Render handle dots at placed points, highlighting start point
-    const handleSource = this.map.getSource('draw-handles-source');
-    if (handleSource) {
-      const handleFeatures = this.points.map((pt, idx) => ({
-        type: 'Feature',
-        id: idx + 1,
-        properties: {
-          vertexIndex: idx,
-          isStart: idx === 0,
-          cursor: 'pointer'
+    if (this.drawMode === 'override-polygon') {
+      const ovType = this.overrideDrawType || 'to_geology';
+      const ovFeatures = [
+        {
+          type: 'Feature',
+          id: 1,
+          properties: { overrideType: ovType },
+          geometry: { type: 'LineString', coordinates: lineCoords }
         },
-        geometry: {
-          type: 'Point',
-          coordinates: pt
-        }
-      }));
+        ...this.points.map((pt, idx) => ({
+          type: 'Feature',
+          id: idx + 10,
+          properties: {
+            overrideType: ovType,
+            snapped: idx === 0 && this.isSnapToStart
+          },
+          geometry: { type: 'Point', coordinates: pt }
+        }))
+      ];
+      if (this.points.length >= 2) {
+        const polyCoords = [...this.points, previewCoord, this.points[0]];
+        ovFeatures.unshift({
+          type: 'Feature',
+          id: 2,
+          properties: { overrideType: ovType },
+          geometry: { type: 'Polygon', coordinates: [polyCoords] }
+        });
+      }
+      const previewSrc = typeof this.map.getSource === 'function'
+        ? this.map.getSource('draw-override-preview-source')
+        : null;
+      if (previewSrc) {
+        previewSrc.setData({ type: 'FeatureCollection', features: ovFeatures });
+      }
+    } else {
+      const boxSource = this.map.getSource('draw-box-source');
+      if (boxSource) {
+        boxSource.setData({
+          type: 'FeatureCollection',
+          features
+        });
+      }
 
-      handleSource.setData({
-        type: 'FeatureCollection',
-        features: handleFeatures
-      });
+      // Render handle dots at placed points, highlighting start point
+      const handleSource = this.map.getSource('draw-handles-source');
+      if (handleSource) {
+        const handleFeatures = this.points.map((pt, idx) => ({
+          type: 'Feature',
+          id: idx + 1,
+          properties: {
+            vertexIndex: idx,
+            isStart: idx === 0,
+            cursor: 'pointer'
+          },
+          geometry: {
+            type: 'Point',
+            coordinates: pt
+          }
+        }));
 
-      // Highlight snapped start point
-      this.map.setFeatureState(
-        { source: 'draw-handles-source', id: 1 },
-        { snapped: this.isSnapToStart }
-      );
+        handleSource.setData({
+          type: 'FeatureCollection',
+          features: handleFeatures
+        });
+
+        // Highlight snapped start point
+        this.map.setFeatureState(
+          { source: 'draw-handles-source', id: 1 },
+          { snapped: this.isSnapToStart }
+        );
+      }
     }
 
     // Update floating tooltip
