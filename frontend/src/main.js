@@ -621,17 +621,6 @@ if (appContainer) {
     }
   }
 
-  boxDrawer.onOverrideModeChange = (active, type) => {
-    if (active) {
-      overrideSaved3DVisible = solarPanel3DLayer.isVisible();
-      setOverrideToggleVisible(true, type);
-      applyOverrideViewMode('canopy');
-    } else {
-      setOverrideToggleVisible(false, null);
-      applyOverrideViewMode(null);
-    }
-  };
-
   let shapeToolbar = null;
   const dateSelector = new DateSelector(dateSelectorMount, savedState.date || '2026-06-21', () => {
     updateDateState(dateSelector.getDate());
@@ -677,6 +666,17 @@ if (appContainer) {
       solarDashboard.setSimulationData(null);
     }
   });
+
+  boxDrawer.onOverrideModeChange = (active, type) => {
+    if (active) {
+      overrideSaved3DVisible = solarPanel3DLayer.isVisible();
+      setOverrideToggleVisible(true, type);
+      applyOverrideViewMode('canopy');
+    } else {
+      setOverrideToggleVisible(false, null);
+      applyOverrideViewMode(null);
+    }
+  };
 
   // Restore saved rectangle/oblong shape on initial startup if persisted
   if (currentOverrides.length > 0) {
