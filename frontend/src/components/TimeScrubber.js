@@ -88,8 +88,6 @@ export class TimeScrubber {
       this.slider.max = 0;
       this.slider.value = 0;
       this.timeReadout.textContent = '-- h --';
-      this.sunriseVal.textContent = '-- h --';
-      this.sunsetVal.textContent = '-- h --';
       return;
     }
 
@@ -99,9 +97,6 @@ export class TimeScrubber {
     if (this.dailySummary && this.dailySummary.sunrise_time && this.dailySummary.sunset_time) {
       const sunriseDt = new Date(this.dailySummary.sunrise_time);
       const sunsetDt = new Date(this.dailySummary.sunset_time);
-      const torontoFmt = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Toronto', hour: '2-digit', minute: '2-digit', hour12: false });
-      this.sunriseVal.textContent = torontoFmt.format(sunriseDt);
-      this.sunsetVal.textContent = torontoFmt.format(sunsetDt);
 
       const firstDt = new Date(this.timeseries[0].timestamp);
       const lastDt = new Date(this.timeseries[this.timeseries.length - 1].timestamp);
