@@ -120,6 +120,9 @@ export class DateSelector {
     for (let day = 1; day <= daysInMonth; day++) {
       const dayCell = document.createElement('button');
       dayCell.className = 'btn btn-sm cal-day-btn';
+      dayCell.style.display = 'flex';
+      dayCell.style.alignItems = 'center';
+      dayCell.style.justifyContent = 'center';
       dayCell.style.padding = '5px 0';
       dayCell.style.width = '100%';
       dayCell.style.borderRadius = '6px';

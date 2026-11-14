@@ -92,33 +92,6 @@ export class SparklineChart {
             <circle class="playhead-dot" cx="0" cy="0" r="3.5" fill="#38bdf8" stroke="#ffffff" stroke-width="1.5" style="display: none;" />
           </svg>
 
-          <!-- Collapsible Legend in Top-Right Corner (Vertically Stacked) -->
-          <div class="sparkline-legend-box" style="position: absolute; top: 2px; right: 4px; z-index: 10; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 5px; padding: 3px 6px;">
-            <div class="legend-header" style="display: flex; align-items: center; justify-content: flex-end; gap: 4px; cursor: pointer; user-select: none;">
-              <span style="font-size: 0.58rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;">Legend</span>
-              <svg class="legend-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition: transform 0.2s ease;">
-                <polyline points="18 15 12 9 6 15"></polyline>
-              </svg>
-            </div>
-            <div class="legend-items" style="display: flex; flex-direction: column; gap: 3px; margin-top: 3px; font-size: 0.62rem; font-family: var(--font-mono);">
-              <span style="display: flex; align-items: center; gap: 5px;">
-                <span style="width: 8px; height: 2px; background: #38bdf8; display: inline-block;"></span>
-                <span style="color: #38bdf8; font-weight: 600;">Generated AC</span>
-              </span>
-              <span class="legend-canopy" style="display: none; align-items: center; gap: 5px;">
-                <span style="width: 8px; height: 8px; background: rgba(16, 185, 129, 0.35); border: 1px solid #10b981; border-radius: 2px; display: inline-block;"></span>
-                <span style="color: #34d399; font-weight: 600;">Canopy Loss</span>
-              </span>
-              <span class="legend-selfshade" style="display: none; align-items: center; gap: 5px;">
-                <span style="width: 8px; height: 8px; background: rgba(129, 140, 248, 0.35); border: 1px solid #818cf8; border-radius: 2px; display: inline-block;"></span>
-                <span style="color: #a5b4fc; font-weight: 600;">Self-Shade</span>
-              </span>
-              <span class="legend-potential" style="display: none; align-items: center; gap: 5px;">
-                <span style="width: 8px; height: 2px; background: #f59e0b; border-bottom: 1px dashed #f59e0b; display: inline-block;"></span>
-                <span style="color: #f59e0b; font-weight: 600;">Clear-Sky</span>
-              </span>
-            </div>
-          </div>
         </div>
       </div>
     `;
