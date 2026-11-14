@@ -74,6 +74,7 @@ export class BoxDrawer {
     this.overrideCircles = [];
     this.overrideDrawType = null;
     this.overrideDrawCallback = null;
+    this.overrideDragPolygon = null;
     this.onOverrideModeChange = null;
 
     this.initLayers();
@@ -543,6 +544,7 @@ export class BoxDrawer {
     const wasOverrideMode = this.drawMode === 'override-polygon';
     this.overrideDrawType = null;
     this.overrideDrawCallback = null;
+    this.overrideDragPolygon = null;
     if (wasOverrideMode) {
       this.drawMode = 'polygon';
       const previewSrc = typeof this.map.getSource === 'function'
@@ -875,16 +877,50 @@ export class BoxDrawer {
         return;
       }
 
-      // Check if user is drag-drawing a box in polygon mode
+      // Check if user is drag-drawing a box in polygon or override-polygon mode
       if (this.isPotentialDrag && this.points.length === 0 && this.startPoint) {
         const dx = e.point.x - this.startPoint.x;
         const dy = e.point.y - this.startPoint.y;
-        if (Math.hypot(dx, dy) > 20) {
+        const threshold = this.drawMode === 'override-polygon' ? 5 : 20;
+        if (Math.hypot(dx, dy) > threshold) {
           this.isDragging = true;
         }
       }
 
       if (this.isDragging && this.startLngLat) {
+        if (this.drawMode === 'override-polygon') {
+          const rectData = this.computeScreenRectangle(this.startLngLat, e.point);
+          if (rectData) {
+            this.overrideDragPolygon = rectData.coordinates;
+            const ovType = this.overrideDrawType || 'to_geology';
+            const previewSrc = typeof this.map.getSource === 'function'
+              ? this.map.getSource('draw-override-preview-source')
+              : null;
+            if (previewSrc) {
+              previewSrc.setData({
+                type: 'FeatureCollection',
+                features: [
+                  {
+                    type: 'Feature',
+                    id: 2,
+                    properties: { overrideType: ovType },
+                    geometry: { type: 'Polygon', coordinates: [rectData.coordinates] }
+                  },
+                  {
+                    type: 'Feature',
+                    id: 1,
+                    properties: { overrideType: ovType },
+                    geometry: { type: 'LineString', coordinates: rectData.coordinates }
+                  }
+                ]
+              });
+            }
+            const msg = `${rectData.widthM.toFixed(0)}m × ${rectData.heightM.toFixed(0)}m · ${rectData.areaM2.toLocaleString('en-US', { maximumFractionDigits: 0 })} m² • Release to finish`;
+            this.showTooltip(e.originalEvent.clientX, e.originalEvent.clientY, msg, rectData.isClamped);
+          }
+          return;
+        }
+
         // Quick drag-box mode
         const clamped = clampBboxToMaxArea(
           this.startLngLat.lng,
@@ -922,7 +958,10 @@ export class BoxDrawer {
         }
         return;
       }
-      if (this.isDragging) return; // Ignore clicks if it was a drag gesture
+      if (this.isDragging || this.justFinishedDrag) {
+        this.justFinishedDrag = false;
+        return; // Ignore clicks if it was a drag gesture
+      }
 
       const clickLngLat = [e.lngLat.lng, e.lngLat.lat];
 
@@ -980,6 +1019,19 @@ export class BoxDrawer {
       }
 
       this.isPotentialDrag = false;
+      if (this.drawMode === 'override-polygon' && this.isDragging) {
+        this.isDragging = false;
+        const dragPoly = this.overrideDragPolygon;
+        this.overrideDragPolygon = null;
+        if (dragPoly && dragPoly.length >= 4) {
+          this.justFinishedDrag = true;
+          setTimeout(() => { this.justFinishedDrag = false; }, 100);
+          this.finalizePolygon(dragPoly);
+        } else {
+          this.cancelDrawing();
+        }
+        return;
+      }
       if (this.isDragging && this.currentBbox) {
         this.isDragging = false;
         this.hideTooltip();
