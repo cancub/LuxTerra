@@ -618,7 +618,7 @@ export class ShapeToolbar {
         if (e.key === 'Enter') {
           e.preventDefault();
           this.shapeNameInput.blur();
-          if (this.isShapeModified || this.isNameModified) {
+          if (this.isShapeModified || this.isNameModified || this.isOverridesModified) {
             if (this.activeViewId !== null) {
               this.saveChangesToActiveShape();
             } else {
@@ -655,7 +655,7 @@ export class ShapeToolbar {
     this.btnSaveShape.addEventListener('click', (e) => {
       e.stopPropagation();
       this.closeDropdowns();
-      if (!this.isShapeModified && !this.isNameModified) return;
+      if (!this.isShapeModified && !this.isNameModified && !this.isOverridesModified) return;
       if (this.activeViewId !== null) {
         this.saveChangesToActiveShape();
       } else {
