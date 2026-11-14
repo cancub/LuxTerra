@@ -95,7 +95,7 @@ export class PlaybackEngine {
     const tick = (now) => {
       if (!this.isPlaying) return;
 
-      const deltaSec = (now - this.lastFrameTime) / 1000.0;
+      const deltaSec = Math.min(0.25, (now - this.lastFrameTime) / 1000.0);
       this.lastFrameTime = now;
 
       // Rate: speedPreset (sim minutes per real second) / stepMinutes (sim minutes per step)

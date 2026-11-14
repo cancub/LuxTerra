@@ -5,7 +5,6 @@ Enables component swapping and dependency inversion.
 
 from functools import lru_cache
 
-from .config import AppConfig, get_config
 from .interfaces.elevation_source import ElevationProvider
 from .interfaces.solar_engine import SolarEngine
 from .interfaces.occlusion_engine import OcclusionEngine

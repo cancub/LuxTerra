@@ -68,8 +68,9 @@ def calculate_ray_step(
         )
 
     azimuth_rad = math.radians(solar_azimuth_deg)
-    step_dc = math.sin(azimuth_rad) / resolution_m
-    step_dr = -math.cos(azimuth_rad) / resolution_m
+    # Step 1 grid cell per iteration so step_dist = resolution_m meters horizontally
+    step_dc = math.sin(azimuth_rad)
+    step_dr = -math.cos(azimuth_rad)
 
     tan_alpha = math.tan(math.radians(solar_elevation_deg))
     step_dist = float(resolution_m)

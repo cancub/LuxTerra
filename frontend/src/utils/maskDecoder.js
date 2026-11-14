@@ -123,14 +123,14 @@ export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols,
   }
 
   let pixelIdx = 0;
-  const byteCount = Math.min(
-    packedTerrain ? packedTerrain.length : packedCanopy.length,
+  const byteCount = Math.max(
+    packedTerrain ? packedTerrain.length : 0,
     packedCanopy.length
   );
 
   for (let i = 0; i < byteCount && pixelIdx < totalPixels; i++) {
-    const tByte = packedTerrain ? packedTerrain[i] : 0xFF;
-    const cByte = packedCanopy[i];
+    const tByte = packedTerrain && i < packedTerrain.length ? packedTerrain[i] : 0xFF;
+    const cByte = i < packedCanopy.length ? packedCanopy[i] : 0xFF;
 
     for (let b = 7; b >= 0 && pixelIdx < totalPixels; b--) {
       const isTerrainSun = (tByte >> b) & 1;

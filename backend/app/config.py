@@ -3,7 +3,7 @@ Centralized application configuration and injectable simulation defaults.
 """
 
 from typing import List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class AppConfig(BaseModel):

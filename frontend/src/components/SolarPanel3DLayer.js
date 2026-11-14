@@ -118,7 +118,15 @@ export class SolarPanel3DLayer {
     }
 
     if (this.pendingLayout) {
-      this.setLayout(this.pendingLayout);
+      if (this.layout === this.pendingLayout && this.faceVertices && this.gl && this.program) {
+        const gl = this.gl;
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.faceBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, this.faceVertices, gl.DYNAMIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.lineBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, this.lineVertices, gl.STATIC_DRAW);
+      } else {
+        this.setLayout(this.pendingLayout);
+      }
       this.pendingLayout = null;
     }
   }
@@ -128,6 +136,8 @@ export class SolarPanel3DLayer {
     const fShader = this.createShader(gl, gl.FRAGMENT_SHADER, FRAGMENT_SHADER_SRC);
 
     if (!vShader || !fShader) {
+      if (vShader) gl.deleteShader(vShader);
+      if (fShader) gl.deleteShader(fShader);
       console.warn('SolarPanel3DLayer: Failed to compile shaders');
       return;
     }
@@ -136,9 +146,14 @@ export class SolarPanel3DLayer {
     gl.attachShader(program, vShader);
     gl.attachShader(program, fShader);
     gl.linkProgram(program);
+    gl.detachShader(program, vShader);
+    gl.detachShader(program, fShader);
+    gl.deleteShader(vShader);
+    gl.deleteShader(fShader);
 
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
       console.warn('SolarPanel3DLayer: Program link failure:', gl.getProgramInfoLog(program));
+      gl.deleteProgram(program);
       return;
     }
 
@@ -330,13 +345,13 @@ export class SolarPanel3DLayer {
     const fFrac = isTop ? 0.75 : 0.25;
     const dz = (1.0 - fFrac) * slantHM * Math.sin(tiltRad);
     const dy = rowPitchM - (1.0 - fFrac) * slantHM * Math.cos(tiltRad);
-    if (dy <= 0.01 || dz <= 0.0) {
+    if (dy <= 0.1 || dz <= 0.0) {
       return 1.0;
     }
     const tanGamma = dz / dy;
     const obsFraction = 1.0 - 1.0 / (1.0 + tanGamma * tanGamma);
-    const rackSvf = 1.0 - 0.5 * obsFraction;
-    return Math.min(1.0, Math.max(0.2, rackSvf));
+    const rackSvf = 1.0 - (1.0 / 3.0) * obsFraction;
+    return Math.min(1.0, Math.max(0.5, rackSvf));
   }
 
   /**
@@ -375,6 +390,13 @@ export class SolarPanel3DLayer {
     const lineData = []; // Perimeter frames, module seams, and mounting legs
 
     const rowPitchM = layout.row_pitch_m || 10.57;
+
+    const tablesByRow = new Map();
+    for (let i = 0; i < tables.length; i++) {
+      const rIdx = tables[i].row_index;
+      if (!tablesByRow.has(rIdx)) tablesByRow.set(rIdx, []);
+      tablesByRow.get(rIdx).push(tables[i]);
+    }
 
     for (let t = 0; t < tables.length; t++) {
       const tbl = tables[t];
@@ -415,7 +437,7 @@ export class SolarPanel3DLayer {
       const midE = [0.5 * (se[0] + ne[0]), 0.5 * (se[1] + ne[1]), 0.5 * (se[2] + ne[2])];
 
       // Find tables in the row immediately to the south for precise ray obstruction checks
-      const southTables = tables.filter(t => t.row_index === tbl.row_index - 1);
+      const southTables = tablesByRow.get(tbl.row_index - 1) || [];
 
       const c0 = corners[0]; // SW
       const c1 = corners[1]; // SE
@@ -721,7 +743,7 @@ export class SolarPanel3DLayer {
     const dy = this.anchorMerc.y;
     const dz = this.anchorMerc.z;
 
-    const mvp = new Float32Array(16);
+    const mvp = this._mvpMatrix || (this._mvpMatrix = new Float32Array(16));
     for (let i = 0; i < 16; i++) {
       mvp[i] = matrix[i];
     }

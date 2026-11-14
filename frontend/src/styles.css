@@ -231,11 +231,11 @@ body, html {
 }
 
 .maplibregl-ctrl-group {
-  background: var(--panel-bg) !important;
+  background: var(--bg-card) !important;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--border-color) !important;
-  border-radius: var(--radius-md) !important;
+  border: 1px solid var(--border-card) !important;
+  border-radius: 12px !important;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
   overflow: hidden;
 }
@@ -252,11 +252,11 @@ body, html {
 }
 
 .maplibregl-ctrl-group button + button {
-  border-top: 1px solid var(--border-color) !important;
+  border-top: 1px solid var(--border-card) !important;
 }
 
 .maplibregl-ctrl-group button:hover {
-  background-color: var(--panel-bg-hover) !important;
+  background-color: var(--bg-card-hover) !important;
 }
 
 .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
@@ -267,7 +267,7 @@ body, html {
   background-color: rgba(15, 23, 42, 0.8) !important;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid var(--border-color) !important;
+  border: 1px solid var(--border-card) !important;
   border-top: none !important;
   color: var(--text-secondary) !important;
   font-family: var(--font-mono) !important;
@@ -452,7 +452,7 @@ body, html {
 }
 
 .settings-cog-btn:hover {
-  background: var(--panel-bg-hover);
+  background: var(--bg-card-hover);
   color: var(--accent-solar);
 }
 
@@ -517,49 +517,6 @@ body, html {
 
 .legend-header:hover {
   opacity: 0.85;
-}
-
-/* Right Sidebar Dock */
-.right-dock {
-  position: absolute;
-  top: 112px;
-  right: 16px;
-  width: 324px;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-height: calc(100vh - 130px);
-  overflow-y: auto;
-  overflow-x: hidden;
-  pointer-events: auto;
-  padding-right: 4px;
-  scroll-behavior: smooth;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
-}
-
-.right-dock > * {
-  pointer-events: auto;
-  width: 100%;
-}
-
-.right-dock::-webkit-scrollbar {
-  width: 5px;
-}
-
-.right-dock::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 4px;
-}
-
-.right-dock::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.25);
-  border-radius: 4px;
-}
-
-.right-dock::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.4);
 }
 
 /* Toast Notification */
@@ -907,20 +864,6 @@ input:focus, select:focus {
   color: #f8fafc;
 }
 
-/* Interactive Rectangle Resize Corner Handles */
-.box-corner-handle {
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
-}
-
-.box-corner-handle:hover {
-  transform: scale(1.35);
-  box-shadow: 0 0 14px rgba(56, 189, 248, 1) !important;
-}
-
-.box-corner-handle:active {
-  transform: scale(1.5);
-}
-
 /* Central Simulation Computing Loading Pill */
 .sim-loading-pill {
   position: absolute;
@@ -941,227 +884,6 @@ input:focus, select:focus {
   font-weight: 500;
   pointer-events: none;
   animation: slideDown 0.2s ease-out;
-}
-
-/* Saved Views & Shapes Overlay Panel */
-.saved-views-panel {
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 100%;
-  max-width: 320px;
-  transition: all 0.25s ease;
-}
-
-.saved-views-panel .panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  cursor: pointer;
-  user-select: none;
-}
-
-.saved-views-panel .panel-title {
-  font-weight: 700;
-  font-size: 0.92rem;
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.saved-views-panel .panel-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.saved-views-panel .collapse-btn {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid var(--border-card);
-  border-radius: 4px;
-  color: var(--text-primary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-}
-
-.saved-views-panel .collapse-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.saved-views-panel .panel-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  border-top: 1px solid var(--border-card);
-  padding-top: 12px;
-}
-
-.saved-views-panel .panel-section {
-  display: flex;
-  flex-direction: column;
-}
-
-.saved-views-panel .panel-section-title {
-  font-size: 0.70rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  margin-bottom: 6px;
-}
-
-.saved-views-panel .shape-status-pill {
-  font-size: 0.68rem;
-  font-family: var(--font-mono);
-  color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.04);
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-/* Geocoder inside Panel */
-.saved-views-panel .geocoder-wrapper {
-  background: rgba(0, 0, 0, 0.25) !important;
-  border: 1px solid var(--border-card) !important;
-  border-radius: 6px !important;
-  min-width: 0 !important;
-  width: 100% !important;
-  padding: 4px 8px !important;
-  box-shadow: none !important;
-}
-
-.saved-views-panel .geocoder-wrapper .geocoder-input {
-  font-size: 0.80rem !important;
-}
-
-.saved-views-panel .geocoder-dropdown {
-  position: absolute !important;
-  top: calc(100% + 4px) !important;
-  left: 0 !important;
-  right: 0 !important;
-  max-height: 200px !important;
-  overflow-y: auto !important;
-  z-index: 200 !important;
-  background: #0f172a !important;
-  border: 1px solid var(--border-card) !important;
-  border-radius: 6px !important;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6) !important;
-}
-
-/* Shape Type Buttons */
-.saved-views-panel .shape-type-buttons {
-  display: grid;
-  grid-template-columns: 1fr 1fr 38px;
-  gap: 6px;
-}
-
-.saved-views-panel .btn-shape-type {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 6px 8px;
-  font-size: 0.76rem;
-  font-weight: 600;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--border-card);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.saved-views-panel .btn-shape-type:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--text-primary);
-}
-
-.saved-views-panel .btn-shape-type.active {
-  background: rgba(56, 189, 248, 0.22) !important;
-  border-color: var(--accent-solar) !important;
-  color: #ffffff !important;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
-}
-
-.saved-views-panel .btn-shape-clear {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-card);
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.saved-views-panel .btn-shape-clear:not(:disabled):hover {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: var(--accent-danger);
-  color: var(--accent-danger);
-}
-
-/* Save Combo Row */
-.saved-views-panel .save-view-row {
-  display: flex;
-  gap: 6px;
-}
-
-.saved-views-panel .save-view-input {
-  flex: 1;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border-card);
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 0.78rem;
-  color: var(--text-primary);
-  outline: none;
-  transition: border-color 0.2s ease;
-}
-
-.saved-views-panel .save-view-input:focus {
-  border-color: var(--accent-solar);
-  background: rgba(0, 0, 0, 0.45);
-}
-
-.saved-views-panel .save-view-btn {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 0.76rem;
-  font-weight: 600;
-  padding: 6px 12px;
-}
-
-/* Saved Views List */
-.saved-views-panel .saved-views-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 180px;
-  overflow-y: auto;
-  padding-right: 2px;
-}
-
-.saved-views-panel .saved-views-list::-webkit-scrollbar {
-  width: 4px;
-}
-
-.saved-views-panel .saved-views-list::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.saved-views-panel .saved-views-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 2px;
 }
 
 .saved-view-item {

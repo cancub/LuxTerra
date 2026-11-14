@@ -3,6 +3,7 @@ NRCan CanElevation / HRDEM STAC & WCS Client for Quebec LiDAR Elevation Data.
 """
 
 import logging
+import uuid
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import requests
@@ -88,18 +89,23 @@ class NRCanClient:
             logger.info(f"File {output_path.name} already exists. Skipping download.")
             return output_path
 
-        temp_path = output_path.with_suffix(f"{output_path.suffix}.tmp")
+        temp_path = output_path.with_name(f"{output_path.name}.{uuid.uuid4().hex}.tmp")
         logger.info(f"Downloading raster from {url} to {temp_path}...")
 
-        resp = self.session.get(url, stream=True, timeout=timeout)
-        resp.raise_for_status()
+        try:
+            resp = self.session.get(url, stream=True, timeout=timeout)
+            resp.raise_for_status()
 
-        with open(temp_path, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=1024 * 1024):
-                if chunk:
-                    f.write(chunk)
+            with open(temp_path, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
 
-        temp_path.replace(output_path)
+            temp_path.replace(output_path)
+        except Exception:
+            if temp_path.exists():
+                temp_path.unlink(missing_ok=True)
+            raise
         logger.info(f"Saved raster to {output_path} ({output_path.stat().st_size} bytes)")
         return output_path
 

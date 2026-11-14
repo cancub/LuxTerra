@@ -8,7 +8,7 @@ from typing import Tuple, Optional, Union
 import numpy as np
 
 from ...interfaces.pv_model import PVSystemModel
-from ...schemas.domain import IrradianceComponents, PVConfig, DeploymentMode
+from ...schemas.domain import IrradianceComponents, PVConfig
 
 
 class StandardPVModel(PVSystemModel):

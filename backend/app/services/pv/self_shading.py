@@ -4,10 +4,9 @@ Calculates direct beam inter-row obstruction based on solar profile angle,
 row pitch, rack slant height, and tilt angle.
 """
 
-from typing import List, Tuple
 import numpy as np
 
-from ...schemas.domain import PVTableGeometry, PVLayoutResult
+from ...schemas.domain import PVLayoutResult
 
 
 def calculate_profile_angle_rad(solar_azimuth_deg: float, solar_elevation_deg: float, rack_azimuth_deg: float = 180.0) -> float:

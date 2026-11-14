@@ -642,5 +642,34 @@ def test_single_pass_ground_and_top_parity():
             assert np.allclose(gtp[i], tp[i], atol=1e-4)
 
 
+def test_raymarch_resolution_scaling():
+    """
+    A 20m tall wall 40m east of the receiver casts a shadow at <= ~26.5 deg elevation
+    regardless of whether resolution_m is 0.5m, 1.0m, or 2.0m.
+    """
+    cpu = NumPyOcclusionEngine()
+    for res in (0.5, 1.0, 2.0):
+        size = int(round(120.0 / res))
+        dtm = np.full((size, size), 100.0, dtype=np.float32)
+        wall_col = int(round(80.0 / res))
+        rx_col = int(round(40.0 / res))
+        rx_row = int(round(60.0 / res))
+        dtm[:, wall_col:wall_col + max(1, int(round(4.0 / res)))] = 120.0
+
+        # At 20 deg, tan(20)*40m = 14.56m < 20m -> shaded
+        m_shaded = cpu.compute_shadow_mask(
+            dtm, slice(rx_row, rx_row + 1), slice(rx_col, rx_col + 1),
+            solar_azimuth_deg=90.0, solar_elevation_deg=20.0, resolution_m=res, max_search_radius_m=100.0
+        )
+        assert m_shaded[0, 0] == 0, f"Expected shaded at res={res}m"
+
+        # At 35 deg, tan(35)*40m = 28.0m > 20m -> unshaded
+        m_lit = cpu.compute_shadow_mask(
+            dtm, slice(rx_row, rx_row + 1), slice(rx_col, rx_col + 1),
+            solar_azimuth_deg=90.0, solar_elevation_deg=35.0, resolution_m=res, max_search_radius_m=100.0
+        )
+        assert m_lit[0, 0] == 1, f"Expected unshaded at res={res}m"
+
+
 
 

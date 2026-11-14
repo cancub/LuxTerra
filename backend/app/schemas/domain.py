@@ -3,8 +3,7 @@ Domain models and validation schemas for LuxTerra solar and occlusion simulation
 """
 
 from enum import Enum
-from typing import Optional, List, Dict, Any
-from datetime import datetime
+from typing import Optional, List, Any
 from pydantic import BaseModel, Field, model_validator
 
 from ..config import config

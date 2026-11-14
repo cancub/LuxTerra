@@ -3,9 +3,10 @@ Tile cache manager for local DTM GeoTIFF storage and verification.
 Supports downloading full GeoTIFFs or extracting windowed sub-regions from Cloud-Optimized GeoTIFFs (COGs).
 """
 
-import os
 import json
 import logging
+import threading
+import uuid
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 import requests
@@ -43,6 +44,7 @@ class TileCacheManager:
         self.manifest_path = self.cache_dir / "manifest.json"
         self._manifest_cache: Optional[Dict[str, Any]] = None
         self._manifest_mtime: Optional[float] = None
+        self._lock = threading.RLock()
 
     def _get_target_dir(self, layer: str = "dtm") -> Path:
         return self.dsm_dir if layer.lower() == "dsm" else self.cache_dir
@@ -78,31 +80,34 @@ class TileCacheManager:
             logger.info(f"{layer.upper()} tile {filename} is already cached. Skipping download.")
             return final_path
 
-        temp_path = target_dir / f"{filename}.tmp"
+        temp_path = target_dir / f"{filename}.{uuid.uuid4().hex}.tmp"
         logger.info(f"Downloading {layer.upper()} from {url} to {temp_path}...")
-        
+
         headers = {"User-Agent": "LuxTerra-ElevationClient/1.0"}
-        response = requests.get(url, stream=True, timeout=timeout, headers=headers)
-        response.raise_for_status()
-
-        with open(temp_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=1024 * 1024):
-                if chunk:
-                    f.write(chunk)
-
-        # Validate that the downloaded file is a readable raster
         try:
+            response = requests.get(url, stream=True, timeout=timeout, headers=headers)
+            response.raise_for_status()
+
+            with open(temp_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+
+            # Validate that the downloaded file is a readable raster
             with rasterio.open(temp_path) as src:
                 logger.info(
                     f"Validated {layer.upper()} {filename}: {src.width}x{src.height}, CRS={src.crs}, res={src.res}"
                 )
+
+            # Atomic move
+            temp_path.replace(final_path)
         except Exception as e:
             if temp_path.exists():
-                temp_path.unlink()
-            raise ValueError(f"Downloaded file from {url} is not a valid GeoTIFF raster: {e}")
+                temp_path.unlink(missing_ok=True)
+            if isinstance(e, requests.RequestException):
+                raise
+            raise ValueError(f"Downloaded file from {url} is not a valid GeoTIFF raster: {e}") from e
 
-        # Atomic move
-        temp_path.replace(final_path)
         self.update_manifest()
         return final_path
 
@@ -126,34 +131,45 @@ class TileCacheManager:
         min_lon, min_lat, max_lon, max_lat = wgs84_bbox
         vsi_url = f"/vsicurl/{cog_url}" if not cog_url.startswith("/vsi") else cog_url
         
+        temp_path = target_dir / f"{filename}.{uuid.uuid4().hex}.tmp"
         logger.info(f"Streaming windowed extraction from COG: {cog_url} for bbox {wgs84_bbox} into {layer.upper()}...")
-        with rasterio.Env(CPL_VSIL_CURL_ALLOWED_EXTENSIONS=".tif", GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR"):
-            with rasterio.open(vsi_url) as src:
-                src_crs_str = src.crs.to_string() if hasattr(src.crs, 'to_string') else str(src.crs)
-                patch_wgs84 = box(min_lon, min_lat, max_lon, max_lat)
-                patch_native = transform_geometry(patch_wgs84, "EPSG:4326", src_crs_str)
-                
-                window = from_bounds(*patch_native.bounds, src.transform)
-                data = src.read(1, window=window)
-                window_transform = rasterio.windows.transform(window, src.transform)
-                
-                temp_path = target_dir / f"{filename}.tmp"
-                with rasterio.open(
-                    temp_path,
-                    'w',
-                    driver='GTiff',
-                    height=data.shape[0],
-                    width=data.shape[1],
-                    count=1,
-                    dtype=data.dtype,
-                    crs=src.crs,
-                    transform=window_transform,
-                    nodata=src.nodata if src.nodata is not None else -9999.0,
-                    compress='lzw'
-                ) as dst:
-                    dst.write(data, 1)
+        try:
+            with rasterio.Env(
+                CPL_VSIL_CURL_ALLOWED_EXTENSIONS=".tif",
+                GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR",
+                GDAL_HTTP_TIMEOUT="30",
+                GDAL_HTTP_MAX_RETRY="3"
+            ):
+                with rasterio.open(vsi_url) as src:
+                    src_crs_str = src.crs.to_string() if hasattr(src.crs, 'to_string') else str(src.crs)
+                    patch_wgs84 = box(min_lon, min_lat, max_lon, max_lat)
+                    patch_native = transform_geometry(patch_wgs84, "EPSG:4326", src_crs_str)
 
-        temp_path.replace(final_path)
+                    nodata_val = src.nodata if src.nodata is not None else -9999.0
+                    window = from_bounds(*patch_native.bounds, src.transform)
+                    data = src.read(1, window=window, boundless=True, fill_value=nodata_val)
+                    window_transform = rasterio.windows.transform(window, src.transform)
+
+                    with rasterio.open(
+                        temp_path,
+                        'w',
+                        driver='GTiff',
+                        height=data.shape[0],
+                        width=data.shape[1],
+                        count=1,
+                        dtype=data.dtype,
+                        crs=src.crs,
+                        transform=window_transform,
+                        nodata=nodata_val,
+                        compress='lzw'
+                    ) as dst:
+                        dst.write(data, 1)
+
+            temp_path.replace(final_path)
+        except Exception:
+            if temp_path.exists():
+                temp_path.unlink(missing_ok=True)
+            raise
         logger.info(f"Extracted and saved local {layer.upper()} COG tile: {final_path} ({data.shape[1]}x{data.shape[0]})")
         self.update_manifest()
         return final_path
@@ -266,39 +282,49 @@ class TileCacheManager:
         # Ensure deterministic ordering
         manifest["tiles"].sort(key=lambda t: t.get("filename", ""))
 
-        # Check if identical to existing manifest to avoid dirtying git working tree and redundant I/O
-        if self.manifest_path.exists():
+        with self._lock:
+            # Check if identical to existing manifest to avoid dirtying git working tree and redundant I/O
+            if self.manifest_path.exists():
+                try:
+                    with open(self.manifest_path, "r") as f:
+                        existing_manifest = json.load(f)
+                    if existing_manifest == manifest:
+                        self._manifest_cache = manifest
+                        self._manifest_mtime = self.manifest_path.stat().st_mtime
+                        return manifest
+                except Exception as e:
+                    logger.debug(f"Could not compare existing manifest: {e}")
+
+            temp_manifest = self.cache_dir / f"manifest.{uuid.uuid4().hex}.tmp"
             try:
-                with open(self.manifest_path, "r") as f:
-                    existing_manifest = json.load(f)
-                if existing_manifest == manifest:
-                    self._manifest_cache = manifest
-                    self._manifest_mtime = self.manifest_path.stat().st_mtime
-                    return manifest
+                with open(temp_manifest, "w") as f:
+                    json.dump(manifest, f, indent=2)
+                temp_manifest.replace(self.manifest_path)
             except Exception:
-                pass
+                if temp_manifest.exists():
+                    temp_manifest.unlink(missing_ok=True)
+                raise
 
-        with open(self.manifest_path, "w") as f:
-            json.dump(manifest, f, indent=2)
-
-        self._manifest_cache = manifest
-        self._manifest_mtime = self.manifest_path.stat().st_mtime
-        return manifest
+            self._manifest_cache = manifest
+            self._manifest_mtime = self.manifest_path.stat().st_mtime
+            return manifest
 
     def load_manifest(self) -> Dict[str, Any]:
         """Load manifest.json with in-memory mtime caching, or build it if missing."""
-        if not self.manifest_path.exists():
-            return self.update_manifest()
+        with self._lock:
+            if not self.manifest_path.exists():
+                return self.update_manifest()
 
-        try:
-            current_mtime = self.manifest_path.stat().st_mtime
-            if self._manifest_cache is not None and self._manifest_mtime == current_mtime:
-                return self._manifest_cache
+            try:
+                current_mtime = self.manifest_path.stat().st_mtime
+                if self._manifest_cache is not None and self._manifest_mtime == current_mtime:
+                    return self._manifest_cache
 
-            with open(self.manifest_path, "r") as f:
-                manifest = json.load(f)
-            self._manifest_cache = manifest
-            self._manifest_mtime = current_mtime
-            return manifest
-        except Exception:
-            return self.update_manifest()
+                with open(self.manifest_path, "r") as f:
+                    manifest = json.load(f)
+                self._manifest_cache = manifest
+                self._manifest_mtime = current_mtime
+                return manifest
+            except Exception as e:
+                logger.warning(f"Failed to load manifest.json, rebuilding: {e}")
+                return self.update_manifest()

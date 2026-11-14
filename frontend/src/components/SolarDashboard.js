@@ -297,6 +297,14 @@ export class SolarDashboard {
 
   setSimulationData(data, scaleFactor = 1.0) {
     if (!data) {
+      this.timeseries = [];
+      this.dailySummary = null;
+      this.currentMetric = null;
+      this.currentIndex = 0;
+      this.isHoveringPanel = false;
+      if (this.panelHoverBanner) this.panelHoverBanner.style.display = 'none';
+      if (this.hoveredPanelIndicator) this.hoveredPanelIndicator.style.display = 'none';
+      if (this.instantaneousTitle) this.instantaneousTitle.textContent = 'Instantaneous AC Power';
       if (this.kwhTotal) this.kwhTotal.textContent = '0.0';
       if (this.tiltVal) this.tiltVal.textContent = '--°';
       if (this.arraySpecsRow) this.arraySpecsRow.style.display = 'none';
@@ -443,7 +451,7 @@ export class SolarDashboard {
       this.instantaneousTitle.textContent = 'Individual Panel AC Power';
     }
 
-    const sf = this.scaleFactor || 1.0;
+    const sf = this.currentScaleFactor || 1.0;
     const incW = Math.round((breakdown.incidentW !== undefined ? breakdown.incidentW : (breakdown.unshadedW * 0.85)) * sf);
     const diffW = Math.round((breakdown.diffuseW !== undefined ? breakdown.diffuseW : (breakdown.unshadedW - incW)) * sf);
     const gW = Math.round((breakdown.geoLossW || 0) * sf);

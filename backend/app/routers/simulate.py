@@ -70,5 +70,5 @@ def simulate(
         logger.error(f"Unexpected error during simulation: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Simulation failed due to an internal error: {str(e)}"
+            detail="Simulation failed due to an internal error."
         )

@@ -29,11 +29,3 @@ export async function runSimulation(requestPayload, signal = null) {
 
   return await response.json();
 }
-
-export async function fetchLocations() {
-  const response = await fetch('/api/elevation/locations');
-  if (!response.ok) {
-    throw new Error(`Failed to load locations: HTTP ${response.status}`);
-  }
-  return await response.json();
-}

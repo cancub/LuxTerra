@@ -4,7 +4,7 @@ Performs windowed extraction of LiDAR DTM rasters with perimeter buffering.
 """
 
 import logging
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 from pathlib import Path
 import numpy as np
 import rasterio
@@ -49,12 +49,14 @@ def _reproject_raster_to_grid(
             destination=grid,
             src_transform=src.transform,
             src_crs=src.crs,
+            src_nodata=nodata_val,
             dst_transform=dst_transform,
             dst_crs=dst_crs,
+            dst_nodata=nodata_val,
             resampling=Resampling.bilinear
         )
 
-        invalid = (grid == nodata_val) | np.isnan(grid) | (grid < -500.0)
+        invalid = (~np.isfinite(grid)) | (grid == nodata_val) | (grid < -500.0) | (grid > 10000.0)
         if np.any(invalid):
             if floor_grid is not None:
                 grid[invalid] = floor_grid[invalid]
@@ -172,8 +174,9 @@ class LocalGeoTIFFProvider(ElevationProvider):
 
             center_lon = (min_lon + max_lon) / 2.0
             center_lat = (min_lat + max_lat) / 2.0
-            dtm_filename = f"dtm_auto_{center_lat:.3f}_{center_lon:.3f}.tif"
-            dsm_filename = f"dsm_auto_{center_lat:.3f}_{center_lon:.3f}.tif"
+            buf_tag = int(round(buffer_meters))
+            dtm_filename = f"dtm_auto_{center_lat:.3f}_{center_lon:.3f}_b{buf_tag}.tif"
+            dsm_filename = f"dsm_auto_{center_lat:.3f}_{center_lon:.3f}_b{buf_tag}.tif"
 
             logger.info(f"Extracting on-demand LiDAR DTM window for [{center_lat:.4f}, {center_lon:.4f}] from {dtm_url}...")
             cached_dtm = self.cache_manager.extract_cog_window(
@@ -271,7 +274,7 @@ class LocalGeoTIFFProvider(ElevationProvider):
         )
 
         # 2. Reproject surface DSM (clamped to bare DTM floor)
-        buffered_dsm = buffered_elevation.copy()
+        buffered_dsm = None
         has_canopy = False
         if dsm_path and dsm_path.exists():
             try:
@@ -281,7 +284,8 @@ class LocalGeoTIFFProvider(ElevationProvider):
                 has_canopy = success
             except Exception as e:
                 logger.warning(f"Could not reproject DSM from {dsm_path}: {e}. Falling back to DTM.")
-                buffered_dsm = buffered_elevation.copy()
+        if buffered_dsm is None:
+            buffered_dsm = buffered_elevation.copy()
 
         # 3. Compute Canopy Height Model (CHM)
         raw_chm = buffered_dsm - buffered_elevation

@@ -3,6 +3,23 @@ Compiled CUDA C++ Ray-Marching Kernels for GPU-accelerated terrain and canopy oc
 """
 
 RAYMARCH_CUDA_SOURCE = r"""
+__device__ inline float sample_bilinear(
+    const float* __restrict__ grid,
+    int W,
+    int r0_i, int c0_i,
+    float dr, float dc
+) {
+    int r1_i = r0_i + 1;
+    int c1_i = c0_i + 1;
+    float z00 = grid[r0_i * W + c0_i];
+    float z01 = grid[r0_i * W + c1_i];
+    float z10 = grid[r1_i * W + c0_i];
+    float z11 = grid[r1_i * W + c1_i];
+    float z_top = (1.0f - dc) * z00 + dc * z01;
+    float z_bot = (1.0f - dc) * z10 + dc * z11;
+    return (1.0f - dr) * z_top + dr * z_bot;
+}
+
 extern "C" __global__
 void raymarch_terrain_kernel(
     const float* __restrict__ elevation,    // Full buffered grid: (H, W)
@@ -300,14 +317,14 @@ void compute_svf_kernel(
     float z_dsm_0 = fmaxf(z_dtm_0, dsm[r0 * W + c0]);
 
     // Receiver altitude: rooftop sits atop DSM (+0.5m clearance), ground mount sits at DTM + stand height
-    float z0 = (is_rooftop != 0 && include_tree_canopy != 0)
+    float z0 = (is_rooftop != 0)
         ? (z_dsm_0 + 0.5f)
         : (z_dtm_0 + ground_stand_height_m);
 
     // Overhead canopy check if ground mount is directly under foliage
     float overhead_tan = 0.0f;
     if (include_tree_canopy != 0 && is_rooftop == 0 && z_dsm_0 > z0 + 0.5f) {
-        overhead_tan = z_dsm_0 - z0;
+        overhead_tan = (z_dsm_0 - z0) / fmaxf(0.5f, step_dist);
     }
 
     float svf_sum = 0.0f;

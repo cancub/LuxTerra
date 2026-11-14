@@ -3,7 +3,7 @@ GPU-accelerated Terrain Occlusion Engine using CuPy.
 Dispatches parallel ray-marching across the local NVIDIA GPU (RTX 4070 Ti).
 """
 
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 import numpy as np
 
 from ...interfaces.occlusion_engine import OcclusionEngine

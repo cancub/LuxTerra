@@ -159,6 +159,7 @@ export class SparklineChart {
     this.svg.addEventListener('click', (e) => {
       if (this.timeseries.length === 0) return;
       const rect = this.svg.getBoundingClientRect();
+      if (rect.width <= 0) return;
       const clickX = e.clientX - rect.left;
       const pct = Math.max(0, Math.min(1, clickX / rect.width));
       const targetIndex = Math.round(pct * (this.timeseries.length - 1));
@@ -228,7 +229,7 @@ export class SparklineChart {
     const potentialPoints = [];
 
     for (let i = 0; i < n; i++) {
-      const x = (i / (n - 1)) * this.width;
+      const x = (i / Math.max(1, n - 1)) * this.width;
 
       const normYActual = powers[i] / this.maxPowerKw;
       const yActual = this.height - padBottom - normYActual * usableH;
@@ -294,7 +295,7 @@ export class SparklineChart {
     this.currentScaleFactor = scaleFactor;
     const n = this.timeseries.length;
 
-    const x = (this.currentIndex / (n - 1)) * this.width;
+    const x = (this.currentIndex / Math.max(1, n - 1)) * this.width;
     const m = this.timeseries[this.currentIndex];
     const power = (m.power_kw || 0) * scaleFactor;
     const potential = ((m.unshaded_power_kw !== undefined ? m.unshaded_power_kw : m.power_kw) || 0) * scaleFactor;

@@ -2,13 +2,13 @@
 Pydantic schemas for the simulation request and response payloads.
 """
 
-from typing import List, Optional
+from typing import Any, List, Optional
 from datetime import date
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..config import config
 from .domain import GeoBoundingBox, DeploymentMode, PVLayoutResult
-from ..services.elevation.geo_utils import calculate_bbox_area_meters, calculate_polygon_area_meters
+from ..services.elevation.geo_utils import calculate_bbox_area_meters, calculate_polygon_area_meters, normalize_bbox
 
 
 class SimulateRequest(BaseModel):
@@ -35,6 +35,37 @@ class SimulateRequest(BaseModel):
     resolution_m: float = Field(default=1.0, ge=0.5, le=10.0, description="Simulation grid resolution in meters")
     include_tree_canopy: bool = Field(default=True, description="Enable vegetative tree canopy and structure ray-marching")
     canopy_mode: str = Field(default="seasonal", description="Canopy phenology mode: 'seasonal', 'leaf_on', 'leaf_off', 'bare_terrain'")
+
+    @model_validator(mode="before")
+    @classmethod
+    def allow_enclosing_bbox_for_polygon(cls, data: Any) -> Any:
+        if isinstance(data, dict) and data.get("polygon") and len(data["polygon"]) >= 3:
+            raw_bbox = data.get("bbox")
+            if isinstance(raw_bbox, dict):
+                n_w, n_s, n_e, n_n = normalize_bbox(
+                    float(raw_bbox["min_lon"]),
+                    float(raw_bbox["min_lat"]),
+                    float(raw_bbox["max_lon"]),
+                    float(raw_bbox["max_lat"]),
+                )
+                data = dict(data)
+                data["bbox"] = GeoBoundingBox.model_construct(
+                    min_lon=n_w, min_lat=n_s, max_lon=n_e, max_lat=n_n
+                )
+        return data
+
+    @field_validator("polygon")
+    @classmethod
+    def validate_polygon_coords(cls, v: Optional[List[List[float]]]) -> Optional[List[List[float]]]:
+        if v is None:
+            return v
+        for pt in v:
+            if not isinstance(pt, (list, tuple)) or len(pt) < 2:
+                raise ValueError("Each polygon vertex must be [lon, lat].")
+            lon, lat = float(pt[0]), float(pt[1])
+            if not (-180.0 <= lon <= 180.0 and -90.0 <= lat <= 90.0):
+                raise ValueError(f"Polygon coordinate out of WGS84 range: [{lon}, {lat}].")
+        return v
 
     @field_validator("date")
     @classmethod

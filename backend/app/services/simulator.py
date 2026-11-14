@@ -77,7 +77,7 @@ class SimulationOrchestrator:
 
         dtm_grid = elev_data.get("dtm", elev_data["buffered_elevation"])
         dsm_grid = elev_data.get("dsm", dtm_grid)
-        has_canopy = bool(elev_data.get("has_canopy", False)) and request.include_tree_canopy and (request.canopy_mode != "bare_terrain")
+        has_canopy = bool(elev_data.get("has_canopy", False)) and request.include_tree_canopy and (request.canopy_mode.lower().strip() != "bare_terrain")
         dsm_tile_source = elev_data.get("dsm_tile_source")
 
         patch_slice_y = elev_data["patch_slice_y"]
@@ -100,57 +100,38 @@ class SimulationOrchestrator:
         polygon_area_m2 = None
         has_context_expansion = bool(request.context_bbox is not None)
 
+        def _rasterize_domain(geom_wgs84):
+            import rasterio.features
+            import rasterio.transform
+
+            target_crs = elev_data["crs"]
+            geom_utm = transform_geometry(geom_wgs84, "EPSG:4326", target_crs)
+            area_m2 = float(geom_utm.area)
+            p_min_x, p_min_y, p_max_x, p_max_y = geo_info["patch_bounds_metric"]
+            patch_transform = rasterio.transform.from_bounds(
+                p_min_x, p_min_y, p_max_x, p_max_y, patch_w, patch_h
+            )
+            rast = rasterio.features.rasterize(
+                [geom_utm],
+                out_shape=(patch_h, patch_w),
+                transform=patch_transform,
+                fill=0,
+                default_value=1,
+                dtype=np.uint8
+            ).astype(bool)
+            return (rast if np.any(rast) else None), area_m2
+
         if request.polygon and len(request.polygon) >= 3:
             from shapely.geometry import Polygon as ShapelyPolygon
-            import rasterio.features
-            import rasterio.transform
-
             poly_wgs84 = ShapelyPolygon(request.polygon)
-            target_crs = elev_data["crs"]
-            poly_utm = transform_geometry(poly_wgs84, "EPSG:4326", target_crs)
-            polygon_area_m2 = float(poly_utm.area)
-
-            p_min_x, p_min_y, p_max_x, p_max_y = geo_info["patch_bounds_metric"]
-            patch_transform = rasterio.transform.from_bounds(
-                p_min_x, p_min_y, p_max_x, p_max_y, patch_w, patch_h
-            )
-            polygon_mask = rasterio.features.rasterize(
-                [poly_utm],
-                out_shape=(patch_h, patch_w),
-                transform=patch_transform,
-                fill=0,
-                default_value=1,
-                dtype=np.uint8
-            ).astype(bool)
-            if not np.any(polygon_mask):
-                polygon_mask = None
+            if not poly_wgs84.is_valid:
+                poly_wgs84 = poly_wgs84.buffer(0)
+            polygon_mask, polygon_area_m2 = _rasterize_domain(poly_wgs84)
         elif has_context_expansion:
             from shapely.geometry import box as ShapelyBox
-            import rasterio.features
-            import rasterio.transform
-
-            # Mask only the interior solar_bbox within the wider context patch
-            target_crs = elev_data["crs"]
-            box_utm = transform_geometry(
-                ShapelyBox(solar_bbox.min_lon, solar_bbox.min_lat, solar_bbox.max_lon, solar_bbox.max_lat),
-                "EPSG:4326",
-                target_crs
+            polygon_mask, polygon_area_m2 = _rasterize_domain(
+                ShapelyBox(solar_bbox.min_lon, solar_bbox.min_lat, solar_bbox.max_lon, solar_bbox.max_lat)
             )
-            polygon_area_m2 = float(box_utm.area)
-            p_min_x, p_min_y, p_max_x, p_max_y = geo_info["patch_bounds_metric"]
-            patch_transform = rasterio.transform.from_bounds(
-                p_min_x, p_min_y, p_max_x, p_max_y, patch_w, patch_h
-            )
-            polygon_mask = rasterio.features.rasterize(
-                [box_utm],
-                out_shape=(patch_h, patch_w),
-                transform=patch_transform,
-                fill=0,
-                default_value=1,
-                dtype=np.uint8
-            ).astype(bool)
-            if not np.any(polygon_mask):
-                polygon_mask = None
 
         # 2. Build 24-hour timestep intervals (robust against DST transitions)
         sim_date = date.fromisoformat(request.date)
@@ -427,8 +408,6 @@ class SimulationOrchestrator:
                             "center_lon": c_lon_b,
                             "center_lat": c_lat_b,
                             "south_tables": south_tables,
-                            "tilt_deg": tbl.tilt_deg or 30.0,
-                            "slant_h": tbl.slant_height_m or 4.56,
                             "svf": svf_b
                         })
                         discrete_modules.append({
@@ -439,8 +418,6 @@ class SimulationOrchestrator:
                             "center_lon": c_lon_t,
                             "center_lat": c_lat_t,
                             "south_tables": south_tables,
-                            "tilt_deg": tbl.tilt_deg or 30.0,
-                            "slant_h": tbl.slant_height_m or 4.56,
                             "svf": svf_t
                         })
 
@@ -467,12 +444,14 @@ class SimulationOrchestrator:
         shaded_pct_list = []
         canopy_shaded_pct_list = []
 
+        daylight_index_set = set(daylight_indices)
+
         for idx, ts in enumerate(timestamps):
             py_dt = ts.to_pydatetime()
             ts_str = py_dt.isoformat()
             angles = all_angles[idx]
 
-            if idx in daylight_indices:
+            if idx in daylight_index_set:
                 if sunrise_time is None:
                     sunrise_time = ts_str
                 sunset_time = ts_str
@@ -638,7 +617,7 @@ class SimulationOrchestrator:
                     unblocked_direct_kw = max(0.0, direct_terrain_unshaded_kw - self_shading_loss_kw)
 
                     # Vegetative tree canopy attenuates remaining unblocked direct beam
-                    if canopy_m is not None:
+                    if canopy_m is not None and irradiance.poa_direct_w_m2 > 0.001:
                         c_shaded = t_unshaded & (~(canopy_m > 0))
                         canopy_shaded_cells = int(np.count_nonzero(c_shaded))
                         canopy_shaded_pct = round((canopy_shaded_cells / total_active_cells) * 100.0, 2) if total_active_cells > 0 else 0.0

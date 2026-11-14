@@ -4,8 +4,7 @@ Allows swapping between Local GeoTIFFs, WCS on-demand querying, or synthetic tes
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Tuple
-import numpy as np
+from typing import Dict, Any
 
 
 class ElevationProvider(ABC):

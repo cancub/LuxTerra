@@ -6,8 +6,7 @@ enforcing Winter Solstice Solar Noon self-shading clearance pitch.
 
 from typing import List, Tuple, Optional, Union
 import numpy as np
-import shapely
-from shapely.geometry import Polygon as ShapelyPolygon, box, MultiPolygon, Point
+from shapely.geometry import Polygon as ShapelyPolygon, box
 
 from ...schemas.domain import PVLayoutResult, PVTableGeometry, GeoBoundingBox
 from ..elevation.geo_utils import get_utm_crs_for_lon_lat, transform_geometry, get_transformer

@@ -301,6 +301,9 @@ export class BoxDrawer {
         this.renderFinalBbox(this.currentBbox, this.isClamped || false);
         this.updateHandles(this.currentBbox, this.isClamped || false);
       }
+      if (this.currentContextPolygon) {
+        this.renderContextShape();
+      }
     }
   }
 
@@ -1214,6 +1217,14 @@ export class BoxDrawer {
   }
 
   showMidpoint(segmentIndex, midpointCoords) {
+    if (
+      this.activeMidpoint &&
+      this.activeMidpoint.segmentIndex === segmentIndex &&
+      this.activeMidpoint.coordinates[0] === midpointCoords[0] &&
+      this.activeMidpoint.coordinates[1] === midpointCoords[1]
+    ) {
+      return;
+    }
     const source = this.map.getSource('draw-midpoint-source');
     if (!source) return;
 
@@ -1238,6 +1249,7 @@ export class BoxDrawer {
   }
 
   clearMidpoint() {
+    if (!this.activeMidpoint) return;
     this.activeMidpoint = null;
     const source = this.map.getSource('draw-midpoint-source');
     if (source) {
@@ -1432,7 +1444,7 @@ export class BoxDrawer {
     this.renderFinalBbox(bbox, isClamped);
   }
 
-  setBox(bbox) {
+  setBox(bbox, notify = true) {
     let targetBbox = bbox;
     let dims = computeBboxDimensions(...bbox);
     if (dims.areaM2 > MAX_PATCH_AREA_M2) {
@@ -1452,19 +1464,21 @@ export class BoxDrawer {
       [w, s],
       [w, n]
     ];
-    this.renderFinalShape(this.currentPolygon, false);
+    this.renderFinalShape(this.currentPolygon, this.isClamped);
     this.createHandles();
     this.notifyState();
-    this.onSelectionComplete({
-      bbox: targetBbox,
-      polygon: this.currentPolygon,
-      dimensions: dims,
-      shapeType: 'polygon',
-      isRectangle: false
-    });
+    if (notify) {
+      this.onSelectionComplete({
+        bbox: targetBbox,
+        polygon: this.currentPolygon,
+        dimensions: dims,
+        shapeType: 'polygon',
+        isRectangle: false
+      });
+    }
   }
 
-  setPolygon(points, shapeType = null) {
+  setPolygon(points, shapeType = null, notify = true) {
     if (!points || points.length < 3) return;
 
     let finalPoints = [...points];
@@ -1493,33 +1507,36 @@ export class BoxDrawer {
     this.createHandles();
     this.notifyState();
 
-    this.onSelectionComplete({
-      bbox: dims.bbox,
-      polygon: finalPoints,
-      dimensions: dims,
-      shapeType: 'polygon',
-      isRectangle: false
-    });
+    if (notify) {
+      this.onSelectionComplete({
+        bbox: dims.bbox,
+        polygon: finalPoints,
+        dimensions: dims,
+        shapeType: 'polygon',
+        isRectangle: false
+      });
+    }
   }
 
   setSelection({ bbox, polygon, contextBbox = null, shapeType = null }) {
     if (polygon && Array.isArray(polygon) && polygon.length >= 3) {
-      this.setPolygon(polygon, shapeType);
+      this.setPolygon(polygon, shapeType, false);
     } else if (bbox && Array.isArray(bbox) && bbox.length === 4) {
-      this.setBox(bbox);
+      this.setBox(bbox, false);
     } else {
       this.clearSelection();
       return;
     }
 
     if (contextBbox && Array.isArray(contextBbox) && contextBbox.length === 4) {
-      this.setContextBox(contextBbox);
+      this.setContextBox(contextBbox, false);
     } else {
-      this.clearContext();
+      this.clearContext(false);
     }
+    this.notifySelection();
   }
 
-  setContextBox(bbox) {
+  setContextBox(bbox, notify = true) {
     if (!bbox || bbox.length !== 4) return;
     let [minLon, minLat, maxLon, maxLat] = bbox;
 
@@ -1532,12 +1549,12 @@ export class BoxDrawer {
       maxLat = Math.max(maxLat, innerBbox[3]);
     }
 
-    // Area clamping: clamp context envelope to MAX_PATCH_AREA_M2
+    // Area clamping: clamp context envelope to MAX_PATCH_AREA_M2 without shrinking inside innerBbox
     const dims = computeBboxDimensions(minLon, minLat, maxLon, maxLat);
     if (dims.areaM2 > MAX_PATCH_AREA_M2) {
       const clamped = clampBboxToMaxArea(minLon, minLat, maxLon, maxLat, MAX_PATCH_AREA_M2);
-      maxLon = clamped.curLon;
-      maxLat = clamped.curLat;
+      maxLon = innerBbox ? Math.max(clamped.curLon, innerBbox[2]) : clamped.curLon;
+      maxLat = innerBbox ? Math.max(clamped.curLat, innerBbox[3]) : clamped.curLat;
     }
 
     this.currentContextBbox = [minLon, minLat, maxLon, maxLat];
@@ -1552,10 +1569,12 @@ export class BoxDrawer {
 
     this.renderContextShape();
     this.notifyState();
-    this.notifySelection();
+    if (notify) {
+      this.notifySelection();
+    }
   }
 
-  clearContext() {
+  clearContext(notify = true) {
     this.currentContextBbox = null;
     this.currentContextPolygon = null;
     this.isEditingContext = false;
@@ -1567,7 +1586,9 @@ export class BoxDrawer {
       });
     }
     this.notifyState();
-    this.notifySelection();
+    if (notify) {
+      this.notifySelection();
+    }
   }
 
   addDefaultContext(marginMeters = 50.0) {
@@ -1617,7 +1638,7 @@ export class BoxDrawer {
   }
 
   clearSelection() {
-    this.clearContext();
+    this.clearContext(false);
     this.clearBox();
     this.notifyState();
     this.onSelectionComplete({
@@ -1764,7 +1785,9 @@ export class BoxDrawer {
    * Shows or hides the edge vertex handle layers.
    */
   setHandlesVisible(visible) {
-    this.handlesVisible = Boolean(visible);
+    const nextVisible = Boolean(visible);
+    if (this.handlesVisible === nextVisible) return;
+    this.handlesVisible = nextVisible;
     if (typeof this.map.setLayoutProperty === 'function' && typeof this.map.getLayer === 'function') {
       const vis = this.handlesVisible ? 'visible' : 'none';
       ['draw-handles-glow', 'draw-handles-core', 'draw-handles-hit'].forEach((layerId) => {

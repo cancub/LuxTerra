@@ -226,6 +226,7 @@ export class ShapeToolbar {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
+        if (!Array.isArray(parsed)) return [];
         const filtered = filterLegacyPresets(parsed);
         if (filtered.length !== parsed.length) {
           this.saveToStorage(filtered);
@@ -781,7 +782,7 @@ export class ShapeToolbar {
         }
       : null;
     this.loadedViewSnapshot = {
-      center: [...view.center],
+      center: Array.isArray(view.center) ? [...view.center] : view.center,
       zoom: view.zoom,
       pitch: view.pitch,
       bearing: view.bearing

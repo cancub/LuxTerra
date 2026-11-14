@@ -497,7 +497,7 @@ class NumPyOcclusionEngine(OcclusionEngine):
         z_dtm_0 = dtm_grid[r0, c0].astype(np.float32)
         z_dsm_0 = np.maximum(z_dtm_0, dsm_grid[r0, c0].astype(np.float32))
 
-        if is_rooftop and include_tree_canopy:
+        if is_rooftop:
             z0 = z_dsm_0 + np.float32(0.5)
         else:
             z0 = z_dtm_0 + np.float32(ground_stand_height_m)
@@ -505,7 +505,7 @@ class NumPyOcclusionEngine(OcclusionEngine):
         overhead_tan = np.zeros((patch_H, patch_W), dtype=np.float32)
         if include_tree_canopy and not is_rooftop:
             overhead_mask = z_dsm_0 > (z0 + np.float32(0.5))
-            overhead_tan[overhead_mask] = (z_dsm_0 - z0)[overhead_mask]
+            overhead_tan[overhead_mask] = (z_dsm_0 - z0)[overhead_mask] / np.float32(max(0.5, resolution_m))
 
         r0_f = r0.astype(np.float32)
         c0_f = c0.astype(np.float32)

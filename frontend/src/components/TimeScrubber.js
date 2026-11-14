@@ -78,8 +78,9 @@ export class TimeScrubber {
     });
 
     window.addEventListener('keydown', (e) => {
-      if (document.activeElement && (document.activeElement.tagName === 'INPUT' && document.activeElement.type === 'text')) {
-        return; // Don't intercept when user is typing in geocoder input
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.activeElement?.isContentEditable) {
+        return; // Don't intercept when user is typing in an input
       }
       if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
         e.preventDefault();
@@ -99,7 +100,15 @@ export class TimeScrubber {
     this.timeseries = timeseries || [];
     this.dailySummary = dailySummary || null;
 
-    if (this.timeseries.length === 0) return;
+    if (this.timeseries.length === 0) {
+      this.currentIndex = 0;
+      this.slider.max = 0;
+      this.slider.value = 0;
+      this.timeReadout.textContent = '-- h --';
+      this.sunriseVal.textContent = '-- h --';
+      this.sunsetVal.textContent = '-- h --';
+      return;
+    }
 
     this.slider.max = this.timeseries.length - 1;
     
@@ -107,8 +116,9 @@ export class TimeScrubber {
     if (this.dailySummary && this.dailySummary.sunrise_time && this.dailySummary.sunset_time) {
       const sunriseDt = new Date(this.dailySummary.sunrise_time);
       const sunsetDt = new Date(this.dailySummary.sunset_time);
-      this.sunriseVal.textContent = sunriseDt.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false });
-      this.sunsetVal.textContent = sunsetDt.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false });
+      const torontoFmt = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Toronto', hour: '2-digit', minute: '2-digit', hour12: false });
+      this.sunriseVal.textContent = torontoFmt.format(sunriseDt);
+      this.sunsetVal.textContent = torontoFmt.format(sunsetDt);
 
       const firstDt = new Date(this.timeseries[0].timestamp);
       const lastDt = new Date(this.timeseries[this.timeseries.length - 1].timestamp);
@@ -167,7 +177,12 @@ export class TimeScrubber {
     if (!item) return;
 
     const dt = new Date(item.timestamp);
-    this.timeReadout.textContent = dt.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false });
+    this.timeReadout.textContent = new Intl.DateTimeFormat('fr-CA', {
+      timeZone: 'America/Toronto',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).format(dt);
     this.azVal.textContent = `${item.solar_azimuth_deg.toFixed(1)}°`;
     this.elVal.textContent = `${item.solar_elevation_deg.toFixed(1)}°`;
 

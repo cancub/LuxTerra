@@ -510,6 +510,13 @@ if (appContainer) {
       });
       triggerSimulation();
     } else {
+      if (activeSimulationAbort) {
+        activeSimulationAbort.abort();
+        activeSimulationAbort = null;
+      }
+      if (playbackEngine) {
+        playbackEngine.pause();
+      }
       currentBbox = null;
       currentPolygon = null;
       currentContextBbox = null;
@@ -519,6 +526,9 @@ if (appContainer) {
       solarPanel3DLayer.clear();
       currentSimulationData = null;
       currentChmBytes = null;
+      if (timeScrubber) {
+        timeScrubber.setTimeseries([]);
+      }
       solarDashboard.setSimulationData(null);
     }
   });
