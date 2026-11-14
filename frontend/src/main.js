@@ -570,6 +570,9 @@ if (appContainer) {
         <button type="button" class="override-view-btn" data-mode="shadow">Shadow View</button>
       </div>
     `;
+    el.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+    });
     el.querySelectorAll('.override-view-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -587,11 +590,11 @@ if (appContainer) {
   function applyOverrideViewMode(mode) {
     overrideViewMode = mode;
     if (mode === 'canopy') {
-      solarPanel3DLayer.setVisibility(false);
+      solarPanel3DLayer.setVisible(false);
       boxDrawer.setShapeVisibility(false);
       renderCanopyOnlyFrame();
     } else {
-      solarPanel3DLayer.setVisibility(overrideSaved3DVisible);
+      solarPanel3DLayer.setVisible(overrideSaved3DVisible);
       boxDrawer.setShapeVisibility(true);
       if (latestScrubMetric && currentSimulationData) {
         renderScrubFrame();
