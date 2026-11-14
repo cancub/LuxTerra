@@ -72,12 +72,9 @@ if (appContainer) {
     <div class="bottom-dock" id="bottom-dock">
       <div class="energy-metrics-mount" id="energy-metrics-mount"></div>
       <div class="timeline-cluster" id="timeline-cluster">
-        <div class="timeline-controls-row" id="timeline-controls-row">
-          <div id="date-selector-mount"></div>
-          <div id="playback-controls-mount"></div>
-        </div>
         <div id="timeline-scrubber-mount" style="width: 100%; display: flex; justify-content: center;"></div>
       </div>
+      <div id="date-selector-mount"></div>
     </div>
   `;
 
@@ -91,7 +88,6 @@ if (appContainer) {
   const shapeToolbarMount = document.getElementById('shape-toolbar-mount');
   const topRightControls = document.getElementById('top-right-controls');
   const dateSelectorMount = document.getElementById('date-selector-mount');
-  const playbackControlsMount = document.getElementById('playback-controls-mount');
   const timelineScrubberMount = document.getElementById('timeline-scrubber-mount');
   const energyMetricsMount = document.getElementById('energy-metrics-mount');
   const settingsCogBtn = document.getElementById('settings-cog-btn');
@@ -278,7 +274,7 @@ if (appContainer) {
     }
   });
 
-  playbackEngine = new PlaybackEngine(playbackControlsMount, (stepIndex) => {
+  playbackEngine = new PlaybackEngine(timeScrubber.getPlaybackMount(), (stepIndex) => {
     timeScrubber.setStep(stepIndex);
   });
 

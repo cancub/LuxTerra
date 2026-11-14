@@ -591,30 +591,10 @@ body, html {
   }
 }
 
-.timeline-controls-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-  max-width: 660px;
-  box-sizing: border-box;
-  pointer-events: none;
-}
-
-.timeline-controls-row > * {
-  pointer-events: auto;
-}
-
 #date-selector-mount {
   display: flex;
-  flex: 1;
-  min-width: 0;
-}
-
-#playback-controls-mount {
-  display: flex;
   flex-shrink: 0;
+  pointer-events: auto;
 }
 
 #timeline-scrubber-mount {

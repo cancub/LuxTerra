@@ -27,8 +27,9 @@ export class TimeScrubber {
     this.element.innerHTML = `
       <div class="scrubber-power-curve-mount" id="scrubber-power-curve-mount" style="width: 100%;"></div>
 
-      <div class="timeline-header" style="display: flex; align-items: center; justify-content: center; font-size: 0.85rem;">
+      <div class="timeline-header" style="display: flex; align-items: center; justify-content: center; gap: 16px; font-size: 0.85rem;">
         <span class="time-readout" style="font-family: var(--font-mono); font-size: 1.15rem; font-weight: 700; color: var(--accent-sun);">12:00</span>
+        <div class="playback-inline-mount" id="playback-controls-mount" style="display: inline-flex; align-items: center;"></div>
       </div>
 
       <div class="slider-container" style="position: relative; width: 100%; height: 16px; display: flex; align-items: center;">
@@ -48,6 +49,7 @@ export class TimeScrubber {
     `;
 
     this.powerCurveMount = this.element.querySelector('.scrubber-power-curve-mount');
+    this.playbackMount = this.element.querySelector('.playback-inline-mount');
     this.timeReadout = this.element.querySelector('.time-readout');
     this.slider = this.element.querySelector('.timeline-slider');
     this.skyTrack = this.element.querySelector('.sky-gradient-track');
@@ -77,6 +79,10 @@ export class TimeScrubber {
 
   getPowerCurveMount() {
     return this.powerCurveMount;
+  }
+
+  getPlaybackMount() {
+    return this.playbackMount;
   }
 
   setTimeseries(timeseries, dailySummary) {

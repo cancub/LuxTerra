@@ -22,12 +22,12 @@ export class PlaybackEngine {
 
   render() {
     this.element = document.createElement('div');
-    this.element.className = 'glass-panel playback-controls';
+    this.element.className = 'playback-controls';
     this.element.style.display = 'inline-flex';
     this.element.style.alignItems = 'center';
-    this.element.style.height = '38px';
+    this.element.style.height = '28px';
     this.element.style.boxSizing = 'border-box';
-    this.element.style.padding = '0 8px';
+    this.element.style.padding = '0';
     this.element.style.gap = '6px';
 
     this.element.innerHTML = `
