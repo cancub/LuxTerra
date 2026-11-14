@@ -381,9 +381,73 @@ if (appContainer) {
 
   let lastSimulationKey = null;
   let activeSimulationAbort = null;
+  let latestSimulationSeqId = 0;
+  const MAX_SIM_CACHE_SIZE = 12;
+  const simulationCache = new Map();
+
+  function getCachedSimulation(key) {
+    if (!simulationCache.has(key)) return null;
+    const cached = simulationCache.get(key);
+    simulationCache.delete(key);
+    simulationCache.set(key, cached);
+    return cached;
+  }
+
+  function setCachedSimulation(key, data) {
+    if (simulationCache.has(key)) {
+      simulationCache.delete(key);
+    }
+    simulationCache.set(key, data);
+    if (simulationCache.size > MAX_SIM_CACHE_SIZE) {
+      const oldestKey = simulationCache.keys().next().value;
+      simulationCache.delete(oldestKey);
+    }
+  }
+
+  function clearSimulationLoadingUI() {
+    const loadingPill = document.getElementById('sim-loading-pill');
+    if (loadingPill) {
+      loadingPill.remove();
+    }
+    if (statusPill) {
+      statusPill.textContent = 'QC Solar 1m';
+    }
+  }
+
+  function applySimulationData(data, simKey) {
+    currentSimulationData = data;
+    currentChmBytes = data.chm_base64 ? base64ToBytes(data.chm_base64) : null;
+    currentOutsideMaskBytes = (data.night_mask && !currentContextBbox)
+      ? decodeBitmask(data.night_mask, data.metadata.grid_rows, data.metadata.grid_cols)
+      : null;
+    baseSimulationConfig = {
+      deploymentMode: data.metadata.deployment_mode,
+      gcr: data.metadata.effective_gcr,
+      moduleEfficiency: data.metadata.module_efficiency,
+      systemDerate: data.metadata.system_derate,
+      includeTreeCanopy: data.metadata.include_tree_canopy,
+      canopyMode: data.metadata.canopy_mode
+    };
+
+    shadowCanvasLayer.setPatchBounds(data.metadata.patch_bounds_wgs84);
+    solarPanel3DLayer.setLayout(data.layout);
+    solarDashboard.setSimulationData(data, 1.0);
+    timeScrubber.setTimeseries(data.timeseries, data.daily_summary);
+    playbackEngine.setSimulationContext(data.timeseries.length, data.metadata.time_step_minutes);
+    lastSimulationKey = simKey;
+  }
 
   async function triggerSimulation() {
     if (!currentBbox) return;
+    const seqId = ++latestSimulationSeqId;
+
+    // Always cancel any in-flight request first so rapid Undo/Redo (e.g. A -> B -> A)
+    // cannot let an older request overwrite the latest selection.
+    if (activeSimulationAbort) {
+      activeSimulationAbort.abort();
+      activeSimulationAbort = null;
+    }
+
     const pvConfig = pvConfigPanel.getConfig();
     const date = dateSelector.getDate();
 
@@ -393,17 +457,25 @@ if (appContainer) {
       contextBbox: currentContextBbox,
       date: date,
       deployment_mode: pvConfig.deploymentMode,
+      module_efficiency: pvConfig.moduleEfficiency,
+      system_derate: pvConfig.systemDerate,
+      gcr: pvConfig.gcr,
       include_tree_canopy: pvConfig.includeTreeCanopy,
       canopy_mode: pvConfig.canopyMode
     });
 
     if (lastSimulationKey === simKey && currentSimulationData) {
+      clearSimulationLoadingUI();
       return;
     }
 
-    if (activeSimulationAbort) {
-      activeSimulationAbort.abort();
+    const cachedData = getCachedSimulation(simKey);
+    if (cachedData) {
+      clearSimulationLoadingUI();
+      applySimulationData(cachedData, simKey);
+      return;
     }
+
     const abortController = new AbortController();
     activeSimulationAbort = abortController;
 
@@ -448,39 +520,20 @@ if (appContainer) {
       };
 
       const data = await runSimulation(payload, abortController.signal);
-      if (abortController.signal.aborted) return;
-      currentSimulationData = data;
-      currentChmBytes = data.chm_base64 ? base64ToBytes(data.chm_base64) : null;
-      currentOutsideMaskBytes = (data.night_mask && !currentContextBbox)
-        ? decodeBitmask(data.night_mask, data.metadata.grid_rows, data.metadata.grid_cols)
-        : null;
-      baseSimulationConfig = {
-        deploymentMode: data.metadata.deployment_mode,
-        gcr: data.metadata.effective_gcr,
-        moduleEfficiency: data.metadata.module_efficiency,
-        systemDerate: data.metadata.system_derate,
-        includeTreeCanopy: data.metadata.include_tree_canopy,
-        canopyMode: data.metadata.canopy_mode
-      };
-
-      shadowCanvasLayer.setPatchBounds(data.metadata.patch_bounds_wgs84);
-      solarPanel3DLayer.setLayout(data.layout);
-      solarDashboard.setSimulationData(data, 1.0);
-      timeScrubber.setTimeseries(data.timeseries, data.daily_summary);
-      playbackEngine.setSimulationContext(data.timeseries.length, data.metadata.time_step_minutes);
-      lastSimulationKey = simKey;
+      if (abortController.signal.aborted || seqId !== latestSimulationSeqId) return;
+      setCachedSimulation(simKey, data);
+      applySimulationData(data, simKey);
     } catch (err) {
-      if (err.name === 'AbortError') return;
+      if (err.name === 'AbortError' || seqId !== latestSimulationSeqId) return;
       console.warn('Simulation execution error:', err);
       showToast(err.message, 'warning');
     } finally {
-      if (activeSimulationAbort === abortController) {
-        activeSimulationAbort = null;
-        if (loadingPill) {
-          loadingPill.remove();
+      if (seqId === latestSimulationSeqId || activeSimulationAbort === abortController) {
+        if (activeSimulationAbort === abortController) {
+          activeSimulationAbort = null;
         }
-        if (statusPill) {
-          statusPill.textContent = 'QC Solar 1m';
+        if (seqId === latestSimulationSeqId) {
+          clearSimulationLoadingUI();
         }
       }
     }
@@ -534,10 +587,12 @@ if (appContainer) {
       });
       triggerSimulation();
     } else {
+      latestSimulationSeqId++;
       if (activeSimulationAbort) {
         activeSimulationAbort.abort();
         activeSimulationAbort = null;
       }
+      clearSimulationLoadingUI();
       if (playbackEngine) {
         playbackEngine.pause();
       }
