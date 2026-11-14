@@ -469,6 +469,58 @@ test('BoxDrawer: edge vertex handles only appear when mouse hovers within 10px s
   assert.equal(drawer.handlesVisible, false);
 });
 
+test('BoxDrawer: shape fill only appears when hovering within 30px band centered on border', () => {
+  const map = createMockMap(0);
+  const drawer = new BoxDrawer(map, null, () => {});
+
+  // Create a rectangle from screen (500, 500) to (600, 600)
+  const p0 = map.unproject({ x: 500, y: 500 });
+  const p1 = map.unproject({ x: 600, y: 500 });
+  const p2 = map.unproject({ x: 600, y: 600 });
+  const p3 = map.unproject({ x: 500, y: 600 });
+
+  drawer.setSelection({
+    polygon: [
+      [p0.lng, p0.lat],
+      [p1.lng, p1.lat],
+      [p2.lng, p2.lat],
+      [p3.lng, p3.lat],
+      [p0.lng, p0.lat]
+    ],
+    shapeType: 'polygon'
+  });
+
+  // Initially hidden
+  assert.equal(drawer.fillVisible, false);
+  assert.equal(map.getLayer('draw-box-fill').layout.visibility, 'none');
+
+  // Deep inside the shape (50px from border -> 550, 550) => hidden
+  map.trigger('mousemove', { point: { x: 550, y: 550 }, lngLat: map.unproject({ x: 550, y: 550 }) });
+  assert.equal(drawer.fillVisible, false);
+  assert.equal(map.getLayer('draw-box-fill').layout.visibility, 'none');
+
+  // Inside within 15px of border (e.g. 10px inside x=500 -> x=510, y=550) => visible
+  map.trigger('mousemove', { point: { x: 510, y: 550 }, lngLat: map.unproject({ x: 510, y: 550 }) });
+  assert.equal(drawer.fillVisible, true);
+  assert.equal(map.getLayer('draw-box-fill').layout.visibility, 'visible');
+
+  // Outside within 15px of border (e.g. 12px outside x=500 -> x=488, y=550) => visible
+  map.trigger('mousemove', { point: { x: 488, y: 550 }, lngLat: map.unproject({ x: 488, y: 550 }) });
+  assert.equal(drawer.fillVisible, true);
+  assert.equal(map.getLayer('draw-box-fill').layout.visibility, 'visible');
+
+  // Outside > 15px from border (e.g. 20px outside x=500 -> x=480, y=550) => hidden
+  map.trigger('mousemove', { point: { x: 480, y: 550 }, lngLat: map.unproject({ x: 480, y: 550 }) });
+  assert.equal(drawer.fillVisible, false);
+  assert.equal(map.getLayer('draw-box-fill').layout.visibility, 'none');
+
+  // Mouseout hides fill
+  map.trigger('mousemove', { point: { x: 505, y: 550 }, lngLat: map.unproject({ x: 505, y: 550 }) });
+  assert.equal(drawer.fillVisible, true);
+  map.trigger('mouseout', {});
+  assert.equal(drawer.fillVisible, false);
+});
+
 test('BoxDrawer: rectangle-created shape can delete a vertex into a triangle and insert midpoints', () => {
   const map = createMockMap(0);
   const drawer = new BoxDrawer(map, null, () => {});

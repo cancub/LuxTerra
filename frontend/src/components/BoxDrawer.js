@@ -69,6 +69,7 @@ export class BoxDrawer {
     this.hoveredVertexIndex = null;
     this.activeMidpoint = null;
     this.handlesVisible = false;
+    this.fillVisible = false;
 
     this.initLayers();
     this.initTooltip();
@@ -103,6 +104,9 @@ export class BoxDrawer {
       type: 'fill',
       source: 'draw-box-source',
       filter: ['==', ['geometry-type'], 'Polygon'],
+      layout: {
+        visibility: this.fillVisible ? 'visible' : 'none'
+      },
       paint: {
         'fill-color': [
           'case',
@@ -403,6 +407,7 @@ export class BoxDrawer {
     this.map.doubleClickZoom.disable();
     this.removeHandles();
     this.setHandlesVisible(true);
+    this.setFillVisible(true);
 
     if (mode === 'rectangle') {
       this.showTooltip(0, 0, 'Click & drag, or click to start rectangle • Esc to cancel');
@@ -932,6 +937,7 @@ export class BoxDrawer {
     this.map.on('mouseout', () => {
       if (!this.isDrawingActive && !this.isResizing) {
         this.setHandlesVisible(false);
+        this.setFillVisible(false);
         this.clearMidpoint();
       }
     });
@@ -1263,6 +1269,7 @@ export class BoxDrawer {
   startVertexDrag(vertexIndex, cornerId, cursor) {
     this.isResizing = true;
     this.setHandlesVisible(true);
+    this.setFillVisible(true);
     this.activeVertexIndex = vertexIndex;
     this.activeCornerId = cornerId;
     this.map.dragPan.disable();
@@ -1776,6 +1783,7 @@ export class BoxDrawer {
 
     if (this.isDrawingActive || this.isResizing) {
       this.setHandlesVisible(true);
+      this.setFillVisible(true);
     } else {
       this.updateHandlesHoverVisibility(this.lastMousePoint);
     }
@@ -1799,24 +1807,33 @@ export class BoxDrawer {
   }
 
   /**
-   * Updates handle visibility based on whether the cursor is within the 10px hover shell
-   * outside (or inside) the active shape.
+   * Shows or hides the shape fill layer.
+   */
+  setFillVisible(visible) {
+    const nextVisible = Boolean(visible);
+    if (this.fillVisible === nextVisible) return;
+    this.fillVisible = nextVisible;
+    if (typeof this.map.setLayoutProperty === 'function' && typeof this.map.getLayer === 'function') {
+      if (this.map.getLayer('draw-box-fill')) {
+        this.map.setLayoutProperty('draw-box-fill', 'visibility', this.fillVisible ? 'visible' : 'none');
+      }
+    }
+  }
+
+  /**
+   * Updates handle and fill visibility based on cursor proximity to the active shape.
    */
   updateHandlesHoverVisibility(screenPoint) {
     if (!screenPoint) {
       this.setHandlesVisible(false);
+      this.setFillVisible(false);
       return;
     }
     this.setHandlesVisible(this.isPointInHoverShell(screenPoint, 10));
+    this.setFillVisible(this.isPointInBorderBand(screenPoint, 30));
   }
 
-  /**
-   * Returns true if `screenPoint` is inside the active shape or within `shellPx` pixels
-   * outside its boundary edges/corners.
-   */
-  isPointInHoverShell(screenPoint, shellPx = 10) {
-    if (!screenPoint) return false;
-
+  getActiveShapeScreenPoints() {
     let ring = null;
     if (this.currentPolygon && this.currentPolygon.length >= 3) {
       ring = openPolygonRing(this.currentPolygon);
@@ -1834,23 +1851,13 @@ export class BoxDrawer {
       ];
     }
 
-    if (!ring || ring.length < 3) return false;
+    if (!ring || ring.length < 3) return null;
+    return ring.map((pt) => this.map.project(pt));
+  }
 
-    const screenPts = ring.map((pt) => this.map.project(pt));
+  minDistanceToBoundaryPx(screenPoint, screenPts) {
     const n = screenPts.length;
-
-    // 1. Inside polygon check (ray casting)
-    let inside = false;
-    for (let i = 0, j = n - 1; i < n; j = i++) {
-      const xi = screenPts[i].x, yi = screenPts[i].y;
-      const xj = screenPts[j].x, yj = screenPts[j].y;
-      const intersect = ((yi > screenPoint.y) !== (yj > screenPoint.y)) &&
-        (screenPoint.x < ((xj - xi) * (screenPoint.y - yi)) / (yj - yi) + xi);
-      if (intersect) inside = !inside;
-    }
-    if (inside) return true;
-
-    // 2. Within shellPx outside any boundary edge or corner
+    let minDist = Infinity;
     for (let i = 0; i < n; i++) {
       const s1 = screenPts[i];
       const s2 = screenPts[(i + 1) % n];
@@ -1865,11 +1872,45 @@ export class BoxDrawer {
         const t = Math.max(0, Math.min(1, ((screenPoint.x - s1.x) * dx + (screenPoint.y - s1.y) * dy) / lenSq));
         dist = Math.hypot(screenPoint.x - (s1.x + t * dx), screenPoint.y - (s1.y + t * dy));
       }
-
-      if (dist <= shellPx) return true;
+      if (dist < minDist) minDist = dist;
     }
+    return minDist;
+  }
 
-    return false;
+  /**
+   * Returns true if `screenPoint` is within a centered `bandWidthPx` band along
+   * the shape border (i.e. within `bandWidthPx / 2` pixels on either side).
+   */
+  isPointInBorderBand(screenPoint, bandWidthPx = 30) {
+    if (!screenPoint) return false;
+    const screenPts = this.getActiveShapeScreenPoints();
+    if (!screenPts) return false;
+    return this.minDistanceToBoundaryPx(screenPoint, screenPts) <= bandWidthPx / 2;
+  }
+
+  /**
+   * Returns true if `screenPoint` is inside the active shape or within `shellPx` pixels
+   * outside its boundary edges/corners.
+   */
+  isPointInHoverShell(screenPoint, shellPx = 10) {
+    if (!screenPoint) return false;
+    const screenPts = this.getActiveShapeScreenPoints();
+    if (!screenPts) return false;
+
+    const n = screenPts.length;
+    // 1. Inside polygon check (ray casting)
+    let inside = false;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const xi = screenPts[i].x, yi = screenPts[i].y;
+      const xj = screenPts[j].x, yj = screenPts[j].y;
+      const intersect = ((yi > screenPoint.y) !== (yj > screenPoint.y)) &&
+        (screenPoint.x < ((xj - xi) * (screenPoint.y - yi)) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    if (inside) return true;
+
+    // 2. Within shellPx outside any boundary edge or corner
+    return this.minDistanceToBoundaryPx(screenPoint, screenPts) <= shellPx;
   }
 
   showTooltip(x, y, textOrHtml, isClamped = false) {
