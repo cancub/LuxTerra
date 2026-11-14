@@ -62,8 +62,8 @@ export class LayerToggle {
     this.updateButtonUI();
 
     const apply = () => {
-      if (!this.map.isStyleLoaded()) {
-        this.map.once('load', apply);
+      if (!this.map.getLayer('osm-layer') || !this.map.getLayer('esri-layer')) {
+        this.map.once('styledata', apply);
         return;
       }
       try {
@@ -73,6 +73,9 @@ export class LayerToggle {
         } else {
           this.map.setLayoutProperty('esri-layer', 'visibility', 'visible');
           this.map.setLayoutProperty('osm-layer', 'visibility', 'none');
+        }
+        if (typeof this.map.triggerRepaint === 'function') {
+          this.map.triggerRepaint();
         }
       } catch (err) {
         console.warn('Error applying layer visibility:', err);

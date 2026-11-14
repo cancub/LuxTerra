@@ -24,6 +24,7 @@ export function initMap(containerId = 'map', options = {}) {
           'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
         ],
         tileSize: 256,
+        maxzoom: 19,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors'
       },
       esri: {
@@ -42,16 +43,14 @@ export function initMap(containerId = 'map', options = {}) {
         type: 'raster',
         source: 'osm',
         layout: { visibility: activeLayer === 'esri' ? 'none' : 'visible' },
-        minzoom: 0,
-        maxzoom: 19
+        minzoom: 0
       },
       {
         id: 'esri-layer',
         type: 'raster',
         source: 'esri',
         layout: { visibility: activeLayer === 'esri' ? 'visible' : 'none' },
-        minzoom: 0,
-        maxzoom: 19
+        minzoom: 0
       }
     ]
   };
