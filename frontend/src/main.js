@@ -534,6 +534,7 @@ if (appContainer) {
 
   window.addEventListener('beforeunload', persistCamera);
 
+  let shapeToolbar = null;
   const dateSelector = new DateSelector(dateSelectorMount, savedState.date || '2026-06-21', () => {
     updateDateState(dateSelector.getDate());
     shapeToolbar?.refreshModificationState();
@@ -584,7 +585,7 @@ if (appContainer) {
     boxDrawer.setSelection(savedState.selection);
   }
 
-  new ShapeToolbar({
+  shapeToolbar = new ShapeToolbar({
     map,
     container: shapeToolbarMount,
     primaryContainer: document.getElementById('shape-toolbar-primary-mount'),
