@@ -11,7 +11,7 @@
  *    - Clear active shape
  */
 
-import { computePolygonDimensions } from '../utils/geometry.js';
+import { computePolygonDimensions, circleToPolygonAndBbox } from '../utils/geometry.js';
 import { captureShapeThumbnail, lookupShapeLocation } from '../utils/shapePreview.js';
 
 export const STORAGE_KEY = 'luxterra_saved_views';
@@ -130,6 +130,23 @@ export class ShapeHistory {
   }
 }
 
+function areOverridesEqual(a, b) {
+  const arrA = Array.isArray(a) ? a : [];
+  const arrB = Array.isArray(b) ? b : [];
+  if (arrA.length !== arrB.length) return false;
+  for (let i = 0; i < arrA.length; i++) {
+    const x = arrA[i];
+    const y = arrB[i];
+    if (!x || !y || x.type !== y.type) return false;
+    if (Math.abs((x.radius_m || 0) - (y.radius_m || 0)) > 0.05) return false;
+    if (!Array.isArray(x.center) || !Array.isArray(y.center)) return false;
+    if (Math.abs(x.center[0] - y.center[0]) > 1e-6 || Math.abs(x.center[1] - y.center[1]) > 1e-6) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export class ShapeToolbar {
   constructor({
     map,
@@ -141,6 +158,8 @@ export class ShapeToolbar {
     boxDrawer,
     dateSelector,
     onRestoreView,
+    onOverridesChange,
+    initialOverrides,
     showToast
   }) {
     this.map = map;
@@ -152,6 +171,7 @@ export class ShapeToolbar {
     this.boxDrawer = boxDrawer;
     this.dateSelector = dateSelector;
     this.onRestoreView = onRestoreView || (() => {});
+    this.onOverridesChange = onOverridesChange || (() => {});
     this.showToast = showToast || console.log;
 
     this.savedViews = this.loadSavedViews();
@@ -159,9 +179,12 @@ export class ShapeToolbar {
     this.loadedShapeSnapshot = null;
     this.loadedViewSnapshot = null;
     this.loadedDateSnapshot = null;
+    this.currentOverrides = Array.isArray(initialOverrides) ? this.cloneOverrides(initialOverrides) : [];
+    this.loadedOverridesSnapshot = [];
     this.isShapeModified = false;
     this.isViewModified = false;
     this.isDateModified = false;
+    this.isOverridesModified = false;
     this.isSavingNewName = false;
     this.isRestoringCamera = false;
     this.isApplyingHistory = false;
@@ -408,6 +431,26 @@ export class ShapeToolbar {
                 <span class="context-label">Shadow Box</span>
               </button>
             </div>
+            <div class="shape-override-row">
+              <button class="btn btn-sm btn-override-geology" title="Draw a circle to mark objects (rock, house) as opaque geology instead of canopy">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="9" stroke-dasharray="3 2"></circle>
+                  <path d="M8 15l3-5 2 3 2-2 2 4z"></path>
+                </svg>
+                <span>Mark Geology</span>
+              </button>
+            </div>
+            <div class="shape-override-row">
+              <button class="btn btn-sm btn-override-canopy" title="Draw a circle to remove canopy elements that are no longer present">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="9" stroke-dasharray="3 2"></circle>
+                  <line x1="8" y1="8" x2="16" y2="16"></line>
+                  <line x1="16" y1="8" x2="8" y2="16"></line>
+                </svg>
+                <span>Remove Canopy</span>
+              </button>
+            </div>
+            <div class="override-list" style="display: none;"></div>
             <div class="shape-daily-energy-mount"></div>
           </div>
         </div>
@@ -446,6 +489,9 @@ export class ShapeToolbar {
     this.editBar = this.element.querySelector('.shape-edit-bar');
     this.btnContextToggle = this.element.querySelector('.btn-context-toggle');
     this.contextLabel = this.element.querySelector('.context-label');
+    this.btnOverrideGeology = this.element.querySelector('.btn-override-geology');
+    this.btnOverrideCanopy = this.element.querySelector('.btn-override-canopy');
+    this.overrideList = this.element.querySelector('.override-list');
     this.btnHistoryBack = this.element.querySelector('.btn-history-back');
     this.btnHistoryForward = this.element.querySelector('.btn-history-forward');
     this.btnSaveMenu = this.element.querySelector('.btn-save-menu');
@@ -472,6 +518,7 @@ export class ShapeToolbar {
     this.saveNameCancel = this.element.querySelector('.save-name-cancel');
 
     this.renderSavedList();
+    this.renderOverrideList();
     this.primaryContainer.appendChild(this.primaryElement);
     this.container.appendChild(this.element);
   }
@@ -683,11 +730,33 @@ export class ShapeToolbar {
         didReset = true;
       }
 
+      if (this.isOverridesModified) {
+        this.currentOverrides = this.cloneOverrides(this.loadedOverridesSnapshot);
+        this.boxDrawer?.setShadeOverrides?.(this.currentOverrides);
+        this.renderOverrideList();
+        this.onOverridesChange(this.cloneOverrides(this.currentOverrides));
+        didReset = true;
+      }
+
       if (didReset) {
         this.refreshModificationState();
         this.showToast('Reset to original state', 'info');
       }
     });
+
+    // Mark Geology / Remove Canopy override buttons
+    if (this.btnOverrideGeology) {
+      this.btnOverrideGeology.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.startOverrideDraw('to_geology');
+      });
+    }
+    if (this.btnOverrideCanopy) {
+      this.btnOverrideCanopy.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.startOverrideDraw('remove_canopy');
+      });
+    }
 
     // Clear shape
     this.btnClear.addEventListener('click', (e) => {
@@ -696,6 +765,11 @@ export class ShapeToolbar {
       this.setActiveViewId(null);
       this.loadedShapeSnapshot = null;
       this.loadedViewSnapshot = null;
+      this.currentOverrides = [];
+      this.loadedOverridesSnapshot = [];
+      this.boxDrawer?.setShadeOverrides?.([]);
+      this.renderOverrideList();
+      this.onOverridesChange([]);
       this.shapeHistory.reset();
       this.hideSaveNamePopover();
       this.refreshModificationState();
@@ -949,6 +1023,7 @@ export class ShapeToolbar {
       this.isShapeModified = true;
       this.isViewModified = false;
       this.isDateModified = false;
+      this.isOverridesModified = false;
     } else {
       this.isShapeModified = !areShapesEqual(currentShape, this.loadedShapeSnapshot);
       if (this.isRestoringCamera) {
@@ -963,6 +1038,7 @@ export class ShapeToolbar {
       this.isDateModified = Boolean(
         this.loadedDateSnapshot && currentDate && currentDate !== this.loadedDateSnapshot
       );
+      this.isOverridesModified = !areOverridesEqual(this.currentOverrides, this.loadedOverridesSnapshot);
     }
 
     // Update Back / Forward / Reset buttons
@@ -971,12 +1047,12 @@ export class ShapeToolbar {
     const original = this.getOriginalShapeSnapshot();
     const canResetShape = Boolean(currentShape && original && !areShapesEqual(currentShape, original));
     const canResetView = Boolean(this.activeViewId !== null && this.isViewModified && this.loadedViewSnapshot);
-    const canReset = canResetShape || canResetView || this.isNameModified;
+    const canReset = canResetShape || canResetView || this.isNameModified || this.isOverridesModified;
     this.btnShapeReset.style.display = this.activeViewId !== null ? '' : 'none';
     this.btnShapeReset.disabled = !canReset;
 
     // Update Save menu highlight and dropdown items
-    const canSaveShape = this.isShapeModified || this.isNameModified;
+    const canSaveShape = this.isShapeModified || this.isNameModified || this.isOverridesModified;
     const canSaveView = this.activeViewId !== null && this.isViewModified;
     const canSaveDate = this.activeViewId !== null && this.isDateModified;
     const hasPendingSave = canSaveShape || canSaveView || canSaveDate;
@@ -1032,6 +1108,7 @@ export class ShapeToolbar {
       polygon: normalizePolygon(selection.polygon),
       contextBbox: normalizeBbox(selection.contextBbox),
       shapeType: 'polygon',
+      shadeOverrides: this.cloneOverrides(this.currentOverrides),
       date,
       createdAt: new Date().toISOString()
     };
@@ -1041,6 +1118,7 @@ export class ShapeToolbar {
     this.setActiveViewId(newView.id);
     this.loadedShapeSnapshot = this.getCurrentShapeSnapshot();
     this.loadedViewSnapshot = camera;
+    this.loadedOverridesSnapshot = this.cloneOverrides(this.currentOverrides);
 
     this.hideSaveNamePopover();
     this.renderSavedList();
@@ -1068,11 +1146,13 @@ export class ShapeToolbar {
       bbox: normalizeBbox(selection.bbox),
       polygon: normalizePolygon(selection.polygon),
       contextBbox: normalizeBbox(selection.contextBbox),
-      shapeType: 'polygon'
+      shapeType: 'polygon',
+      shadeOverrides: this.cloneOverrides(this.currentOverrides)
     };
 
     this.saveToStorage(this.savedViews);
     this.loadedShapeSnapshot = this.getCurrentShapeSnapshot();
+    this.loadedOverridesSnapshot = this.cloneOverrides(this.currentOverrides);
     this.syncShapeNameInput();
     this.renderSavedList();
     this.refreshModificationState();
@@ -1141,6 +1221,10 @@ export class ShapeToolbar {
       bearing: view.bearing
     };
     this.loadedDateSnapshot = view.date || null;
+    this.currentOverrides = this.cloneOverrides(view.shadeOverrides || []);
+    this.loadedOverridesSnapshot = this.cloneOverrides(view.shadeOverrides || []);
+    this.boxDrawer?.setShadeOverrides?.(this.currentOverrides);
+    this.renderOverrideList();
     this.shapeHistory.reset(this.loadedShapeSnapshot);
     this.isRestoringCamera = true;
     this.closeDropdowns();
@@ -1264,6 +1348,126 @@ export class ShapeToolbar {
       });
 
       this.loadShapeList.appendChild(item);
+    });
+  }
+
+  cloneOverrides(list) {
+    if (!Array.isArray(list)) return [];
+    return list.map((ov) => ({
+      id: ov.id,
+      type: ov.type,
+      center: Array.isArray(ov.center) ? [...ov.center] : ov.center,
+      radius_m: ov.radius_m,
+      label: ov.label || '',
+      thumbnail: ov.thumbnail || null
+    }));
+  }
+
+  startOverrideDraw(type) {
+    if (!this.boxDrawer || typeof this.boxDrawer.startCircleOverride !== 'function') return;
+    const started = this.boxDrawer.startCircleOverride(type, async (ov) => {
+      if (this.btnOverrideGeology) this.btnOverrideGeology.classList.remove('active', 'btn-accent');
+      if (this.btnOverrideCanopy) this.btnOverrideCanopy.classList.remove('active', 'btn-accent');
+
+      const actionLabel = ov.type === 'to_geology' ? 'Mark as Geology' : 'Remove Canopy';
+      const newOverride = {
+        ...ov,
+        label: actionLabel,
+        thumbnail: null
+      };
+      this.currentOverrides.push(newOverride);
+      this.boxDrawer.setShadeOverrides(this.currentOverrides);
+      this.renderOverrideList();
+      this.refreshModificationState();
+      this.onOverridesChange(this.cloneOverrides(this.currentOverrides));
+
+      const { polygon, bbox } = circleToPolygonAndBbox(ov.center, ov.radius_m, 32);
+      const thumb = await captureShapeThumbnail(bbox, polygon, 100);
+      if (thumb) {
+        const target = this.currentOverrides.find((item) => item.id === newOverride.id);
+        if (target) {
+          target.thumbnail = thumb;
+          this.renderOverrideList();
+          this.onOverridesChange(this.cloneOverrides(this.currentOverrides));
+        }
+      }
+    });
+
+    if (this.btnOverrideGeology) {
+      this.btnOverrideGeology.classList.toggle('active', started && type === 'to_geology');
+      this.btnOverrideGeology.classList.toggle('btn-accent', started && type === 'to_geology');
+    }
+    if (this.btnOverrideCanopy) {
+      this.btnOverrideCanopy.classList.toggle('active', started && type === 'remove_canopy');
+      this.btnOverrideCanopy.classList.toggle('btn-accent', started && type === 'remove_canopy');
+    }
+  }
+
+  deleteOverride(overrideId) {
+    this.hideThumbPreview();
+    this.currentOverrides = this.currentOverrides.filter((ov) => ov.id !== overrideId);
+    this.boxDrawer?.setShadeOverrides?.(this.currentOverrides);
+    this.renderOverrideList();
+    this.refreshModificationState();
+    this.onOverridesChange(this.cloneOverrides(this.currentOverrides));
+  }
+
+  renderOverrideList() {
+    if (!this.overrideList) return;
+    this.overrideList.innerHTML = '';
+
+    if (!this.currentOverrides || this.currentOverrides.length === 0) {
+      this.overrideList.style.display = 'none';
+      return;
+    }
+
+    this.overrideList.style.display = 'flex';
+    this.currentOverrides.forEach((ov) => {
+      const item = document.createElement('div');
+      item.className = 'shape-view-item override-item';
+
+      const title = ov.label || (ov.type === 'to_geology' ? 'Mark as Geology' : 'Remove Canopy');
+      const coordsText = Array.isArray(ov.center)
+        ? `${ov.radius_m.toFixed(1)} m radius · ${Math.abs(ov.center[1]).toFixed(4)}°N, ${Math.abs(ov.center[0]).toFixed(4)}°W`
+        : `${ov.radius_m.toFixed(1)} m radius`;
+
+      item.innerHTML = `
+        <div class="view-item-info">
+          <div class="view-item-name"></div>
+          <div class="view-item-location"></div>
+        </div>
+        <div class="view-item-actions">
+          <button class="btn-delete-view" title="Remove modification">&times;</button>
+          <div class="view-item-thumb"></div>
+        </div>
+      `;
+
+      item.querySelector('.view-item-name').textContent = title;
+      item.querySelector('.view-item-location').textContent = coordsText;
+
+      const thumbEl = item.querySelector('.view-item-thumb');
+      if (ov.thumbnail) {
+        const img = document.createElement('img');
+        img.src = ov.thumbnail;
+        img.alt = title;
+        thumbEl.appendChild(img);
+
+        thumbEl.addEventListener('mouseenter', () => {
+          this.showThumbPreview(ov.thumbnail, thumbEl);
+        });
+        thumbEl.addEventListener('mouseleave', () => {
+          this.hideThumbPreview();
+        });
+      } else {
+        thumbEl.classList.add('is-placeholder');
+      }
+
+      item.querySelector('.btn-delete-view').addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.deleteOverride(ov.id);
+      });
+
+      this.overrideList.appendChild(item);
     });
   }
 

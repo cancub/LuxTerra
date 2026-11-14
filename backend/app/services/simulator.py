@@ -24,7 +24,7 @@ from ..interfaces.elevation_source import ElevationProvider
 from ..interfaces.solar_engine import SolarEngine
 from ..interfaces.occlusion_engine import OcclusionEngine
 from ..interfaces.pv_model import PVSystemModel
-from .elevation.geo_utils import transform_geometry
+from .elevation.geo_utils import transform_geometry, get_transformer
 from .serializer import encode_masks_batch, encode_mask_bitmask
 from .solar.phenology import calculate_canopy_transmittance
 from .occlusion.ray_math import compute_canopy_transmittance_grid, quantize_canopy_shade_levels
@@ -36,6 +36,56 @@ from .pv.self_shading import (
 )
 
 TZ_QUEBEC = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+
+
+def _apply_shade_overrides(
+    dtm_grid: np.ndarray,
+    dsm_grid: np.ndarray,
+    chm_grid: Optional[np.ndarray],
+    geo_info: dict,
+    overrides: list,
+):
+    """Apply circular geology/canopy overrides onto writable copies of the elevation grids."""
+    dtm = dtm_grid.copy()
+    dsm = dsm_grid.copy()
+    chm = chm_grid.copy() if chm_grid is not None else None
+
+    h, w = dtm.shape
+    b_min_x, b_min_y, b_max_x, b_max_y = geo_info["buffered_bounds_metric"]
+    dx = (b_max_x - b_min_x) / w
+    dy = (b_max_y - b_min_y) / h
+    transformer = get_transformer("EPSG:4326", geo_info["target_crs"])
+
+    for ov in overrides:
+        lon, lat = float(ov.center[0]), float(ov.center[1])
+        r_m = float(ov.radius_m)
+        cx, cy = transformer.transform(lon, lat)
+
+        c0 = max(0, int(np.floor((cx - r_m - b_min_x) / dx)))
+        c1 = min(w, int(np.ceil((cx + r_m - b_min_x) / dx)))
+        r0 = max(0, int(np.floor((b_max_y - (cy + r_m)) / dy)))
+        r1 = min(h, int(np.ceil((b_max_y - (cy - r_m)) / dy)))
+        if c1 <= c0 or r1 <= r0:
+            continue
+
+        xs = b_min_x + (np.arange(c0, c1, dtype=np.float64) + 0.5) * dx
+        ys = b_max_y - (np.arange(r0, r1, dtype=np.float64) + 0.5) * dy
+        dist_sq = (xs[None, :] - cx) ** 2 + (ys[:, None] - cy) ** 2
+        mask = dist_sq <= (r_m * r_m)
+        if not np.any(mask):
+            continue
+
+        dtm_sub = dtm[r0:r1, c0:c1]
+        dsm_sub = dsm[r0:r1, c0:c1]
+        if ov.type == "to_geology":
+            dtm_sub[mask] = np.maximum(dtm_sub[mask], dsm_sub[mask])
+        elif ov.type == "remove_canopy":
+            dsm_sub[mask] = dtm_sub[mask]
+
+        if chm is not None:
+            chm[r0:r1, c0:c1][mask] = 0.0
+
+    return dtm, dsm, chm
 
 
 class SimulationOrchestrator:
@@ -84,6 +134,13 @@ class SimulationOrchestrator:
         patch_slice_x = elev_data["patch_slice_x"]
         median_elev = elev_data["median_elevation_m"]
         geo_info = elev_data["geo_info"]
+
+        if request.shade_overrides:
+            dtm_grid, dsm_grid, overridden_chm = _apply_shade_overrides(
+                dtm_grid, dsm_grid, elev_data.get("chm"), geo_info, request.shade_overrides
+            )
+            if overridden_chm is not None:
+                elev_data["chm"] = overridden_chm
 
         patch_h = patch_slice_y.stop - patch_slice_y.start
         patch_w = patch_slice_x.stop - patch_slice_x.start

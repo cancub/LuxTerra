@@ -24,6 +24,7 @@ import {
   updateMapState,
   updateLayerState,
   updateSelectionState,
+  updateShadeOverridesState,
   updateDateState
 } from './utils/stateStorage.js';
 
@@ -328,6 +329,7 @@ if (appContainer) {
     }, durationMs);
   }
 
+  let currentOverrides = Array.isArray(savedState.shadeOverrides) ? savedState.shadeOverrides : [];
   let lastSimulationKey = null;
   let activeSimulationAbort = null;
   let latestSimulationSeqId = 0;
@@ -422,7 +424,12 @@ if (appContainer) {
       system_derate: pvConfig.systemDerate,
       gcr: pvConfig.gcr,
       include_tree_canopy: pvConfig.includeTreeCanopy,
-      canopy_mode: pvConfig.canopyMode
+      canopy_mode: pvConfig.canopyMode,
+      shade_overrides: currentOverrides.map((ov) => ({
+        type: ov.type,
+        center: ov.center,
+        radius_m: ov.radius_m
+      }))
     });
 
     if (lastSimulationKey === simKey && currentSimulationData) {
@@ -477,7 +484,12 @@ if (appContainer) {
         system_derate: pvConfig.systemDerate,
         gcr: pvConfig.gcr,
         include_tree_canopy: pvConfig.includeTreeCanopy !== undefined ? pvConfig.includeTreeCanopy : true,
-        canopy_mode: pvConfig.canopyMode || 'seasonal'
+        canopy_mode: pvConfig.canopyMode || 'seasonal',
+        shade_overrides: currentOverrides.map((ov) => ({
+          type: ov.type,
+          center: ov.center,
+          radius_m: ov.radius_m
+        }))
       };
 
       const data = await runSimulation(payload, abortController.signal);
@@ -577,6 +589,9 @@ if (appContainer) {
   });
 
   // Restore saved rectangle/oblong shape on initial startup if persisted
+  if (currentOverrides.length > 0) {
+    boxDrawer.setShadeOverrides(currentOverrides);
+  }
   if (savedState.selection) {
     boxDrawer.setSelection(savedState.selection);
   }
@@ -590,7 +605,18 @@ if (appContainer) {
     settingsBtn: settingsCogBtn,
     boxDrawer,
     dateSelector,
+    initialOverrides: currentOverrides,
+    onOverridesChange: (overrides) => {
+      currentOverrides = Array.isArray(overrides) ? overrides : [];
+      updateShadeOverridesState(currentOverrides);
+      if (currentBbox) {
+        triggerSimulation();
+      }
+    },
     onRestoreView: (view) => {
+      currentOverrides = Array.isArray(view.shadeOverrides) ? view.shadeOverrides : [];
+      updateShadeOverridesState(currentOverrides);
+      boxDrawer.setShadeOverrides(currentOverrides);
       map.flyTo({
         center: view.center,
         zoom: view.zoom,

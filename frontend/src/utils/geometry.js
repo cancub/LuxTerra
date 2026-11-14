@@ -353,3 +353,29 @@ export function computeScreenAlignedRect(startPoint, endPoint, unproject, maxAre
     }
   };
 }
+
+/**
+ * Converts a geographic circle (center [lon, lat], radius in meters) into a
+ * closed GeoJSON polygon ring and enclosing [minLon, minLat, maxLon, maxLat] bbox.
+ */
+export function circleToPolygonAndBbox(centerLngLat, radiusM, steps = 32) {
+  const [lon, lat] = centerLngLat;
+  const latRad = (lat * Math.PI) / 180;
+  const dLat = radiusM / 111320;
+  const dLon = radiusM / (111320 * Math.max(0.1, Math.cos(latRad)));
+
+  const ring = [];
+  for (let i = 0; i < steps; i++) {
+    const theta = (2 * Math.PI * i) / steps;
+    ring.push([
+      lon + dLon * Math.cos(theta),
+      lat + dLat * Math.sin(theta)
+    ]);
+  }
+  ring.push(ring[0]);
+
+  return {
+    polygon: ring,
+    bbox: [lon - dLon, lat - dLat, lon + dLon, lat + dLat]
+  };
+}

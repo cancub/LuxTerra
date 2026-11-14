@@ -2,13 +2,22 @@
 Pydantic schemas for the simulation request and response payloads.
 """
 
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 from datetime import date
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..config import config
 from .domain import GeoBoundingBox, DeploymentMode, PVLayoutResult
 from ..services.elevation.geo_utils import calculate_bbox_area_meters, calculate_polygon_area_meters, normalize_bbox
+
+
+class ShadeOverride(BaseModel):
+    """Circular spatial override to reclassify canopy as opaque geology or clear canopy."""
+    type: Literal["to_geology", "remove_canopy"] = Field(
+        ..., description="Override action: 'to_geology' or 'remove_canopy'"
+    )
+    center: List[float] = Field(..., min_length=2, max_length=2, description="[lon, lat] center in WGS84")
+    radius_m: float = Field(..., gt=0.0, le=5000.0, description="Circle radius in meters")
 
 
 class SimulateRequest(BaseModel):
@@ -35,6 +44,10 @@ class SimulateRequest(BaseModel):
     resolution_m: float = Field(default=1.0, ge=0.5, le=10.0, description="Simulation grid resolution in meters")
     include_tree_canopy: bool = Field(default=True, description="Enable vegetative tree canopy and structure ray-marching")
     canopy_mode: str = Field(default="seasonal", description="Canopy phenology mode: 'seasonal', 'leaf_on', 'leaf_off', 'bare_terrain'")
+    shade_overrides: List[ShadeOverride] = Field(
+        default_factory=list,
+        description="Optional circular overrides to reclassify canopy as geology or remove canopy"
+    )
 
     @model_validator(mode="before")
     @classmethod

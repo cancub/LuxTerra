@@ -24,6 +24,7 @@ import {
   polygonToGeoJSON,
   computeDistanceMeters,
   computeScreenAlignedRect,
+  circleToPolygonAndBbox,
   openPolygonRing,
   MAX_PATCH_AREA_M2
 } from '../utils/geometry.js';
@@ -70,6 +71,15 @@ export class BoxDrawer {
     this.activeMidpoint = null;
     this.handlesVisible = false;
     this.fillVisible = false;
+    this.overrideCircles = [];
+    this.overridePreviewCircle = null;
+    this.overrideDrawType = null;
+    this.overrideDrawCallback = null;
+    this.overrideCircleState = 'idle';
+    this.overrideCenter = null;
+    this.overrideStartPoint = null;
+    this.isOverrideMouseDown = false;
+    this.overrideMovedDuringDown = false;
 
     this.initLayers();
     this.initTooltip();
@@ -298,6 +308,47 @@ export class BoxDrawer {
         }
       });
 
+      // Circular shade override layers (Mark Geology / Remove Canopy)
+      if (!this.map.getSource('draw-overrides-source')) {
+        this.map.addSource('draw-overrides-source', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] }
+        });
+
+        this.map.addLayer({
+          id: 'draw-overrides-fill',
+          type: 'fill',
+          source: 'draw-overrides-source',
+          paint: {
+            'fill-color': [
+              'match',
+              ['get', 'overrideType'],
+              'to_geology', 'rgba(245, 158, 11, 0.22)',
+              'remove_canopy', 'rgba(239, 68, 68, 0.20)',
+              'rgba(56, 189, 248, 0.2)'
+            ]
+          }
+        });
+
+        this.map.addLayer({
+          id: 'draw-overrides-stroke',
+          type: 'line',
+          source: 'draw-overrides-source',
+          paint: {
+            'line-width': 2,
+            'line-dasharray': [3, 2],
+            'line-color': [
+              'match',
+              ['get', 'overrideType'],
+              'to_geology', '#f59e0b',
+              'remove_canopy', '#ef4444',
+              '#38bdf8'
+            ]
+          }
+        });
+      }
+      this.renderOverrideCircles();
+
       if (this.currentPolygon) {
         this.renderFinalShape(this.currentPolygon, this.isClamped || false);
         this.updateHandles(this.currentPolygon, this.isClamped || false);
@@ -430,6 +481,21 @@ export class BoxDrawer {
     this.rectStartPoint = null;
     this.rectStartLngLat = null;
 
+    this.overrideCircleState = 'idle';
+    this.overrideCenter = null;
+    this.overrideStartPoint = null;
+    this.isOverrideMouseDown = false;
+    this.overrideMovedDuringDown = false;
+    if (this.overridePreviewCircle) {
+      this.overridePreviewCircle = null;
+      this.renderOverrideCircles();
+    }
+    this.overrideDrawType = null;
+    this.overrideDrawCallback = null;
+    if (this.drawMode === 'override-circle') {
+      this.drawMode = 'polygon';
+    }
+
     if (this.button) {
       this.button.classList.remove('active', 'btn-accent');
     }
@@ -439,6 +505,73 @@ export class BoxDrawer {
     this.map.doubleClickZoom.enable();
     this.hideTooltip();
     this.notifyState();
+  }
+
+  startCircleOverride(type, onComplete) {
+    if (this.isDrawingActive) {
+      const wasSameType = this.drawMode === 'override-circle' && this.overrideDrawType === type;
+      this.cancelDrawing();
+      if (wasSameType) return false;
+    }
+
+    this.drawMode = 'override-circle';
+    this.isDrawingActive = true;
+    this.overrideDrawType = type;
+    this.overrideDrawCallback = onComplete || null;
+    this.overrideCircleState = 'idle';
+    this.overrideCenter = null;
+    this.overrideStartPoint = null;
+    this.isOverrideMouseDown = false;
+    this.overrideMovedDuringDown = false;
+    this.overridePreviewCircle = null;
+
+    this.map.getCanvas().style.cursor = 'crosshair';
+    this.map.dragPan.disable();
+    this.map.doubleClickZoom.disable();
+    const label = type === 'to_geology' ? 'Mark Geology' : 'Remove Canopy';
+    this.showTooltip(0, 0, `${label}: click & drag (or click center, move, click edge) • Esc to cancel`);
+    this.notifyState();
+    return true;
+  }
+
+  setShadeOverrides(overrides) {
+    this.overrideCircles = Array.isArray(overrides) ? overrides.slice() : [];
+    this.renderOverrideCircles();
+  }
+
+  renderOverrideCircles() {
+    const src = typeof this.map.getSource === 'function' ? this.map.getSource('draw-overrides-source') : null;
+    if (!src) return;
+    const list = this.overridePreviewCircle
+      ? [...this.overrideCircles, this.overridePreviewCircle]
+      : this.overrideCircles;
+    const features = list
+      .filter((ov) => ov && Array.isArray(ov.center) && ov.radius_m > 0)
+      .map((ov, idx) => {
+        const { polygon } = circleToPolygonAndBbox(ov.center, ov.radius_m, 36);
+        return {
+          type: 'Feature',
+          id: idx + 1,
+          properties: { overrideType: ov.type },
+          geometry: { type: 'Polygon', coordinates: [polygon] }
+        };
+      });
+    src.setData({ type: 'FeatureCollection', features });
+  }
+
+  finalizeCircleOverride(center, edgeLngLat) {
+    const radiusM = Math.round(computeDistanceMeters(center[0], center[1], edgeLngLat.lng, edgeLngLat.lat) * 10) / 10;
+    const type = this.overrideDrawType;
+    const cb = this.overrideDrawCallback;
+    this.stopDrawing();
+    if (radiusM >= 0.5 && cb) {
+      cb({
+        id: `ov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        type,
+        center: [center[0], center[1]],
+        radius_m: Math.min(5000, radiusM)
+      });
+    }
   }
 
   toggleDrawing() {
@@ -598,6 +731,20 @@ export class BoxDrawer {
     this.map.on('mousedown', (e) => {
       if (!this.isDrawingActive) return;
 
+      if (this.drawMode === 'override-circle') {
+        if (this.overrideCircleState === 'idle') {
+          this.isOverrideMouseDown = true;
+          this.overrideMovedDuringDown = false;
+          this.overrideStartPoint = e.point;
+          this.overrideCenter = [e.lngLat.lng, e.lngLat.lat];
+        } else if (this.overrideCircleState === 'expanding' && this.overrideCenter) {
+          this.finalizeCircleOverride(this.overrideCenter, e.lngLat);
+          this.justFinishedDrag = true;
+          setTimeout(() => { this.justFinishedDrag = false; }, 100);
+        }
+        return;
+      }
+
       if (this.drawMode === 'rectangle') {
         if (this.rectState === 'idle') {
           this.isRectMouseDown = true;
@@ -641,6 +788,27 @@ export class BoxDrawer {
           }
         } else if (this.activeMidpoint && (this.hoveredHandleId || !this.handlesVisible)) {
           this.clearMidpoint();
+        }
+        return;
+      }
+
+      if (this.drawMode === 'override-circle') {
+        const label = this.overrideDrawType === 'to_geology' ? 'Mark Geology' : 'Remove Canopy';
+        if (this.isOverrideMouseDown && (this.overrideCircleState === 'idle' || this.overrideCircleState === 'dragging')) {
+          const distPx = Math.hypot(e.point.x - this.overrideStartPoint.x, e.point.y - this.overrideStartPoint.y);
+          if (distPx >= 4 && this.overrideCenter) {
+            this.overrideMovedDuringDown = true;
+            this.overrideCircleState = 'dragging';
+            const rM = Math.max(0.5, computeDistanceMeters(this.overrideCenter[0], this.overrideCenter[1], e.lngLat.lng, e.lngLat.lat));
+            this.overridePreviewCircle = { type: this.overrideDrawType, center: this.overrideCenter, radius_m: rM };
+            this.renderOverrideCircles();
+            this.showTooltip(e.originalEvent.clientX, e.originalEvent.clientY, `${label} · Radius: ${rM.toFixed(1)} m • Release to finish`);
+          }
+        } else if (this.overrideCircleState === 'expanding' && this.overrideCenter) {
+          const rM = Math.max(0.5, computeDistanceMeters(this.overrideCenter[0], this.overrideCenter[1], e.lngLat.lng, e.lngLat.lat));
+          this.overridePreviewCircle = { type: this.overrideDrawType, center: this.overrideCenter, radius_m: rM };
+          this.renderOverrideCircles();
+          this.showTooltip(e.originalEvent.clientX, e.originalEvent.clientY, `${label} · Radius: ${rM.toFixed(1)} m • Click to finish • Esc to cancel`);
         }
         return;
       }
@@ -709,6 +877,8 @@ export class BoxDrawer {
     // 3. Click: places vertices or closes polygon (or absorbs rectangle drag finish)
     this.map.on('click', (e) => {
       if (!this.isDrawingActive) return;
+      if (this.drawMode === 'override-circle') return;
+
       if (this.drawMode === 'rectangle') {
         if (this.justFinishedDrag) {
           this.justFinishedDrag = false;
@@ -740,6 +910,33 @@ export class BoxDrawer {
     // 4. Mouse up: finalizes drag or transitions to expanding
     const finalizeMouseUp = (e) => {
       if (!this.isDrawingActive) return;
+
+      if (this.drawMode === 'override-circle') {
+        if (this.justFinishedDrag) {
+          this.justFinishedDrag = false;
+          return;
+        }
+        if (this.overrideCircleState === 'dragging' && this.overrideCenter) {
+          this.isOverrideMouseDown = false;
+          const endLngLat = e.lngLat || this.lastMouseLngLat;
+          if (endLngLat) {
+            this.finalizeCircleOverride(this.overrideCenter, endLngLat);
+            this.justFinishedDrag = true;
+            setTimeout(() => { this.justFinishedDrag = false; }, 100);
+          } else {
+            this.cancelDrawing();
+          }
+        } else if (this.overrideCircleState === 'idle' && this.isOverrideMouseDown) {
+          this.isOverrideMouseDown = false;
+          if (!this.overrideMovedDuringDown) {
+            this.overrideCircleState = 'expanding';
+            const clientX = e.originalEvent ? e.originalEvent.clientX : (e.clientX || 0);
+            const clientY = e.originalEvent ? e.originalEvent.clientY : (e.clientY || 0);
+            this.showTooltip(clientX, clientY, 'Move mouse to set radius • Click again to finish • Esc to cancel');
+          }
+        }
+        return;
+      }
 
       if (this.drawMode === 'rectangle') {
         if (this.justFinishedDrag) {

@@ -20,6 +20,7 @@ export const DEFAULT_APP_STATE = Object.freeze({
   }),
   layer: 'osm', // 'osm' | 'esri'
   selection: null, // { bbox: [minLon, minLat, maxLon, maxLat], polygon: [[lon, lat], ...], shapeType: 'rectangle'|'polygon' }
+  shadeOverrides: Object.freeze([]),
   date: '2026-06-21'
 });
 
@@ -174,6 +175,38 @@ export function validateMapState(mapObj) {
   return { center, zoom, pitch, bearing };
 }
 
+function defaultAppStateCopy() {
+  return {
+    version: DEFAULT_APP_STATE.version,
+    map: { ...DEFAULT_APP_STATE.map },
+    layer: DEFAULT_APP_STATE.layer,
+    selection: null,
+    shadeOverrides: [],
+    date: DEFAULT_APP_STATE.date
+  };
+}
+
+function validateShadeOverrides(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((item) => {
+      if (!item || typeof item !== 'object') return false;
+      if (item.type !== 'to_geology' && item.type !== 'remove_canopy') return false;
+      if (!Array.isArray(item.center) || item.center.length !== 2) return false;
+      const [lon, lat] = item.center;
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) return false;
+      return Number.isFinite(item.radius_m) && item.radius_m > 0 && item.radius_m <= 5000;
+    })
+    .map((item) => ({
+      id: typeof item.id === 'string' && item.id ? item.id : `ov_${Math.random().toString(36).slice(2, 9)}`,
+      type: item.type,
+      center: [Number(item.center[0]), Number(item.center[1])],
+      radius_m: Number(item.radius_m),
+      label: typeof item.label === 'string' ? item.label : '',
+      thumbnail: typeof item.thumbnail === 'string' ? item.thumbnail : null
+    }));
+}
+
 /**
  * Load persisted app state from localStorage.
  * Falls back to default state if not found or corrupted.
@@ -181,36 +214,18 @@ export function validateMapState(mapObj) {
 export function loadAppState(customStorage = null) {
   const storage = getStorage(customStorage);
   if (!storage) {
-    return {
-      version: DEFAULT_APP_STATE.version,
-      map: { ...DEFAULT_APP_STATE.map },
-      layer: DEFAULT_APP_STATE.layer,
-      selection: null,
-      date: DEFAULT_APP_STATE.date
-    };
+    return defaultAppStateCopy();
   }
 
   try {
     const raw = storage.getItem(APP_STATE_STORAGE_KEY);
     if (!raw) {
-      return {
-        version: DEFAULT_APP_STATE.version,
-        map: { ...DEFAULT_APP_STATE.map },
-        layer: DEFAULT_APP_STATE.layer,
-        selection: null,
-        date: DEFAULT_APP_STATE.date
-      };
+      return defaultAppStateCopy();
     }
 
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') {
-      return {
-        version: DEFAULT_APP_STATE.version,
-        map: { ...DEFAULT_APP_STATE.map },
-        layer: DEFAULT_APP_STATE.layer,
-        selection: null,
-        date: DEFAULT_APP_STATE.date
-      };
+      return defaultAppStateCopy();
     }
 
     return {
@@ -218,6 +233,7 @@ export function loadAppState(customStorage = null) {
       map: validateMapState(parsed.map),
       layer: isValidLayer(parsed.layer) ? parsed.layer : DEFAULT_APP_STATE.layer,
       selection: validateSelection(parsed.selection),
+      shadeOverrides: validateShadeOverrides(parsed.shadeOverrides),
       date: isValidDate(parsed.date) ? parsed.date : DEFAULT_APP_STATE.date
     };
   } catch (err) {
@@ -227,6 +243,7 @@ export function loadAppState(customStorage = null) {
       map: { ...DEFAULT_APP_STATE.map },
       layer: DEFAULT_APP_STATE.layer,
       selection: null,
+      shadeOverrides: [],
       date: DEFAULT_APP_STATE.date
     };
   }
@@ -245,6 +262,7 @@ export function saveAppState(state, customStorage = null) {
       map: validateMapState(state.map),
       layer: isValidLayer(state.layer) ? state.layer : DEFAULT_APP_STATE.layer,
       selection: validateSelection(state.selection),
+      shadeOverrides: validateShadeOverrides(state.shadeOverrides),
       date: isValidDate(state.date) ? state.date : DEFAULT_APP_STATE.date
     };
     storage.setItem(APP_STATE_STORAGE_KEY, JSON.stringify(sanitized));
@@ -282,6 +300,15 @@ export function updateLayerState(layer, customStorage = null) {
 export function updateSelectionState(selection, customStorage = null) {
   const current = loadAppState(customStorage);
   current.selection = validateSelection(selection);
+  return saveAppState(current, customStorage);
+}
+
+/**
+ * Update shade overrides list in persistent storage.
+ */
+export function updateShadeOverridesState(shadeOverrides, customStorage = null) {
+  const current = loadAppState(customStorage);
+  current.shadeOverrides = validateShadeOverrides(shadeOverrides);
   return saveAppState(current, customStorage);
 }
 
