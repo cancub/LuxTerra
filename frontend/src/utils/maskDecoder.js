@@ -178,31 +178,37 @@ export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols,
  * If chmBytes is provided, skips marking pixels underneath dense tree canopy (>= 2m).
  */
 function rasterizeQuad(p0, p1, p2, p3, mask, cols, rows, chmBytes = null) {
-  const minX = Math.max(0, Math.floor(Math.min(p0.x, p1.x, p2.x, p3.x)));
-  const maxX = Math.min(cols - 1, Math.ceil(Math.max(p0.x, p1.x, p2.x, p3.x)));
   const minY = Math.max(0, Math.floor(Math.min(p0.y, p1.y, p2.y, p3.y)));
   const maxY = Math.min(rows - 1, Math.ceil(Math.max(p0.y, p1.y, p2.y, p3.y)));
-
   const poly = [p0, p1, p2, p3];
 
   for (let y = minY; y <= maxY; y++) {
-    const rowOffset = y * cols;
     const cy = y + 0.5;
-    for (let x = minX; x <= maxX; x++) {
+    let xMin = Infinity;
+    let xMax = -Infinity;
+    let hits = 0;
+
+    for (let i = 0, j = 3; i < 4; j = i++) {
+      const xi = poly[i].x, yi = poly[i].y;
+      const xj = poly[j].x, yj = poly[j].y;
+      if ((yi > cy) !== (yj > cy)) {
+        const xInt = ((xj - xi) * (cy - yi)) / (yj - yi) + xi;
+        if (xInt < xMin) xMin = xInt;
+        if (xInt > xMax) xMax = xInt;
+        hits++;
+      }
+    }
+
+    if (hits < 2) continue;
+    const startX = Math.max(0, Math.ceil(xMin - 0.5));
+    const endX = Math.min(cols - 1, Math.floor(xMax - 0.5));
+    const rowOffset = y * cols;
+
+    for (let x = startX; x <= endX; x++) {
       if (chmBytes && (chmBytes[rowOffset + x] * 0.5) >= 2.0) {
         continue; // Underneath dense tree canopy
       }
-      const cx = x + 0.5;
-      let inside = false;
-      for (let i = 0, j = 3; i < 4; j = i++) {
-        const xi = poly[i].x, yi = poly[i].y;
-        const xj = poly[j].x, yj = poly[j].y;
-        const intersect = ((yi > cy) !== (yj > cy)) && (cx < ((xj - xi) * (cy - yi)) / (yj - yi) + xi);
-        if (intersect) inside = !inside;
-      }
-      if (inside) {
-        mask[rowOffset + x] = 1;
-      }
+      mask[rowOffset + x] = 1;
     }
   }
 }

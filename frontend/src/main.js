@@ -182,6 +182,90 @@ if (appContainer) {
 
   let playbackEngine = null;
   let solarDashboard = null;
+  let pendingRenderRafId = null;
+  let latestScrubMetric = null;
+
+  const renderScrubFrame = () => {
+    pendingRenderRafId = null;
+    const metric = latestScrubMetric;
+    if (!metric || !currentSimulationData) return;
+
+    const meta = currentSimulationData.metadata;
+    if (metric.is_daylight && metric.mask_index !== null && currentSimulationData.masks) {
+      const isSatellite = activeBaseLayer === 'esri';
+      const maskStr = isSatellite
+        ? ((currentSimulationData.visual_masks && currentSimulationData.visual_masks[metric.mask_index]) || currentSimulationData.masks[metric.mask_index])
+        : currentSimulationData.masks[metric.mask_index];
+      const canopyMaskStr = isSatellite
+        ? ((currentSimulationData.visual_canopy_masks && currentSimulationData.visual_canopy_masks[metric.mask_index]) || (currentSimulationData.canopy_masks ? currentSimulationData.canopy_masks[metric.mask_index] : null))
+        : (currentSimulationData.canopy_masks ? currentSimulationData.canopy_masks[metric.mask_index] : null);
+
+      const canopyShadeStr = isSatellite
+        ? (currentSimulationData.canopy_shade_levels ? currentSimulationData.canopy_shade_levels[metric.mask_index] : null)
+        : ((currentSimulationData.ground_canopy_shade_levels && currentSimulationData.ground_canopy_shade_levels[metric.mask_index])
+          || (currentSimulationData.canopy_shade_levels ? currentSimulationData.canopy_shade_levels[metric.mask_index] : null));
+
+      let panelShadowBytes = null;
+      if (solarPanel3DLayer.isVisible() && currentSimulationData.layout) {
+        panelShadowBytes = rasterizePanelShadowMask(
+          currentSimulationData.layout,
+          metric.solar_azimuth_deg,
+          metric.solar_elevation_deg,
+          meta.patch_bounds_wgs84,
+          meta.grid_rows,
+          meta.grid_cols,
+          isSatellite ? currentChmBytes : null
+        );
+      }
+
+      shadowCanvasLayer.renderFrame(maskStr, meta.grid_rows, meta.grid_cols, canopyMaskStr, panelShadowBytes, canopyShadeStr);
+      solarPanel3DLayer.updateSunPosition(
+        metric.solar_azimuth_deg,
+        metric.solar_elevation_deg,
+        true,
+        maskStr,
+        canopyMaskStr,
+        meta.patch_bounds_wgs84,
+        meta.grid_rows,
+        meta.grid_cols,
+        metric,
+        currentSimulationData.canopy_transmittance !== undefined ? currentSimulationData.canopy_transmittance : (meta.canopy_transmittance || 0.15)
+      );
+    } else if (currentSimulationData.night_mask) {
+      // Nighttime: render 100% shade inside the user's selected shape (polygon or rectangle)
+      shadowCanvasLayer.renderFrame(
+        currentSimulationData.night_mask,
+        meta.grid_rows,
+        meta.grid_cols,
+        currentSimulationData.night_canopy_mask
+      );
+      solarPanel3DLayer.updateSunPosition(
+        metric.solar_azimuth_deg,
+        metric.solar_elevation_deg,
+        false,
+        null,
+        null,
+        null,
+        0,
+        0,
+        metric
+      );
+    } else {
+      // Fallback: render shade masked to active polygon geometry
+      shadowCanvasLayer.renderFullShade(meta.grid_rows, meta.grid_cols, currentPolygon, meta.patch_bounds_wgs84);
+      solarPanel3DLayer.updateSunPosition(
+        metric.solar_azimuth_deg,
+        metric.solar_elevation_deg,
+        false,
+        null,
+        null,
+        null,
+        0,
+        0,
+        metric
+      );
+    }
+  };
 
   const timeScrubber = new TimeScrubber(timelineScrubberMount, (index, metric) => {
     if (playbackEngine) {
@@ -192,82 +276,15 @@ if (appContainer) {
     }
 
     if (currentSimulationData) {
-      const meta = currentSimulationData.metadata;
-      if (metric.is_daylight && metric.mask_index !== null && currentSimulationData.masks) {
-        const isSatellite = activeBaseLayer === 'esri';
-        const maskStr = isSatellite
-          ? ((currentSimulationData.visual_masks && currentSimulationData.visual_masks[metric.mask_index]) || currentSimulationData.masks[metric.mask_index])
-          : currentSimulationData.masks[metric.mask_index];
-        const canopyMaskStr = isSatellite
-          ? ((currentSimulationData.visual_canopy_masks && currentSimulationData.visual_canopy_masks[metric.mask_index]) || (currentSimulationData.canopy_masks ? currentSimulationData.canopy_masks[metric.mask_index] : null))
-          : (currentSimulationData.canopy_masks ? currentSimulationData.canopy_masks[metric.mask_index] : null);
-
-        const canopyShadeStr = isSatellite
-          ? (currentSimulationData.canopy_shade_levels ? currentSimulationData.canopy_shade_levels[metric.mask_index] : null)
-          : ((currentSimulationData.ground_canopy_shade_levels && currentSimulationData.ground_canopy_shade_levels[metric.mask_index])
-            || (currentSimulationData.canopy_shade_levels ? currentSimulationData.canopy_shade_levels[metric.mask_index] : null));
-
-        let panelShadowBytes = null;
-        if (solarPanel3DLayer.isVisible() && currentSimulationData.layout) {
-          panelShadowBytes = rasterizePanelShadowMask(
-            currentSimulationData.layout,
-            metric.solar_azimuth_deg,
-            metric.solar_elevation_deg,
-            meta.patch_bounds_wgs84,
-            meta.grid_rows,
-            meta.grid_cols,
-            isSatellite ? currentChmBytes : null
-          );
-        }
-
-        shadowCanvasLayer.renderFrame(maskStr, meta.grid_rows, meta.grid_cols, canopyMaskStr, panelShadowBytes, canopyShadeStr);
-        solarPanel3DLayer.updateSunPosition(
-          metric.solar_azimuth_deg,
-          metric.solar_elevation_deg,
-          true,
-          maskStr,
-          canopyMaskStr,
-          meta.patch_bounds_wgs84,
-          meta.grid_rows,
-          meta.grid_cols,
-          metric,
-          currentSimulationData.canopy_transmittance !== undefined ? currentSimulationData.canopy_transmittance : (meta.canopy_transmittance || 0.15)
-        );
-      } else if (currentSimulationData.night_mask) {
-        // Nighttime: render 100% shade inside the user's selected shape (polygon or rectangle)
-        shadowCanvasLayer.renderFrame(
-          currentSimulationData.night_mask,
-          meta.grid_rows,
-          meta.grid_cols,
-          currentSimulationData.night_canopy_mask
-        );
-        solarPanel3DLayer.updateSunPosition(
-          metric.solar_azimuth_deg,
-          metric.solar_elevation_deg,
-          false,
-          null,
-          null,
-          null,
-          0,
-          0,
-          metric
-        );
-      } else {
-        // Fallback: render shade masked to active polygon geometry
-        shadowCanvasLayer.renderFullShade(meta.grid_rows, meta.grid_cols, currentPolygon, meta.patch_bounds_wgs84);
-        solarPanel3DLayer.updateSunPosition(
-          metric.solar_azimuth_deg,
-          metric.solar_elevation_deg,
-          false,
-          null,
-          null,
-          null,
-          0,
-          0,
-          metric
-        );
+      latestScrubMetric = metric;
+      if (pendingRenderRafId === null) {
+        pendingRenderRafId = requestAnimationFrame(renderScrubFrame);
       }
     } else {
+      if (pendingRenderRafId !== null) {
+        cancelAnimationFrame(pendingRenderRafId);
+        pendingRenderRafId = null;
+      }
       shadowCanvasLayer.clear();
     }
   });
