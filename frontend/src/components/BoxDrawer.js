@@ -72,6 +72,7 @@ export class BoxDrawer {
     this.handlesVisible = false;
     this.fillVisible = false;
     this.overrideCircles = [];
+    this.hoveredOverrideId = null;
     this.overrideDrawType = null;
     this.overrideDrawCallback = null;
     this.overrideDragPolygon = null;
@@ -620,10 +621,20 @@ export class BoxDrawer {
     this.renderOverrideCircles();
   }
 
+  setHoveredOverrideId(overrideId) {
+    const next = overrideId || null;
+    if (this.hoveredOverrideId === next) return;
+    this.hoveredOverrideId = next;
+    this.renderOverrideCircles();
+  }
+
   renderOverrideCircles() {
     const src = typeof this.map.getSource === 'function' ? this.map.getSource('draw-overrides-source') : null;
     if (!src) return;
-    const features = this.overrideCircles
+    const visibleOverrides = this.hoveredOverrideId
+      ? this.overrideCircles.filter((ov) => ov && ov.id === this.hoveredOverrideId)
+      : [];
+    const features = visibleOverrides
       .map((ov, idx) => {
         if (!ov) return null;
         let poly = null;

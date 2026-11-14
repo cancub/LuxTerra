@@ -1375,38 +1375,26 @@ export class ShapeToolbar {
             center: Array.isArray(ov.center) ? [...ov.center] : ov.center,
             radius_m: ov.radius_m
           }),
-      label: ov.label || '',
-      thumbnail: ov.thumbnail || null
+      label: ov.label || ''
     }));
   }
 
   startOverrideDraw(type) {
     if (!this.boxDrawer || typeof this.boxDrawer.startPolygonOverride !== 'function') return;
-    const started = this.boxDrawer.startPolygonOverride(type, async (ov) => {
+    const started = this.boxDrawer.startPolygonOverride(type, (ov) => {
       if (this.btnOverrideGeology) this.btnOverrideGeology.classList.remove('active', 'btn-accent');
       if (this.btnOverrideCanopy) this.btnOverrideCanopy.classList.remove('active', 'btn-accent');
 
       const actionLabel = ov.type === 'to_geology' ? 'Geology' : 'Removed';
       const newOverride = {
         ...ov,
-        label: actionLabel,
-        thumbnail: null
+        label: actionLabel
       };
       this.currentOverrides.push(newOverride);
       this.boxDrawer.setShadeOverrides(this.currentOverrides);
       this.renderOverrideList();
       this.refreshModificationState();
       this.onOverridesChange(this.cloneOverrides(this.currentOverrides));
-
-      const thumb = await captureShapeThumbnail(ov.bbox, ov.polygon, 100);
-      if (thumb) {
-        const target = this.currentOverrides.find((item) => item.id === newOverride.id);
-        if (target) {
-          target.thumbnail = thumb;
-          this.renderOverrideList();
-          this.onOverridesChange(this.cloneOverrides(this.currentOverrides));
-        }
-      }
     });
 
     if (this.btnOverrideGeology) {
@@ -1420,7 +1408,7 @@ export class ShapeToolbar {
   }
 
   deleteOverride(overrideId) {
-    this.hideThumbPreview();
+    this.boxDrawer?.setHoveredOverrideId?.(null);
     this.currentOverrides = this.currentOverrides.filter((ov) => ov.id !== overrideId);
     this.boxDrawer?.setShadeOverrides?.(this.currentOverrides);
     this.renderOverrideList();
@@ -1433,6 +1421,7 @@ export class ShapeToolbar {
     this.overrideList.innerHTML = '';
 
     if (!this.currentOverrides || this.currentOverrides.length === 0) {
+      this.boxDrawer?.setHoveredOverrideId?.(null);
       this.overrideList.style.display = 'none';
       return;
     }
@@ -1452,27 +1441,16 @@ export class ShapeToolbar {
           </svg>
         </button>
         <div class="override-item-title"></div>
-        <div class="view-item-thumb"></div>
       `;
 
       item.querySelector('.override-item-title').textContent = title;
 
-      const thumbEl = item.querySelector('.view-item-thumb');
-      if (ov.thumbnail) {
-        const img = document.createElement('img');
-        img.src = ov.thumbnail;
-        img.alt = title;
-        thumbEl.appendChild(img);
-
-        thumbEl.addEventListener('mouseenter', () => {
-          this.showThumbPreview(ov.thumbnail, thumbEl);
-        });
-        thumbEl.addEventListener('mouseleave', () => {
-          this.hideThumbPreview();
-        });
-      } else {
-        thumbEl.classList.add('is-placeholder');
-      }
+      item.addEventListener('mouseenter', () => {
+        this.boxDrawer?.setHoveredOverrideId?.(ov.id);
+      });
+      item.addEventListener('mouseleave', () => {
+        this.boxDrawer?.setHoveredOverrideId?.(null);
+      });
 
       item.querySelector('.btn-delete-override').addEventListener('click', (e) => {
         e.stopPropagation();
