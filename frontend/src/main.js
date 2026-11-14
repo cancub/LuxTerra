@@ -17,7 +17,7 @@ import { PlaybackEngine } from './components/PlaybackEngine.js';
 import { PVConfigPanel } from './components/PVConfigPanel.js';
 import { SolarDashboard } from './components/SolarDashboard.js';
 import { SolarPanel3DLayer } from './components/SolarPanel3DLayer.js';
-import { rasterizePanelShadowMask, base64ToBytes } from './utils/maskDecoder.js';
+import { rasterizePanelShadowMask, base64ToBytes, decodeBitmask } from './utils/maskDecoder.js';
 import { runSimulation } from './services/api.js';
 import {
   loadAppState,
@@ -173,6 +173,7 @@ if (appContainer) {
   let currentContextBbox = null;
   let currentSimulationData = null;
   let currentChmBytes = null;
+  let currentOutsideMaskBytes = null;
   let activeBaseLayer = savedState.layer === 'esri' ? 'esri' : 'osm';
   let baseSimulationConfig = {
     gcr: 1.0,
@@ -214,7 +215,8 @@ if (appContainer) {
           meta.patch_bounds_wgs84,
           meta.grid_rows,
           meta.grid_cols,
-          isSatellite ? currentChmBytes : null
+          isSatellite ? currentChmBytes : null,
+          currentOutsideMaskBytes
         );
       }
 
@@ -447,6 +449,9 @@ if (appContainer) {
       if (abortController.signal.aborted) return;
       currentSimulationData = data;
       currentChmBytes = data.chm_base64 ? base64ToBytes(data.chm_base64) : null;
+      currentOutsideMaskBytes = (data.night_mask && !currentContextBbox)
+        ? decodeBitmask(data.night_mask, data.metadata.grid_rows, data.metadata.grid_cols)
+        : null;
       baseSimulationConfig = {
         deploymentMode: data.metadata.deployment_mode,
         gcr: data.metadata.effective_gcr,
@@ -543,6 +548,7 @@ if (appContainer) {
       solarPanel3DLayer.clear();
       currentSimulationData = null;
       currentChmBytes = null;
+      currentOutsideMaskBytes = null;
       if (timeScrubber) {
         timeScrubber.setTimeseries([]);
       }

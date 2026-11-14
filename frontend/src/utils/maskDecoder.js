@@ -177,7 +177,7 @@ export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols,
  * Fast scanline quad rasterization into a binary mask array.
  * If chmBytes is provided, skips marking pixels underneath dense tree canopy (>= 2m).
  */
-function rasterizeQuad(p0, p1, p2, p3, mask, cols, rows, chmBytes = null) {
+function rasterizeQuad(p0, p1, p2, p3, mask, cols, rows, chmBytes = null, outsideMaskBytes = null) {
   const minY = Math.max(0, Math.floor(Math.min(p0.y, p1.y, p2.y, p3.y)));
   const maxY = Math.min(rows - 1, Math.ceil(Math.max(p0.y, p1.y, p2.y, p3.y)));
   const poly = [p0, p1, p2, p3];
@@ -205,6 +205,9 @@ function rasterizeQuad(p0, p1, p2, p3, mask, cols, rows, chmBytes = null) {
     const rowOffset = y * cols;
 
     for (let x = startX; x <= endX; x++) {
+      if (outsideMaskBytes && outsideMaskBytes[rowOffset + x] !== 0) {
+        continue; // Outside active polygon/rectangle boundary
+      }
       if (chmBytes && (chmBytes[rowOffset + x] * 0.5) >= 2.0) {
         continue; // Underneath dense tree canopy
       }
@@ -256,7 +259,7 @@ function marchShadowRay(originX, originY, hMeters, deltaX, deltaY, cols, rows, c
  * or null if unshaded / nighttime.
  * If chmBytes is provided, performs Option B ray-marching truncation against tree canopy heights.
  */
-export function rasterizePanelShadowMask(layout, solarAzimuthDeg, solarElevationDeg, patchBounds, rows, cols, chmBytes = null) {
+export function rasterizePanelShadowMask(layout, solarAzimuthDeg, solarElevationDeg, patchBounds, rows, cols, chmBytes = null, outsideMaskBytes = null) {
   if (!layout || !layout.tables || layout.tables.length === 0 || !patchBounds || rows <= 0 || cols <= 0 || solarElevationDeg <= 0) {
     return null;
   }
@@ -337,14 +340,14 @@ export function rasterizePanelShadowMask(layout, solarAzimuthDeg, solarElevation
       const seg_p3_proj = marchShadowRay(seg_p3.x, seg_p3.y, hTop, dX_top, dY_top, cols, rows, chmBytes);
 
       // 1. Rack footprint quad
-      rasterizeQuad(seg_p0, seg_p1, seg_p2, seg_p3, mask, cols, rows, chmBytes);
+      rasterizeQuad(seg_p0, seg_p1, seg_p2, seg_p3, mask, cols, rows, chmBytes, outsideMaskBytes);
 
       // 2. Projected rack face quad
-      rasterizeQuad(seg_p0_proj, seg_p1_proj, seg_p2_proj, seg_p3_proj, mask, cols, rows, chmBytes);
+      rasterizeQuad(seg_p0_proj, seg_p1_proj, seg_p2_proj, seg_p3_proj, mask, cols, rows, chmBytes, outsideMaskBytes);
 
       // 3. Bridging quads
-      rasterizeQuad(seg_p3, seg_p2, seg_p2_proj, seg_p3_proj, mask, cols, rows, chmBytes);
-      rasterizeQuad(seg_p0, seg_p1, seg_p1_proj, seg_p0_proj, mask, cols, rows, chmBytes);
+      rasterizeQuad(seg_p3, seg_p2, seg_p2_proj, seg_p3_proj, mask, cols, rows, chmBytes, outsideMaskBytes);
+      rasterizeQuad(seg_p0, seg_p1, seg_p1_proj, seg_p0_proj, mask, cols, rows, chmBytes, outsideMaskBytes);
     }
   }
 
