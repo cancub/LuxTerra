@@ -192,19 +192,34 @@ function validateShadeOverrides(list) {
     .filter((item) => {
       if (!item || typeof item !== 'object') return false;
       if (item.type !== 'to_geology' && item.type !== 'remove_canopy') return false;
+      if (Array.isArray(item.polygon) && item.polygon.length >= 3) {
+        return item.polygon.every(
+          (pt) => Array.isArray(pt) && pt.length >= 2 && Number.isFinite(Number(pt[0])) && Number.isFinite(Number(pt[1]))
+        );
+      }
       if (!Array.isArray(item.center) || item.center.length !== 2) return false;
       const [lon, lat] = item.center;
       if (!Number.isFinite(lon) || !Number.isFinite(lat)) return false;
       return Number.isFinite(item.radius_m) && item.radius_m > 0 && item.radius_m <= 5000;
     })
-    .map((item) => ({
-      id: typeof item.id === 'string' && item.id ? item.id : `ov_${Math.random().toString(36).slice(2, 9)}`,
-      type: item.type,
-      center: [Number(item.center[0]), Number(item.center[1])],
-      radius_m: Number(item.radius_m),
-      label: typeof item.label === 'string' ? item.label : '',
-      thumbnail: typeof item.thumbnail === 'string' ? item.thumbnail : null
-    }));
+    .map((item) => {
+      const base = {
+        id: typeof item.id === 'string' && item.id ? item.id : `ov_${Math.random().toString(36).slice(2, 9)}`,
+        type: item.type,
+        label: typeof item.label === 'string' ? item.label : '',
+        thumbnail: typeof item.thumbnail === 'string' ? item.thumbnail : null
+      };
+      if (Array.isArray(item.polygon) && item.polygon.length >= 3) {
+        base.polygon = item.polygon.map((pt) => [Number(pt[0]), Number(pt[1])]);
+        if (Array.isArray(item.bbox) && item.bbox.length === 4) {
+          base.bbox = item.bbox.map(Number);
+        }
+      } else {
+        base.center = [Number(item.center[0]), Number(item.center[1])];
+        base.radius_m = Number(item.radius_m);
+      }
+      return base;
+    });
 }
 
 /**

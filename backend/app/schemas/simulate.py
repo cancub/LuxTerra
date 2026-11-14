@@ -12,12 +12,32 @@ from ..services.elevation.geo_utils import calculate_bbox_area_meters, calculate
 
 
 class ShadeOverride(BaseModel):
-    """Circular spatial override to reclassify canopy as opaque geology or clear canopy."""
+    """Spatial override (polygon or legacy circle) to reclassify canopy as opaque geology or clear canopy."""
     type: Literal["to_geology", "remove_canopy"] = Field(
         ..., description="Override action: 'to_geology' or 'remove_canopy'"
     )
-    center: List[float] = Field(..., min_length=2, max_length=2, description="[lon, lat] center in WGS84")
-    radius_m: float = Field(..., gt=0.0, le=5000.0, description="Circle radius in meters")
+    polygon: Optional[List[List[float]]] = Field(
+        default=None, description="Override polygon vertices [[lon, lat], ...] in WGS84"
+    )
+    center: Optional[List[float]] = Field(
+        default=None, min_length=2, max_length=2, description="Legacy [lon, lat] circle center in WGS84"
+    )
+    radius_m: Optional[float] = Field(
+        default=None, gt=0.0, le=5000.0, description="Legacy circle radius in meters"
+    )
+
+    @model_validator(mode="after")
+    def check_geometry(self):
+        if self.polygon is not None:
+            if len(self.polygon) < 3:
+                raise ValueError("ShadeOverride polygon must have at least 3 vertices")
+            for pt in self.polygon:
+                if len(pt) < 2:
+                    raise ValueError("Each ShadeOverride polygon vertex must have [lon, lat]")
+            return self
+        if self.center is not None and self.radius_m is not None:
+            return self
+        raise ValueError("ShadeOverride requires either 'polygon' or both 'center' and 'radius_m'")
 
 
 class SimulateRequest(BaseModel):

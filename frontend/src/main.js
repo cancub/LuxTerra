@@ -427,8 +427,7 @@ if (appContainer) {
       canopy_mode: pvConfig.canopyMode,
       shade_overrides: currentOverrides.map((ov) => ({
         type: ov.type,
-        center: ov.center,
-        radius_m: ov.radius_m
+        ...(ov.polygon ? { polygon: ov.polygon } : { center: ov.center, radius_m: ov.radius_m })
       }))
     });
 
@@ -487,8 +486,7 @@ if (appContainer) {
         canopy_mode: pvConfig.canopyMode || 'seasonal',
         shade_overrides: currentOverrides.map((ov) => ({
           type: ov.type,
-          center: ov.center,
-          radius_m: ov.radius_m
+          ...(ov.polygon ? { polygon: ov.polygon } : { center: ov.center, radius_m: ov.radius_m })
         }))
       };
 

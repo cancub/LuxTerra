@@ -138,6 +138,16 @@ function areOverridesEqual(a, b) {
     const x = arrA[i];
     const y = arrB[i];
     if (!x || !y || x.type !== y.type) return false;
+    if (Array.isArray(x.polygon) || Array.isArray(y.polygon)) {
+      if (!Array.isArray(x.polygon) || !Array.isArray(y.polygon)) return false;
+      if (x.polygon.length !== y.polygon.length) return false;
+      for (let j = 0; j < x.polygon.length; j++) {
+        if (Math.abs(x.polygon[j][0] - y.polygon[j][0]) > 1e-6 || Math.abs(x.polygon[j][1] - y.polygon[j][1]) > 1e-6) {
+          return false;
+        }
+      }
+      continue;
+    }
     if (Math.abs((x.radius_m || 0) - (y.radius_m || 0)) > 0.05) return false;
     if (!Array.isArray(x.center) || !Array.isArray(y.center)) return false;
     if (Math.abs(x.center[0] - y.center[0]) > 1e-6 || Math.abs(x.center[1] - y.center[1]) > 1e-6) {
@@ -1356,20 +1366,27 @@ export class ShapeToolbar {
     return list.map((ov) => ({
       id: ov.id,
       type: ov.type,
-      center: Array.isArray(ov.center) ? [...ov.center] : ov.center,
-      radius_m: ov.radius_m,
+      ...(Array.isArray(ov.polygon)
+        ? {
+            polygon: ov.polygon.map((pt) => [pt[0], pt[1]]),
+            ...(Array.isArray(ov.bbox) ? { bbox: [...ov.bbox] } : {})
+          }
+        : {
+            center: Array.isArray(ov.center) ? [...ov.center] : ov.center,
+            radius_m: ov.radius_m
+          }),
       label: ov.label || '',
       thumbnail: ov.thumbnail || null
     }));
   }
 
   startOverrideDraw(type) {
-    if (!this.boxDrawer || typeof this.boxDrawer.startCircleOverride !== 'function') return;
-    const started = this.boxDrawer.startCircleOverride(type, async (ov) => {
+    if (!this.boxDrawer || typeof this.boxDrawer.startPolygonOverride !== 'function') return;
+    const started = this.boxDrawer.startPolygonOverride(type, async (ov) => {
       if (this.btnOverrideGeology) this.btnOverrideGeology.classList.remove('active', 'btn-accent');
       if (this.btnOverrideCanopy) this.btnOverrideCanopy.classList.remove('active', 'btn-accent');
 
-      const actionLabel = ov.type === 'to_geology' ? 'Mark as Geology' : 'Remove Canopy';
+      const actionLabel = ov.type === 'to_geology' ? 'Geology' : 'Removed';
       const newOverride = {
         ...ov,
         label: actionLabel,
@@ -1381,8 +1398,7 @@ export class ShapeToolbar {
       this.refreshModificationState();
       this.onOverridesChange(this.cloneOverrides(this.currentOverrides));
 
-      const { polygon, bbox } = circleToPolygonAndBbox(ov.center, ov.radius_m, 32);
-      const thumb = await captureShapeThumbnail(bbox, polygon, 100);
+      const thumb = await captureShapeThumbnail(ov.bbox, ov.polygon, 100);
       if (thumb) {
         const target = this.currentOverrides.find((item) => item.id === newOverride.id);
         if (target) {
@@ -1424,26 +1440,22 @@ export class ShapeToolbar {
     this.overrideList.style.display = 'flex';
     this.currentOverrides.forEach((ov) => {
       const item = document.createElement('div');
-      item.className = 'shape-view-item override-item';
+      item.className = 'override-item';
 
-      const title = ov.label || (ov.type === 'to_geology' ? 'Mark as Geology' : 'Remove Canopy');
-      const coordsText = Array.isArray(ov.center)
-        ? `${ov.radius_m.toFixed(1)} m radius · ${Math.abs(ov.center[1]).toFixed(4)}°N, ${Math.abs(ov.center[0]).toFixed(4)}°W`
-        : `${ov.radius_m.toFixed(1)} m radius`;
+      const title = ov.type === 'to_geology' ? 'Geology' : 'Removed';
 
       item.innerHTML = `
-        <div class="view-item-info">
-          <div class="view-item-name"></div>
-          <div class="view-item-location"></div>
-        </div>
-        <div class="view-item-actions">
-          <button class="btn-delete-view" title="Remove modification">&times;</button>
-          <div class="view-item-thumb"></div>
-        </div>
+        <button class="btn btn-sm btn-square-icon btn-delete-override" title="Remove modification">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </button>
+        <div class="override-item-title"></div>
+        <div class="view-item-thumb"></div>
       `;
 
-      item.querySelector('.view-item-name').textContent = title;
-      item.querySelector('.view-item-location').textContent = coordsText;
+      item.querySelector('.override-item-title').textContent = title;
 
       const thumbEl = item.querySelector('.view-item-thumb');
       if (ov.thumbnail) {
@@ -1462,7 +1474,7 @@ export class ShapeToolbar {
         thumbEl.classList.add('is-placeholder');
       }
 
-      item.querySelector('.btn-delete-view').addEventListener('click', (e) => {
+      item.querySelector('.btn-delete-override').addEventListener('click', (e) => {
         e.stopPropagation();
         this.deleteOverride(ov.id);
       });

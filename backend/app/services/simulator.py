@@ -38,6 +38,24 @@ from .pv.self_shading import (
 TZ_QUEBEC = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
 
 
+def _polygon_mask_2d(xs: np.ndarray, ys: np.ndarray, poly_xy: list) -> np.ndarray:
+    """Vectorized point-in-polygon mask for grid cell centers (xs, ys) in metric CRS."""
+    n = len(poly_xy)
+    if n < 3:
+        return np.zeros((len(ys), len(xs)), dtype=bool)
+    px = xs[None, :]
+    py = ys[:, None]
+    inside = np.zeros((len(ys), len(xs)), dtype=bool)
+    x1, y1 = poly_xy[-1]
+    for x2, y2 in poly_xy:
+        cond = (y1 > py) != (y2 > py)
+        if np.any(cond):
+            x_intersect = (x2 - x1) * (py - y1) / ((y2 - y1) if y2 != y1 else 1e-12) + x1
+            inside ^= cond & (px < x_intersect)
+        x1, y1 = x2, y2
+    return inside
+
+
 def _apply_shade_overrides(
     dtm_grid: np.ndarray,
     dsm_grid: np.ndarray,
@@ -45,7 +63,7 @@ def _apply_shade_overrides(
     geo_info: dict,
     overrides: list,
 ):
-    """Apply circular geology/canopy overrides onto writable copies of the elevation grids."""
+    """Apply polygon (or legacy circular) geology/canopy overrides onto writable copies of the elevation grids."""
     dtm = dtm_grid.copy()
     dsm = dsm_grid.copy()
     chm = chm_grid.copy() if chm_grid is not None else None
@@ -57,21 +75,40 @@ def _apply_shade_overrides(
     transformer = get_transformer("EPSG:4326", geo_info["target_crs"])
 
     for ov in overrides:
-        lon, lat = float(ov.center[0]), float(ov.center[1])
-        r_m = float(ov.radius_m)
-        cx, cy = transformer.transform(lon, lat)
+        if getattr(ov, "polygon", None):
+            poly_xy = [transformer.transform(float(pt[0]), float(pt[1])) for pt in ov.polygon]
+            xs_poly = [p[0] for p in poly_xy]
+            ys_poly = [p[1] for p in poly_xy]
+            min_x, max_x = min(xs_poly), max(xs_poly)
+            min_y, max_y = min(ys_poly), max(ys_poly)
 
-        c0 = max(0, int(np.floor((cx - r_m - b_min_x) / dx)))
-        c1 = min(w, int(np.ceil((cx + r_m - b_min_x) / dx)))
-        r0 = max(0, int(np.floor((b_max_y - (cy + r_m)) / dy)))
-        r1 = min(h, int(np.ceil((b_max_y - (cy - r_m)) / dy)))
-        if c1 <= c0 or r1 <= r0:
-            continue
+            c0 = max(0, int(np.floor((min_x - b_min_x) / dx)))
+            c1 = min(w, int(np.ceil((max_x - b_min_x) / dx)))
+            r0 = max(0, int(np.floor((b_max_y - max_y) / dy)))
+            r1 = min(h, int(np.ceil((b_max_y - min_y) / dy)))
+            if c1 <= c0 or r1 <= r0:
+                continue
 
-        xs = b_min_x + (np.arange(c0, c1, dtype=np.float64) + 0.5) * dx
-        ys = b_max_y - (np.arange(r0, r1, dtype=np.float64) + 0.5) * dy
-        dist_sq = (xs[None, :] - cx) ** 2 + (ys[:, None] - cy) ** 2
-        mask = dist_sq <= (r_m * r_m)
+            xs = b_min_x + (np.arange(c0, c1, dtype=np.float64) + 0.5) * dx
+            ys = b_max_y - (np.arange(r0, r1, dtype=np.float64) + 0.5) * dy
+            mask = _polygon_mask_2d(xs, ys, poly_xy)
+        else:
+            lon, lat = float(ov.center[0]), float(ov.center[1])
+            r_m = float(ov.radius_m)
+            cx, cy = transformer.transform(lon, lat)
+
+            c0 = max(0, int(np.floor((cx - r_m - b_min_x) / dx)))
+            c1 = min(w, int(np.ceil((cx + r_m - b_min_x) / dx)))
+            r0 = max(0, int(np.floor((b_max_y - (cy + r_m)) / dy)))
+            r1 = min(h, int(np.ceil((b_max_y - (cy - r_m)) / dy)))
+            if c1 <= c0 or r1 <= r0:
+                continue
+
+            xs = b_min_x + (np.arange(c0, c1, dtype=np.float64) + 0.5) * dx
+            ys = b_max_y - (np.arange(r0, r1, dtype=np.float64) + 0.5) * dy
+            dist_sq = (xs[None, :] - cx) ** 2 + (ys[:, None] - cy) ** 2
+            mask = dist_sq <= (r_m * r_m)
+
         if not np.any(mask):
             continue
 

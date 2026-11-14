@@ -72,14 +72,8 @@ export class BoxDrawer {
     this.handlesVisible = false;
     this.fillVisible = false;
     this.overrideCircles = [];
-    this.overridePreviewCircle = null;
     this.overrideDrawType = null;
     this.overrideDrawCallback = null;
-    this.overrideCircleState = 'idle';
-    this.overrideCenter = null;
-    this.overrideStartPoint = null;
-    this.isOverrideMouseDown = false;
-    this.overrideMovedDuringDown = false;
 
     this.initLayers();
     this.initTooltip();
@@ -481,18 +475,9 @@ export class BoxDrawer {
     this.rectStartPoint = null;
     this.rectStartLngLat = null;
 
-    this.overrideCircleState = 'idle';
-    this.overrideCenter = null;
-    this.overrideStartPoint = null;
-    this.isOverrideMouseDown = false;
-    this.overrideMovedDuringDown = false;
-    if (this.overridePreviewCircle) {
-      this.overridePreviewCircle = null;
-      this.renderOverrideCircles();
-    }
     this.overrideDrawType = null;
     this.overrideDrawCallback = null;
-    if (this.drawMode === 'override-circle') {
+    if (this.drawMode === 'override-polygon') {
       this.drawMode = 'polygon';
     }
 
@@ -507,29 +492,26 @@ export class BoxDrawer {
     this.notifyState();
   }
 
-  startCircleOverride(type, onComplete) {
+  startPolygonOverride(type, onComplete) {
     if (this.isDrawingActive) {
-      const wasSameType = this.drawMode === 'override-circle' && this.overrideDrawType === type;
+      const wasSameType = this.drawMode === 'override-polygon' && this.overrideDrawType === type;
       this.cancelDrawing();
       if (wasSameType) return false;
     }
 
-    this.drawMode = 'override-circle';
+    this.drawMode = 'override-polygon';
     this.isDrawingActive = true;
     this.overrideDrawType = type;
     this.overrideDrawCallback = onComplete || null;
-    this.overrideCircleState = 'idle';
-    this.overrideCenter = null;
-    this.overrideStartPoint = null;
-    this.isOverrideMouseDown = false;
-    this.overrideMovedDuringDown = false;
-    this.overridePreviewCircle = null;
+    this.points = [];
+    this.isSnapToStart = false;
 
     this.map.getCanvas().style.cursor = 'crosshair';
     this.map.dragPan.disable();
     this.map.doubleClickZoom.disable();
+    this.clearMidpoint();
     const label = type === 'to_geology' ? 'Mark Geology' : 'Remove Canopy';
-    this.showTooltip(0, 0, `${label}: click & drag (or click center, move, click edge) • Esc to cancel`);
+    this.showTooltip(0, 0, `${label}: click map to place 1st point • Esc to cancel`);
     this.notifyState();
     return true;
   }
@@ -542,36 +524,30 @@ export class BoxDrawer {
   renderOverrideCircles() {
     const src = typeof this.map.getSource === 'function' ? this.map.getSource('draw-overrides-source') : null;
     if (!src) return;
-    const list = this.overridePreviewCircle
-      ? [...this.overrideCircles, this.overridePreviewCircle]
-      : this.overrideCircles;
-    const features = list
-      .filter((ov) => ov && Array.isArray(ov.center) && ov.radius_m > 0)
+    const features = this.overrideCircles
       .map((ov, idx) => {
-        const { polygon } = circleToPolygonAndBbox(ov.center, ov.radius_m, 36);
+        if (!ov) return null;
+        let poly = null;
+        if (Array.isArray(ov.polygon) && ov.polygon.length >= 3) {
+          poly = ov.polygon.slice();
+          const first = poly[0];
+          const last = poly[poly.length - 1];
+          if (first[0] !== last[0] || first[1] !== last[1]) {
+            poly.push([first[0], first[1]]);
+          }
+        } else if (Array.isArray(ov.center) && ov.radius_m > 0) {
+          poly = circleToPolygonAndBbox(ov.center, ov.radius_m, 36).polygon;
+        }
+        if (!poly) return null;
         return {
           type: 'Feature',
           id: idx + 1,
           properties: { overrideType: ov.type },
-          geometry: { type: 'Polygon', coordinates: [polygon] }
+          geometry: { type: 'Polygon', coordinates: [poly] }
         };
-      });
+      })
+      .filter(Boolean);
     src.setData({ type: 'FeatureCollection', features });
-  }
-
-  finalizeCircleOverride(center, edgeLngLat) {
-    const radiusM = Math.round(computeDistanceMeters(center[0], center[1], edgeLngLat.lng, edgeLngLat.lat) * 10) / 10;
-    const type = this.overrideDrawType;
-    const cb = this.overrideDrawCallback;
-    this.stopDrawing();
-    if (radiusM >= 0.5 && cb) {
-      cb({
-        id: `ov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        type,
-        center: [center[0], center[1]],
-        radius_m: Math.min(5000, radiusM)
-      });
-    }
   }
 
   toggleDrawing() {
@@ -731,20 +707,6 @@ export class BoxDrawer {
     this.map.on('mousedown', (e) => {
       if (!this.isDrawingActive) return;
 
-      if (this.drawMode === 'override-circle') {
-        if (this.overrideCircleState === 'idle') {
-          this.isOverrideMouseDown = true;
-          this.overrideMovedDuringDown = false;
-          this.overrideStartPoint = e.point;
-          this.overrideCenter = [e.lngLat.lng, e.lngLat.lat];
-        } else if (this.overrideCircleState === 'expanding' && this.overrideCenter) {
-          this.finalizeCircleOverride(this.overrideCenter, e.lngLat);
-          this.justFinishedDrag = true;
-          setTimeout(() => { this.justFinishedDrag = false; }, 100);
-        }
-        return;
-      }
-
       if (this.drawMode === 'rectangle') {
         if (this.rectState === 'idle') {
           this.isRectMouseDown = true;
@@ -788,27 +750,6 @@ export class BoxDrawer {
           }
         } else if (this.activeMidpoint && (this.hoveredHandleId || !this.handlesVisible)) {
           this.clearMidpoint();
-        }
-        return;
-      }
-
-      if (this.drawMode === 'override-circle') {
-        const label = this.overrideDrawType === 'to_geology' ? 'Mark Geology' : 'Remove Canopy';
-        if (this.isOverrideMouseDown && (this.overrideCircleState === 'idle' || this.overrideCircleState === 'dragging')) {
-          const distPx = Math.hypot(e.point.x - this.overrideStartPoint.x, e.point.y - this.overrideStartPoint.y);
-          if (distPx >= 4 && this.overrideCenter) {
-            this.overrideMovedDuringDown = true;
-            this.overrideCircleState = 'dragging';
-            const rM = Math.max(0.5, computeDistanceMeters(this.overrideCenter[0], this.overrideCenter[1], e.lngLat.lng, e.lngLat.lat));
-            this.overridePreviewCircle = { type: this.overrideDrawType, center: this.overrideCenter, radius_m: rM };
-            this.renderOverrideCircles();
-            this.showTooltip(e.originalEvent.clientX, e.originalEvent.clientY, `${label} · Radius: ${rM.toFixed(1)} m • Release to finish`);
-          }
-        } else if (this.overrideCircleState === 'expanding' && this.overrideCenter) {
-          const rM = Math.max(0.5, computeDistanceMeters(this.overrideCenter[0], this.overrideCenter[1], e.lngLat.lng, e.lngLat.lat));
-          this.overridePreviewCircle = { type: this.overrideDrawType, center: this.overrideCenter, radius_m: rM };
-          this.renderOverrideCircles();
-          this.showTooltip(e.originalEvent.clientX, e.originalEvent.clientY, `${label} · Radius: ${rM.toFixed(1)} m • Click to finish • Esc to cancel`);
         }
         return;
       }
@@ -877,7 +818,6 @@ export class BoxDrawer {
     // 3. Click: places vertices or closes polygon (or absorbs rectangle drag finish)
     this.map.on('click', (e) => {
       if (!this.isDrawingActive) return;
-      if (this.drawMode === 'override-circle') return;
 
       if (this.drawMode === 'rectangle') {
         if (this.justFinishedDrag) {
@@ -910,33 +850,6 @@ export class BoxDrawer {
     // 4. Mouse up: finalizes drag or transitions to expanding
     const finalizeMouseUp = (e) => {
       if (!this.isDrawingActive) return;
-
-      if (this.drawMode === 'override-circle') {
-        if (this.justFinishedDrag) {
-          this.justFinishedDrag = false;
-          return;
-        }
-        if (this.overrideCircleState === 'dragging' && this.overrideCenter) {
-          this.isOverrideMouseDown = false;
-          const endLngLat = e.lngLat || this.lastMouseLngLat;
-          if (endLngLat) {
-            this.finalizeCircleOverride(this.overrideCenter, endLngLat);
-            this.justFinishedDrag = true;
-            setTimeout(() => { this.justFinishedDrag = false; }, 100);
-          } else {
-            this.cancelDrawing();
-          }
-        } else if (this.overrideCircleState === 'idle' && this.isOverrideMouseDown) {
-          this.isOverrideMouseDown = false;
-          if (!this.overrideMovedDuringDown) {
-            this.overrideCircleState = 'expanding';
-            const clientX = e.originalEvent ? e.originalEvent.clientX : (e.clientX || 0);
-            const clientY = e.originalEvent ? e.originalEvent.clientY : (e.clientY || 0);
-            this.showTooltip(clientX, clientY, 'Move mouse to set radius • Click again to finish • Esc to cancel');
-          }
-        }
-        return;
-      }
 
       if (this.drawMode === 'rectangle') {
         if (this.justFinishedDrag) {
@@ -1270,6 +1183,30 @@ export class BoxDrawer {
       finalPoints = clamped.coordinates;
       dims = computePolygonDimensions(finalPoints);
       isClamped = true;
+    }
+
+    if (this.drawMode === 'override-polygon') {
+      const type = this.overrideDrawType;
+      const cb = this.overrideDrawCallback;
+      this.stopDrawing();
+      if (this.currentPolygon) {
+        this.renderFinalShape(this.currentPolygon, false);
+        this.updateHandles(this.currentPolygon, false);
+      } else {
+        const boxSrc = this.map.getSource('draw-box-source');
+        if (boxSrc) boxSrc.setData({ type: 'FeatureCollection', features: [] });
+        const handleSrc = this.map.getSource('draw-handles-source');
+        if (handleSrc) handleSrc.setData({ type: 'FeatureCollection', features: [] });
+      }
+      if (cb) {
+        cb({
+          id: `ov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          type,
+          polygon: finalPoints,
+          bbox: dims.bbox
+        });
+      }
+      return;
     }
 
     this.currentPolygon = finalPoints;
