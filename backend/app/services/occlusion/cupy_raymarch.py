@@ -3,6 +3,7 @@ GPU-accelerated Terrain Occlusion Engine using CuPy.
 Dispatches parallel ray-marching across the local NVIDIA GPU (RTX 4070 Ti).
 """
 
+import math
 from typing import List, Tuple
 import numpy as np
 
@@ -13,7 +14,13 @@ from .cuda_kernels import (
     get_compiled_ground_and_top_kernel,
     get_compiled_svf_kernel,
 )
-from .ray_math import calculate_ray_step, compute_canopy_step_3d_m, validate_patch_slices
+from .ray_math import (
+    REFERENCE_TREE_PATH_M,
+    calculate_ray_step,
+    compute_canopy_shade_thresholds,
+    compute_canopy_step_3d_m,
+    validate_patch_slices,
+)
 
 
 class CuPyOcclusionEngine(OcclusionEngine):
@@ -331,7 +338,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
         p_list = [h_path[i] for i in range(num_angles)] if include_path else []
         return t_list, c_list, p_list
 
-    def compute_ground_and_top_shadow_masks_batch(
+    def _launch_ground_and_top_batch(
         self,
         dtm_grid: np.ndarray,
         dsm_grid: np.ndarray,
@@ -341,11 +348,8 @@ class CuPyOcclusionEngine(OcclusionEngine):
         resolution_m: float = 1.0,
         max_search_radius_m: float = 1000.0,
         ground_stand_height_m: float = 1.5,
-    ) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray], List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
-        """
-        Single-pass GPU ray-march computing both ground-level and top-of-canopy
-        dual shadow masks and cumulative 3D canopy path lengths in one VRAM pass.
-        """
+    ):
+        """Launches the single-pass ground/top-of-canopy kernel and returns GPU arrays."""
         patch_H, patch_W, y_offset, x_offset = self._validate_slices(dtm_grid, patch_slice_y, patch_slice_x)
         cp = self.cp
         H, W = dtm_grid.shape
@@ -402,6 +406,30 @@ class CuPyOcclusionEngine(OcclusionEngine):
                 )
             )
 
+        return d_g_t, d_g_c, d_g_p, d_t_t, d_t_c, d_t_p
+
+    def compute_ground_and_top_shadow_masks_batch(
+        self,
+        dtm_grid: np.ndarray,
+        dsm_grid: np.ndarray,
+        patch_slice_y: slice,
+        patch_slice_x: slice,
+        sun_angles: List[Tuple[float, float]],
+        resolution_m: float = 1.0,
+        max_search_radius_m: float = 1000.0,
+        ground_stand_height_m: float = 1.5,
+    ) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray], List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
+        """
+        Single-pass GPU ray-march computing both ground-level and top-of-canopy
+        dual shadow masks and cumulative 3D canopy path lengths in one VRAM pass.
+        """
+        cp = self.cp
+        num_angles = len(sun_angles)
+        d_g_t, d_g_c, d_g_p, d_t_t, d_t_c, d_t_p = self._launch_ground_and_top_batch(
+            dtm_grid, dsm_grid, patch_slice_y, patch_slice_x, sun_angles,
+            resolution_m, max_search_radius_m, ground_stand_height_m,
+        )
+
         h_g_t = cp.asnumpy(d_g_t)
         h_g_c = cp.asnumpy(d_g_c)
         h_g_p = cp.asnumpy(d_g_p)
@@ -416,6 +444,68 @@ class CuPyOcclusionEngine(OcclusionEngine):
             [h_t_t[i] for i in range(num_angles)],
             [h_t_c[i] for i in range(num_angles)],
             [h_t_p[i] for i in range(num_angles)],
+        )
+
+    def compute_ground_and_top_sim_batch(
+        self,
+        dtm_grid: np.ndarray,
+        dsm_grid: np.ndarray,
+        patch_slice_y: slice,
+        patch_slice_x: slice,
+        sun_angles: List[Tuple[float, float]],
+        canopy_transmittance: float,
+        resolution_m: float = 1.0,
+        max_search_radius_m: float = 1000.0,
+        ground_stand_height_m: float = 1.5,
+        reference_path_m: float = REFERENCE_TREE_PATH_M,
+    ) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray], np.ndarray, List[np.ndarray], List[np.ndarray], np.ndarray]:
+        """
+        Single-pass GPU ray-march + Beer-Lambert transmittance and shade-level quantization.
+        Avoids transferring top-of-canopy float32 paths and eliminates CPU np.exp loops.
+        """
+        cp = self.cp
+        num_angles = len(sun_angles)
+        d_g_t, d_g_c, d_g_p, d_t_t, d_t_c, d_t_p = self._launch_ground_and_top_batch(
+            dtm_grid, dsm_grid, patch_slice_y, patch_slice_x, sun_angles,
+            resolution_m, max_search_radius_m, ground_stand_height_m,
+        )
+
+        tau = float(canopy_transmittance)
+        if tau >= 1.0:
+            d_g_tau = cp.ones(d_g_p.shape, dtype=cp.float32)
+            d_g_lvl = cp.zeros(d_g_p.shape, dtype=cp.uint8)
+            d_t_lvl = cp.zeros(d_t_p.shape, dtype=cp.uint8)
+        elif tau <= 0.0:
+            d_g_tau = cp.where(d_g_p > 0.0, cp.float32(0.0), cp.float32(1.0)).astype(cp.float32)
+            d_g_lvl = cp.where(d_g_p > 0.0, cp.uint8(7), cp.uint8(0)).astype(cp.uint8)
+            d_t_lvl = cp.where(d_t_p > 0.0, cp.uint8(7), cp.uint8(0)).astype(cp.uint8)
+        else:
+            mu = cp.float32(-math.log(tau) / max(0.5, float(reference_path_m)))
+            d_g_tau = cp.exp(-mu * cp.maximum(d_g_p, cp.float32(0.0))).astype(cp.float32)
+            thresholds = compute_canopy_shade_thresholds(tau, reference_path_m)
+            d_g_lvl = cp.zeros(d_g_p.shape, dtype=cp.uint8)
+            d_t_lvl = cp.zeros(d_t_p.shape, dtype=cp.uint8)
+            for thresh in thresholds:
+                t_val = cp.float32(thresh)
+                d_g_lvl += (d_g_p > t_val).astype(cp.uint8)
+                d_t_lvl += (d_t_p > t_val).astype(cp.uint8)
+
+        h_g_t = cp.asnumpy(d_g_t)
+        h_g_c = cp.asnumpy(d_g_c)
+        h_g_tau = cp.asnumpy(d_g_tau)
+        h_g_lvl = cp.asnumpy(d_g_lvl)
+        h_t_t = cp.asnumpy(d_t_t)
+        h_t_c = cp.asnumpy(d_t_c)
+        h_t_lvl = cp.asnumpy(d_t_lvl)
+
+        return (
+            [h_g_t[i] for i in range(num_angles)],
+            [h_g_c[i] for i in range(num_angles)],
+            [h_g_tau[i] for i in range(num_angles)],
+            h_g_lvl,
+            [h_t_t[i] for i in range(num_angles)],
+            [h_t_c[i] for i in range(num_angles)],
+            h_t_lvl,
         )
 
     def compute_sky_view_factor(

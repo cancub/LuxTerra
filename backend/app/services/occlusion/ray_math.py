@@ -144,6 +144,26 @@ def compute_canopy_transmittance_grid(
     return np.exp(-mu * np.maximum(path, np.float32(0.0))).astype(np.float32)
 
 
+def compute_canopy_shade_thresholds(
+    canopy_transmittance: float,
+    reference_path_m: float = REFERENCE_TREE_PATH_M,
+) -> Optional[Tuple[float, ...]]:
+    """
+    Returns the 7 cumulative 3D canopy path-length thresholds (in meters)
+    corresponding to shade levels 1..7 for `0 < canopy_transmittance < 1`.
+    Returns None when `canopy_transmittance` is outside `(0, 1)`.
+    """
+    tau = float(canopy_transmittance)
+    if tau <= 0.0 or tau >= 1.0:
+        return None
+    mu = -math.log(tau) / max(0.5, float(reference_path_m))
+    return (
+        -math.log(0.99) / mu,
+        *(-math.log(1.0 - (k * 0.985 / 6.0)) / mu for k in range(1, 6)),
+        -math.log(0.015) / mu,
+    )
+
+
 def quantize_canopy_shade_levels(
     canopy_path_m: np.ndarray,
     canopy_transmittance: float,
@@ -155,15 +175,16 @@ def quantize_canopy_shade_levels(
       - 1..6: progressively darker green canopy shade steps
       - 7: maximum shade (T < 0.015, effectively blocked by stacked trees)
     """
-    t_grid = compute_canopy_transmittance_grid(canopy_path_m, canopy_transmittance, reference_path_m)
-    shade = 1.0 - t_grid
-    levels = np.zeros(t_grid.shape, dtype=np.uint8)
-    # 6 green steps across (0.01, 0.985]
-    in_green = (t_grid < 0.99) & (t_grid >= 0.015)
-    if np.any(in_green):
-        # Map shade in (0.01, 0.985] -> 1..6
-        scaled = np.clip(np.ceil((shade[in_green] / 0.985) * 6.0), 1, 6).astype(np.uint8)
-        levels[in_green] = scaled
-    levels[t_grid < 0.015] = 7
+    path = np.asarray(canopy_path_m, dtype=np.float32)
+    tau = float(canopy_transmittance)
+    if tau >= 1.0:
+        return np.zeros(path.shape, dtype=np.uint8)
+    if tau <= 0.0:
+        return np.where(path > np.float32(0.0), np.uint8(7), np.uint8(0)).astype(np.uint8)
+
+    thresholds = compute_canopy_shade_thresholds(tau, reference_path_m)
+    levels = np.zeros(path.shape, dtype=np.uint8)
+    for thresh in thresholds:
+        levels += (path > np.float32(thresh))
     return levels
 

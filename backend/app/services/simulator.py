@@ -166,8 +166,32 @@ class SimulationOrchestrator:
             visual_daylight_masks = None
             visual_daylight_canopy_masks = None
             visual_daylight_paths = None
+            daylight_canopy_transmittance = None
+            ground_canopy_shade_levels_arr = None
+            visual_canopy_shade_levels_arr = None
 
-            if has_canopy and not is_rooftop and hasattr(self.occlusion_engine, "compute_ground_and_top_shadow_masks_batch"):
+            if has_canopy and not is_rooftop and hasattr(self.occlusion_engine, "compute_ground_and_top_sim_batch"):
+                (
+                    daylight_masks,
+                    daylight_canopy_masks,
+                    daylight_canopy_transmittance,
+                    ground_canopy_shade_levels_arr,
+                    visual_daylight_masks,
+                    visual_daylight_canopy_masks,
+                    visual_canopy_shade_levels_arr,
+                ) = self.occlusion_engine.compute_ground_and_top_sim_batch(
+                    dtm_grid=dtm_grid,
+                    dsm_grid=dsm_grid,
+                    patch_slice_y=patch_slice_y,
+                    patch_slice_x=patch_slice_x,
+                    sun_angles=daylight_angle_pairs,
+                    canopy_transmittance=canopy_transmittance,
+                    resolution_m=request.resolution_m,
+                    max_search_radius_m=request.buffer_meters,
+                    ground_stand_height_m=stand_height,
+                )
+                daylight_canopy_paths = []
+            elif has_canopy and not is_rooftop and hasattr(self.occlusion_engine, "compute_ground_and_top_shadow_masks_batch"):
                 (
                     daylight_masks,
                     daylight_canopy_masks,
@@ -213,10 +237,11 @@ class SimulationOrchestrator:
                 )
                 daylight_canopy_paths = []
 
-            daylight_canopy_transmittance = [
-                compute_canopy_transmittance_grid(p, canopy_transmittance)
-                for p in daylight_canopy_paths
-            ] if daylight_canopy_paths else []
+            if daylight_canopy_transmittance is None:
+                daylight_canopy_transmittance = [
+                    compute_canopy_transmittance_grid(p, canopy_transmittance)
+                    for p in daylight_canopy_paths
+                ] if daylight_canopy_paths else []
 
             if has_canopy and is_rooftop and daylight_canopy_paths and visual_daylight_paths is None:
                 visual_daylight_paths = daylight_canopy_paths
@@ -263,6 +288,8 @@ class SimulationOrchestrator:
             visual_daylight_masks = None
             visual_daylight_canopy_masks = None
             visual_daylight_paths = None
+            ground_canopy_shade_levels_arr = None
+            visual_canopy_shade_levels_arr = None
             daylight_irradiance = []
 
         # 4b. Synthesize maximal ground-mount solar panel layout (fixed civil layout with seasonal table tilt)
@@ -736,7 +763,11 @@ class SimulationOrchestrator:
                 visual_daylight_masks, visual_daylight_canopy_masks
             )
 
-        def _encode_shade_levels(paths):
+        def _encode_shade_levels(paths, precomputed_arr=None):
+            if precomputed_arr is not None:
+                if polygon_mask is not None and not has_context_expansion:
+                    precomputed_arr[:, ~polygon_mask] = 0
+                return [base64.b64encode(precomputed_arr[i].tobytes()).decode("ascii") for i in range(precomputed_arr.shape[0])]
             if not paths:
                 return None
             out = []
@@ -748,8 +779,8 @@ class SimulationOrchestrator:
                 out.append(base64.b64encode(lvl.tobytes()).decode("ascii"))
             return out
 
-        encoded_canopy_shade_levels = _encode_shade_levels(visual_daylight_paths)
-        encoded_ground_canopy_shade_levels = _encode_shade_levels(daylight_canopy_paths)
+        encoded_canopy_shade_levels = _encode_shade_levels(visual_daylight_paths, visual_canopy_shade_levels_arr)
+        encoded_ground_canopy_shade_levels = _encode_shade_levels(daylight_canopy_paths, ground_canopy_shade_levels_arr)
 
         # Encode nighttime masks (0 = shaded inside shape, 1 = transparent outside)
         # When context_expansion is active, night covers the whole visual context boundary!
