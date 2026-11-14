@@ -189,6 +189,7 @@ class SimulationOrchestrator:
                     resolution_m=request.resolution_m,
                     max_search_radius_m=request.buffer_meters,
                     ground_stand_height_m=stand_height,
+                    clip_mask=(polygon_mask if (polygon_mask is not None and not has_context_expansion) else None),
                 )
                 daylight_canopy_paths = []
             elif has_canopy and not is_rooftop and hasattr(self.occlusion_engine, "compute_ground_and_top_shadow_masks_batch"):
@@ -765,8 +766,6 @@ class SimulationOrchestrator:
 
         def _encode_shade_levels(paths, precomputed_arr=None):
             if precomputed_arr is not None:
-                if polygon_mask is not None and not has_context_expansion:
-                    precomputed_arr[:, ~polygon_mask] = 0
                 return [base64.b64encode(precomputed_arr[i].tobytes()).decode("ascii") for i in range(precomputed_arr.shape[0])]
             if not paths:
                 return None
@@ -776,7 +775,11 @@ class SimulationOrchestrator:
                 if polygon_mask is not None and not has_context_expansion:
                     lvl = lvl.copy()
                     lvl[~polygon_mask] = 0
-                out.append(base64.b64encode(lvl.tobytes()).decode("ascii"))
+                flat = lvl.ravel()
+                if flat.size & 1:
+                    flat = np.pad(flat, (0, 1), mode="constant")
+                packed = ((flat[0::2] << 4) | flat[1::2]).astype(np.uint8)
+                out.append(base64.b64encode(packed.tobytes()).decode("ascii"))
             return out
 
         encoded_canopy_shade_levels = _encode_shade_levels(visual_daylight_paths, visual_canopy_shade_levels_arr)

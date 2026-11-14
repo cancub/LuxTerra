@@ -4,7 +4,7 @@ Dispatches parallel ray-marching across the local NVIDIA GPU (RTX 4070 Ti).
 """
 
 import math
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 import numpy as np
 
 from ...interfaces.occlusion_engine import OcclusionEngine
@@ -458,10 +458,12 @@ class CuPyOcclusionEngine(OcclusionEngine):
         max_search_radius_m: float = 1000.0,
         ground_stand_height_m: float = 1.5,
         reference_path_m: float = REFERENCE_TREE_PATH_M,
+        clip_mask: Optional[np.ndarray] = None,
     ) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray], np.ndarray, List[np.ndarray], List[np.ndarray], np.ndarray]:
         """
-        Single-pass GPU ray-march + Beer-Lambert transmittance and shade-level quantization.
-        Avoids transferring top-of-canopy float32 paths and eliminates CPU np.exp loops.
+        Single-pass GPU ray-march + Beer-Lambert transmittance and 4-bit nibble-packed
+        shade-level quantization. Avoids transferring top-of-canopy float32 paths
+        and eliminates CPU np.exp loops.
         """
         cp = self.cp
         num_angles = len(sun_angles)
@@ -490,13 +492,27 @@ class CuPyOcclusionEngine(OcclusionEngine):
                 d_g_lvl += (d_g_p > t_val).astype(cp.uint8)
                 d_t_lvl += (d_t_p > t_val).astype(cp.uint8)
 
+        if clip_mask is not None:
+            d_outside = ~cp.asarray(clip_mask, dtype=cp.bool_)
+            d_g_lvl[:, d_outside] = 0
+            d_t_lvl[:, d_outside] = 0
+
+        def _nibble_pack(arr_3d):
+            flat = arr_3d.reshape(num_angles, -1)
+            if flat.shape[1] & 1:
+                flat = cp.pad(flat, ((0, 0), (0, 1)), mode="constant")
+            return ((flat[:, 0::2] << 4) | flat[:, 1::2]).astype(cp.uint8)
+
+        d_g_lvl_packed = _nibble_pack(d_g_lvl)
+        d_t_lvl_packed = _nibble_pack(d_t_lvl)
+
         h_g_t = cp.asnumpy(d_g_t)
         h_g_c = cp.asnumpy(d_g_c)
         h_g_tau = cp.asnumpy(d_g_tau)
-        h_g_lvl = cp.asnumpy(d_g_lvl)
+        h_g_lvl = cp.asnumpy(d_g_lvl_packed)
         h_t_t = cp.asnumpy(d_t_t)
         h_t_c = cp.asnumpy(d_t_c)
-        h_t_lvl = cp.asnumpy(d_t_lvl)
+        h_t_lvl = cp.asnumpy(d_t_lvl_packed)
 
         return (
             [h_g_t[i] for i in range(num_angles)],

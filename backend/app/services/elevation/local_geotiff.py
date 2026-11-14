@@ -3,7 +3,9 @@ Local GeoTIFF Elevation Provider.
 Performs windowed extraction of LiDAR DTM rasters with perimeter buffering.
 """
 
+from collections import OrderedDict
 import logging
+import threading
 from typing import Dict, Any, List, Optional, Tuple
 from pathlib import Path
 import numpy as np
@@ -78,6 +80,8 @@ class LocalGeoTIFFProvider(ElevationProvider):
 
     def __init__(self, cache_manager: Optional[TileCacheManager] = None):
         self.cache_manager = cache_manager or TileCacheManager()
+        self._window_cache: OrderedDict[tuple, Dict[str, Any]] = OrderedDict()
+        self._window_cache_lock = threading.RLock()
 
     def _resolve_tile_path(self, tile: Dict[str, Any]) -> Path:
         """
@@ -233,6 +237,20 @@ class LocalGeoTIFFProvider(ElevationProvider):
         is projected into the local True-North-aligned UTM CRS (eliminating Canada Atlas Lambert meridian rotation),
         and all nodata / missing values are cleanly interpolated.
         """
+        cache_key = (
+            round(float(min_lon), 6),
+            round(float(min_lat), 6),
+            round(float(max_lon), 6),
+            round(float(max_lat), 6),
+            float(buffer_meters),
+            float(target_resolution_m),
+        )
+        with self._window_cache_lock:
+            cached = self._window_cache.get(cache_key)
+            if cached is not None:
+                self._window_cache.move_to_end(cache_key)
+                return dict(cached)
+
         # Calculate metric coordinates and 500m perimeter buffer in local UTM CRS (True North aligned)
         geo_info = buffer_bounding_box_meters(
             min_lon, min_lat, max_lon, max_lat, buffer_meters=buffer_meters
@@ -306,7 +324,7 @@ class LocalGeoTIFFProvider(ElevationProvider):
         patch_elevation = buffered_elevation[patch_slice_y, patch_slice_x]
         median_elevation = float(np.median(patch_elevation)) if patch_elevation.size > 0 else float(np.median(buffered_elevation))
 
-        return {
+        result = {
             "buffered_elevation": buffered_elevation,
             "dtm": buffered_elevation,
             "dsm": buffered_dsm,
@@ -322,3 +340,9 @@ class LocalGeoTIFFProvider(ElevationProvider):
             "tile_source": str(dtm_path.name),
             "dsm_tile_source": str(dsm_path.name) if dsm_path else None
         }
+        with self._window_cache_lock:
+            self._window_cache[cache_key] = result
+            self._window_cache.move_to_end(cache_key)
+            while len(self._window_cache) > 4:
+                self._window_cache.popitem(last=False)
+        return dict(result)

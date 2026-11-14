@@ -117,6 +117,11 @@ export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols,
   const canopyShadeBytes = canopyShadeB64
     ? (typeof canopyShadeB64 === 'string' ? base64ToBytes(canopyShadeB64) : canopyShadeB64)
     : null;
+  const isNibblePacked = Boolean(
+    canopyShadeBytes &&
+    canopyShadeBytes.length < totalPixels &&
+    canopyShadeBytes.length === ((totalPixels + 1) >> 1)
+  );
 
   if (!packedCanopy) {
     return decodeBitmaskToImageData(terrainB64, rows, cols, ctx, panelShadowBytes);
@@ -140,8 +145,12 @@ export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols,
       if (!isTerrainSun || inPanelShadow) {
         // Geological terrain shadow and panel ground shadow take precedence over tree canopy shade
         data32[pixelIdx++] = TERRAIN_SHADOW_WORD;
-      } else if (canopyShadeBytes && pixelIdx < canopyShadeBytes.length) {
-        const shadeLevel = canopyShadeBytes[pixelIdx];
+      } else if (canopyShadeBytes && (isNibblePacked || pixelIdx < canopyShadeBytes.length)) {
+        const shadeLevel = isNibblePacked
+          ? (((pixelIdx & 1) === 0)
+            ? (canopyShadeBytes[pixelIdx >> 1] >> 4) & 0x0F
+            : canopyShadeBytes[pixelIdx >> 1] & 0x0F)
+          : canopyShadeBytes[pixelIdx];
         if (shadeLevel >= 7) {
           data32[pixelIdx++] = TERRAIN_SHADOW_WORD;
         } else if (shadeLevel >= 1) {

@@ -5,6 +5,7 @@ FastAPI application entrypoint for LuxTerra.
 from pathlib import Path
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import AppConfig, get_config
@@ -20,6 +21,7 @@ app = FastAPI(
     description="High-resolution Quebec solar potential and geological terrain-shadow simulation API."
 )
 
+app.add_middleware(GZipMiddleware, minimum_size=4096, compresslevel=1)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cfg.cors_origins,
