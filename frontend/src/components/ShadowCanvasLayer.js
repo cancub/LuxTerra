@@ -33,52 +33,61 @@ export class ShadowCanvasLayer {
       [minLon, minLat]
     ];
 
-    if (!this.map.isStyleLoaded()) {
-      this.map.once('load', () => this.setPatchBounds(bounds));
-      return;
-    }
-
-    const source = this.map.getSource(this.sourceId);
+    const source = typeof this.map.getSource === 'function' ? this.map.getSource(this.sourceId) : null;
     if (source) {
       source.setCoordinates(coordinates);
+      if (typeof this.map.triggerRepaint === 'function') {
+        this.map.triggerRepaint();
+      }
     } else {
       this.attachLayer(coordinates);
     }
   }
 
   attachLayer(coordinates) {
-    if (!this.map.isStyleLoaded()) {
-      this.map.once('load', () => this.attachLayer(coordinates));
-      return;
-    }
-
+    if (typeof this.map.getSource !== 'function') return;
     if (this.map.getSource(this.sourceId)) return;
 
-    this.map.addSource(this.sourceId, {
-      type: 'canvas',
-      canvas: this.shadowRenderer.getCanvas(),
-      coordinates: coordinates,
-      animate: true
-    });
+    try {
+      this.map.addSource(this.sourceId, {
+        type: 'canvas',
+        canvas: this.shadowRenderer.getCanvas(),
+        coordinates: coordinates,
+        animate: true
+      });
 
-    // Insert layer beneath labels/draw overlays if possible
-    const beforeId = this.map.getLayer('draw-box-fill') ? 'draw-box-fill' : undefined;
+      // Insert layer beneath labels/draw overlays if possible
+      const beforeId = this.map.getLayer('draw-box-fill') ? 'draw-box-fill' : undefined;
 
-    this.map.addLayer(
-      {
-        id: this.layerId,
-        type: 'raster',
-        source: this.sourceId,
-        paint: {
-          'raster-fade-duration': 0,
-          'raster-resampling': 'nearest',
-          'raster-opacity': 1.0
-        }
-      },
-      beforeId
-    );
+      this.map.addLayer(
+        {
+          id: this.layerId,
+          type: 'raster',
+          source: this.sourceId,
+          paint: {
+            'raster-fade-duration': 0,
+            'raster-resampling': 'nearest',
+            'raster-opacity': 1.0
+          }
+        },
+        beforeId
+      );
 
-    this.isLayerAttached = true;
+      this.isLayerAttached = true;
+    } catch (err) {
+      // Initial style may not be parsed yet; retry once style is ready
+      this.map.once('styledata', () => {
+        const latestCoords = this.currentBounds
+          ? [
+              [this.currentBounds[0], this.currentBounds[3]],
+              [this.currentBounds[2], this.currentBounds[3]],
+              [this.currentBounds[2], this.currentBounds[1]],
+              [this.currentBounds[0], this.currentBounds[1]]
+            ]
+          : coordinates;
+        this.attachLayer(latestCoords);
+      });
+    }
   }
 
   /**
