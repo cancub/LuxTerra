@@ -133,6 +133,7 @@ export class ShapeToolbar {
   constructor({
     map,
     container,
+    primaryContainer = null,
     boxDrawer,
     dateSelector,
     onRestoreView,
@@ -140,6 +141,7 @@ export class ShapeToolbar {
   }) {
     this.map = map;
     this.container = container;
+    this.primaryContainer = primaryContainer || container;
     this.boxDrawer = boxDrawer;
     this.dateSelector = dateSelector;
     this.onRestoreView = onRestoreView || (() => {});
@@ -172,6 +174,7 @@ export class ShapeToolbar {
     } catch (e) {
       // Ignore storage errors
     }
+    this.updateActiveShapeHeader();
   }
 
   restoreActiveViewContext() {
@@ -248,101 +251,129 @@ export class ShapeToolbar {
   }
 
   render() {
+    this.primaryElement = document.createElement('div');
+    this.primaryElement.className = 'shape-toolbar-primary';
+    this.primaryElement.innerHTML = `
+      <div class="toolbar-dropdown-group">
+        <button class="command-switcher-btn btn-load-shape" title="Switch or load a saved shape">
+          <svg class="switcher-pin-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+            <circle cx="12" cy="10" r="3"></circle>
+          </svg>
+          <span class="active-shape-name">Load shape</span>
+          <span class="active-shape-area" style="display: none;"></span>
+          <svg class="dropdown-caret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+        <div class="glass-panel toolbar-dropdown load-shape-menu" style="display: none;">
+          <div class="load-shape-list"></div>
+        </div>
+      </div>
+
+      <div class="edit-bar-divider"></div>
+
+      <div class="toolbar-dropdown-group">
+        <button class="command-action-btn btn-new-shape" title="Draw a new solar area">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span>New</span>
+        </button>
+        <div class="glass-panel toolbar-dropdown new-shape-menu" style="display: none;">
+          <button class="toolbar-menu-item btn-draw-rectangle" title="Click & drag on the map to draw a rectangular solar area">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            </svg>
+            <span>Rectangle</span>
+          </button>
+          <button class="toolbar-menu-item btn-draw-freedraw" title="Free-draw multi-point solar area. Hold Shift or click #1 to close, Enter to finish.">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+              <polyline points="2 17 12 22 22 17"></polyline>
+              <polyline points="2 12 12 17 22 12"></polyline>
+            </svg>
+            <span>Free-draw</span>
+          </button>
+        </div>
+      </div>
+    `;
+
     this.element = document.createElement('div');
     this.element.className = 'shape-toolbar';
 
     this.element.innerHTML = `
-      <div class="shape-toolbar-primary">
-        <div class="toolbar-dropdown-group">
-          <button class="glass-panel btn btn-sm toolbar-btn btn-new-shape" title="Draw a new solar area">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            <span>New shape</span>
-            <svg class="dropdown-caret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <polyline points="6 9 12 15 18 9"></polyline>
-            </svg>
-          </button>
-          <div class="glass-panel toolbar-dropdown new-shape-menu" style="display: none;">
-            <button class="toolbar-menu-item btn-draw-rectangle" title="Click & drag on the map to draw a rectangular solar area">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-              </svg>
-              <span>Rectangle</span>
-            </button>
-            <button class="toolbar-menu-item btn-draw-freedraw" title="Free-draw multi-point solar area. Hold Shift or click #1 to close, Enter to finish.">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-                <polyline points="2 17 12 22 22 17"></polyline>
-                <polyline points="2 12 12 17 22 12"></polyline>
-              </svg>
-              <span>Free-draw</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="toolbar-dropdown-group">
-          <button class="glass-panel btn btn-sm toolbar-btn btn-load-shape" title="Load a saved shape">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
-            </svg>
-            <span>Load shape</span>
-            <svg class="dropdown-caret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <polyline points="6 9 12 15 18 9"></polyline>
-            </svg>
-          </button>
-          <div class="glass-panel toolbar-dropdown load-shape-menu" style="display: none;">
-            <div class="load-shape-list"></div>
-          </div>
-        </div>
-      </div>
-
       <div class="glass-panel shape-edit-bar" style="display: none;">
         <button class="btn btn-sm btn-context-toggle" title="Add or modify the extra shadow container box">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="2" y="2" width="20" height="20" rx="3" ry="3" stroke-dasharray="3 3"></rect>
             <rect x="7" y="7" width="10" height="10" rx="1" ry="1"></rect>
           </svg>
-          <span class="context-label">+ Shadow Box</span>
+          <span class="context-label">Shadow Box</span>
         </button>
         <div class="edit-bar-divider"></div>
-        <button class="btn btn-sm btn-history-back" title="Back (undo last shape change)" disabled>
+        <button class="btn btn-sm btn-icon-only btn-history-back" title="Undo last shape change" disabled>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="9 14 4 9 9 4"></polyline>
             <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
           </svg>
         </button>
-        <button class="btn btn-sm btn-history-forward" title="Forward (redo shape change)" disabled>
+        <button class="btn btn-sm btn-icon-only btn-history-forward" title="Redo shape change" disabled>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="15 14 20 9 15 4"></polyline>
             <path d="M4 20v-7a4 4 0 0 1 4-4h12"></path>
           </svg>
         </button>
-        <button class="btn btn-sm btn-shape-reset" title="Reset shape to original state" disabled>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path>
-            <polyline points="3 3 3 8 8 8"></polyline>
-          </svg>
-          <span>Reset</span>
-        </button>
         <div class="edit-bar-divider"></div>
-        <button class="btn btn-sm btn-save-shape" title="Save changes to shape" disabled>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-            <polyline points="17 21 17 13 7 13 7 21"></polyline>
-            <polyline points="7 3 7 8 15 8"></polyline>
-          </svg>
-          <span>Save shape</span>
-        </button>
-        <button class="btn btn-sm btn-save-view" title="Save changes to camera view" disabled>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-            <circle cx="12" cy="13" r="4"></circle>
-          </svg>
-          <span>Save view</span>
-        </button>
-        <button class="btn btn-sm btn-shape-clear" title="Clear active shape">
+        <div class="toolbar-dropdown-group">
+          <button class="btn btn-sm btn-save-menu" title="Save or reset shape & view">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+              <polyline points="17 21 17 13 7 13 7 21"></polyline>
+              <polyline points="7 3 7 8 15 8"></polyline>
+            </svg>
+            <span class="save-menu-label">Save</span>
+            <svg class="dropdown-caret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+          <div class="glass-panel toolbar-dropdown save-menu" style="display: none;">
+            <button class="toolbar-menu-item btn-save-shape" title="Save changes to shape">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                <polyline points="7 3 7 8 15 8"></polyline>
+              </svg>
+              <span class="save-shape-label">Save changes</span>
+            </button>
+            <button class="toolbar-menu-item btn-save-as-new" title="Save as a new named shape">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="12" y1="18" x2="12" y2="12"></line>
+                <line x1="9" y1="15" x2="15" y2="15"></line>
+              </svg>
+              <span>Save as new…</span>
+            </button>
+            <button class="toolbar-menu-item btn-save-view" title="Save current camera position to this shape">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+              </svg>
+              <span>Update camera view</span>
+            </button>
+            <div class="save-menu-divider"></div>
+            <button class="toolbar-menu-item btn-shape-reset" title="Reset shape to original state">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path>
+                <polyline points="3 3 3 8 8 8"></polyline>
+              </svg>
+              <span>Reset to original</span>
+            </button>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-icon-only btn-shape-clear" title="Clear active shape">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"></polyline>
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -357,22 +388,29 @@ export class ShapeToolbar {
       </div>
     `;
 
-    this.btnNewShape = this.element.querySelector('.btn-new-shape');
-    this.newShapeMenu = this.element.querySelector('.new-shape-menu');
-    this.btnDrawRectangle = this.element.querySelector('.btn-draw-rectangle');
-    this.btnDrawFreedraw = this.element.querySelector('.btn-draw-freedraw');
+    this.btnNewShape = this.primaryElement.querySelector('.btn-new-shape');
+    this.newShapeMenu = this.primaryElement.querySelector('.new-shape-menu');
+    this.btnDrawRectangle = this.primaryElement.querySelector('.btn-draw-rectangle');
+    this.btnDrawFreedraw = this.primaryElement.querySelector('.btn-draw-freedraw');
 
-    this.btnLoadShape = this.element.querySelector('.btn-load-shape');
-    this.loadShapeMenu = this.element.querySelector('.load-shape-menu');
-    this.loadShapeList = this.element.querySelector('.load-shape-list');
+    this.btnLoadShape = this.primaryElement.querySelector('.btn-load-shape');
+    this.activeShapeNameEl = this.primaryElement.querySelector('.active-shape-name');
+    this.activeShapeAreaEl = this.primaryElement.querySelector('.active-shape-area');
+    this.loadShapeMenu = this.primaryElement.querySelector('.load-shape-menu');
+    this.loadShapeList = this.primaryElement.querySelector('.load-shape-list');
 
     this.editBar = this.element.querySelector('.shape-edit-bar');
     this.btnContextToggle = this.element.querySelector('.btn-context-toggle');
     this.contextLabel = this.element.querySelector('.context-label');
     this.btnHistoryBack = this.element.querySelector('.btn-history-back');
     this.btnHistoryForward = this.element.querySelector('.btn-history-forward');
+    this.btnSaveMenu = this.element.querySelector('.btn-save-menu');
+    this.saveMenu = this.element.querySelector('.save-menu');
+    this.saveMenuLabel = this.element.querySelector('.save-menu-label');
     this.btnShapeReset = this.element.querySelector('.btn-shape-reset');
     this.btnSaveShape = this.element.querySelector('.btn-save-shape');
+    this.saveShapeLabel = this.element.querySelector('.save-shape-label');
+    this.btnSaveAsNew = this.element.querySelector('.btn-save-as-new');
     this.btnSaveView = this.element.querySelector('.btn-save-view');
     this.btnClear = this.element.querySelector('.btn-shape-clear');
 
@@ -382,6 +420,7 @@ export class ShapeToolbar {
     this.saveNameCancel = this.element.querySelector('.save-name-cancel');
 
     this.renderSavedList();
+    this.primaryContainer.appendChild(this.primaryElement);
     this.container.appendChild(this.element);
   }
 
@@ -407,7 +446,7 @@ export class ShapeToolbar {
     });
 
     document.addEventListener('click', (e) => {
-      if (!this.element.contains(e.target)) {
+      if (!this.primaryElement.contains(e.target) && !this.element.contains(e.target)) {
         this.closeDropdowns();
       }
     });
@@ -449,9 +488,18 @@ export class ShapeToolbar {
       this.refreshModificationState();
     });
 
+    // Save menu toggle
+    this.btnSaveMenu.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = this.saveMenu.style.display !== 'none';
+      this.closeDropdowns();
+      this.saveMenu.style.display = isOpen ? 'none' : 'flex';
+    });
+
     // Save shape
     this.btnSaveShape.addEventListener('click', (e) => {
       e.stopPropagation();
+      this.closeDropdowns();
       if (!this.isShapeModified) return;
       if (this.activeViewId !== null) {
         this.saveChangesToActiveShape();
@@ -460,9 +508,17 @@ export class ShapeToolbar {
       }
     });
 
+    // Save as new
+    this.btnSaveAsNew.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.closeDropdowns();
+      this.openSaveNamePopover();
+    });
+
     // Save view
     this.btnSaveView.addEventListener('click', (e) => {
       e.stopPropagation();
+      this.closeDropdowns();
       if (!this.isViewModified || this.activeViewId === null) return;
       this.saveChangesToActiveView();
     });
@@ -486,6 +542,7 @@ export class ShapeToolbar {
 
     this.btnShapeReset.addEventListener('click', (e) => {
       e.stopPropagation();
+      this.closeDropdowns();
       const original = this.getOriginalShapeSnapshot();
       if (!original) return;
       this.shapeHistory.push(original);
@@ -550,6 +607,7 @@ export class ShapeToolbar {
   closeDropdowns() {
     this.newShapeMenu.style.display = 'none';
     this.loadShapeMenu.style.display = 'none';
+    this.saveMenu.style.display = 'none';
   }
 
   openSaveNamePopover() {
@@ -627,14 +685,40 @@ export class ShapeToolbar {
         this.contextLabel.textContent = 'Shadow Box ✓';
       } else {
         this.btnContextToggle.classList.remove('active', 'btn-accent');
-        this.contextLabel.textContent = '+ Shadow Box';
+        this.contextLabel.textContent = 'Shadow Box';
       }
     } else {
       this.editBar.style.display = 'none';
       this.hideSaveNamePopover();
     }
 
+    this.latestDimensions = state.hasShape ? state.dimensions : null;
+    this.updateActiveShapeHeader(this.latestDimensions);
     this.refreshModificationState();
+  }
+
+  updateActiveShapeHeader(dimensions = this.latestDimensions) {
+    if (!this.activeShapeNameEl || !this.activeShapeAreaEl) return;
+
+    const activeView = this.activeViewId !== null
+      ? this.savedViews.find((v) => v.id === this.activeViewId)
+      : null;
+
+    if (activeView) {
+      this.activeShapeNameEl.textContent = activeView.name;
+    } else if (dimensions) {
+      this.activeShapeNameEl.textContent = 'Unsaved shape';
+    } else {
+      this.activeShapeNameEl.textContent = 'Load shape';
+    }
+
+    if (dimensions && Number.isFinite(dimensions.areaM2)) {
+      this.activeShapeAreaEl.textContent = `${Math.round(dimensions.areaM2).toLocaleString('en-US')} m²`;
+      this.activeShapeAreaEl.style.display = 'inline-flex';
+    } else {
+      this.activeShapeAreaEl.textContent = '';
+      this.activeShapeAreaEl.style.display = 'none';
+    }
   }
 
   refreshModificationState() {
@@ -663,25 +747,27 @@ export class ShapeToolbar {
     this.btnHistoryForward.disabled = !this.shapeHistory.canRedo();
     const original = this.getOriginalShapeSnapshot();
     const canReset = Boolean(currentShape && original && !areShapesEqual(currentShape, original));
+    this.btnShapeReset.style.display = this.activeViewId !== null ? 'flex' : 'none';
     this.btnShapeReset.disabled = !canReset;
 
-    // Update Save shape button highlight
-    this.btnSaveShape.disabled = !this.isShapeModified;
-    if (this.isShapeModified) {
-      this.btnSaveShape.classList.add('btn-accent', 'modified');
+    // Update Save menu highlight and dropdown items
+    const canSaveView = this.activeViewId !== null && this.isViewModified;
+    const hasPendingSave = this.isShapeModified || canSaveView;
+    if (hasPendingSave) {
+      this.btnSaveMenu.classList.add('btn-accent', 'modified');
+      this.saveMenuLabel.textContent = 'Save*';
     } else {
-      this.btnSaveShape.classList.remove('btn-accent', 'modified');
+      this.btnSaveMenu.classList.remove('btn-accent', 'modified');
+      this.saveMenuLabel.textContent = 'Save';
     }
 
-    // Update Save view button highlight
-    const canSaveView = this.activeViewId !== null && this.isViewModified;
-    this.btnSaveView.style.display = this.activeViewId !== null ? 'inline-flex' : 'none';
+    this.btnSaveShape.disabled = !this.isShapeModified;
+    this.saveShapeLabel.textContent = this.activeViewId !== null ? 'Save changes' : 'Save shape...';
+
+    this.btnSaveAsNew.style.display = this.activeViewId !== null ? 'flex' : 'none';
+
+    this.btnSaveView.style.display = this.activeViewId !== null ? 'flex' : 'none';
     this.btnSaveView.disabled = !canSaveView;
-    if (canSaveView) {
-      this.btnSaveView.classList.add('btn-accent', 'modified');
-    } else {
-      this.btnSaveView.classList.remove('btn-accent', 'modified');
-    }
   }
 
   commitNewShapeSave() {
