@@ -65,27 +65,6 @@ if (appContainer) {
       <div class="top-right-controls" id="top-right-controls"></div>
     </div>
 
-    <!-- PV System Configuration Settings Modal -->
-    <div id="pv-settings-modal" class="modal-backdrop" style="display: none;">
-      <div class="glass-panel modal-card">
-        <div class="modal-header" style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-card); padding-bottom: 12px; margin-bottom: 14px;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-solar);">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-            </svg>
-            <span style="font-weight: 700; font-size: 0.95rem; color: var(--text-primary);">PV System Configuration</span>
-          </div>
-          <button id="modal-close-btn" class="modal-close-btn" title="Close Settings" aria-label="Close" style="background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border-card); border-radius: 6px; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-        <div id="pv-config-modal-mount"></div>
-      </div>
-    </div>
-
     <!-- Notification Toasts -->
     <div class="toast-container" id="toast-container"></div>
 
@@ -115,41 +94,9 @@ if (appContainer) {
   const playbackControlsMount = document.getElementById('playback-controls-mount');
   const timelineScrubberMount = document.getElementById('timeline-scrubber-mount');
   const energyMetricsMount = document.getElementById('energy-metrics-mount');
-  const pvConfigModalMount = document.getElementById('pv-config-modal-mount');
-
-  const settingsModal = document.getElementById('pv-settings-modal');
   const settingsCogBtn = document.getElementById('settings-cog-btn');
-  const modalCloseBtn = document.getElementById('modal-close-btn');
-
-  function openSettingsModal() {
-    if (settingsModal) settingsModal.style.display = 'flex';
-  }
-
-  function closeSettingsModal() {
-    if (settingsModal) settingsModal.style.display = 'none';
-  }
-
-  if (settingsCogBtn) {
-    settingsCogBtn.addEventListener('click', openSettingsModal);
-  }
-
-  if (modalCloseBtn) {
-    modalCloseBtn.addEventListener('click', closeSettingsModal);
-  }
-
-  if (settingsModal) {
-    settingsModal.addEventListener('click', (e) => {
-      if (e.target === settingsModal) {
-        closeSettingsModal();
-      }
-    });
-  }
-
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && settingsModal && settingsModal.style.display !== 'none') {
-      closeSettingsModal();
-    }
-  });
+  const settingsMount = document.createElement('div');
+  settingsMount.className = 'settings-card-mount';
 
   const shadowCanvasLayer = new ShadowCanvasLayer(map);
   const solarPanel3DLayer = new SolarPanel3DLayer();
@@ -335,7 +282,7 @@ if (appContainer) {
     timeScrubber.setStep(stepIndex);
   });
 
-  const pvConfigPanel = new PVConfigPanel(pvConfigModalMount, (newConfig) => {
+  const pvConfigPanel = new PVConfigPanel(settingsMount, (newConfig) => {
     if (!currentSimulationData || !baseSimulationConfig) return;
 
     // If deployment mode or canopy settings changed, trigger a fresh simulation
@@ -641,6 +588,8 @@ if (appContainer) {
     container: shapeToolbarMount,
     primaryContainer: document.getElementById('shape-toolbar-primary-mount'),
     dailyEnergyMount,
+    settingsMount,
+    settingsBtn: settingsCogBtn,
     boxDrawer,
     dateSelector,
     onRestoreView: (view) => {

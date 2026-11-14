@@ -136,6 +136,8 @@ export class ShapeToolbar {
     container,
     primaryContainer = null,
     dailyEnergyMount = null,
+    settingsMount = null,
+    settingsBtn = null,
     boxDrawer,
     dateSelector,
     onRestoreView,
@@ -145,6 +147,8 @@ export class ShapeToolbar {
     this.container = container;
     this.primaryContainer = primaryContainer || container;
     this.dailyEnergyMount = dailyEnergyMount;
+    this.settingsMount = settingsMount;
+    this.settingsBtn = settingsBtn;
     this.boxDrawer = boxDrawer;
     this.dateSelector = dateSelector;
     this.onRestoreView = onRestoreView || (() => {});
@@ -303,34 +307,32 @@ export class ShapeToolbar {
             </div>
           </div>
 
+          <!-- Settings Mode -->
+          <div class="shape-card-pane shape-settings-pane" style="display: none;">
+            <div class="shape-settings-header">PV System Configuration</div>
+            <div class="shape-settings-mount"></div>
+          </div>
+
           <!-- Edit Mode -->
           <div class="shape-card-pane shape-edit-pane" style="display: none;">
             <div class="shape-name-row">
               <input type="text" class="shape-name-input" placeholder="Untitled shape..." />
             </div>
             <div class="shape-edit-bar">
-              <button class="btn btn-sm btn-context-toggle" title="Add or modify the extra shadow container box">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="2" y="2" width="20" height="20" rx="3" ry="3" stroke-dasharray="3 3"></rect>
-                  <rect x="7" y="7" width="10" height="10" rx="1" ry="1"></rect>
-                </svg>
-                <span class="context-label">Shadow Box</span>
-              </button>
-              <div class="edit-bar-divider"></div>
-              <button class="btn btn-sm btn-icon-only btn-history-back" title="Undo last shape change" disabled>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <button class="btn btn-sm btn-square-icon btn-history-back" title="Undo last shape change" disabled>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="9 14 4 9 9 4"></polyline>
                   <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
                 </svg>
               </button>
-              <button class="btn btn-sm btn-icon-only btn-history-forward" title="Redo shape change" disabled>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <button class="btn btn-sm btn-square-icon btn-history-forward" title="Redo shape change" disabled>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="15 14 20 9 15 4"></polyline>
                   <path d="M4 20v-7a4 4 0 0 1 4-4h12"></path>
                 </svg>
               </button>
               <div class="edit-bar-divider"></div>
-              <div class="toolbar-dropdown-group">
+              <div class="toolbar-dropdown-group save-menu-group">
                 <button class="btn btn-sm btn-save-menu" title="Save or reset shape & view">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
@@ -377,11 +379,20 @@ export class ShapeToolbar {
                   </button>
                 </div>
               </div>
-              <button class="btn btn-sm btn-icon-only btn-shape-clear" title="Clear active shape">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <button class="btn btn-sm btn-square-icon btn-shape-clear" title="Clear active shape">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="3 6 5 6 21 6"></polyline>
                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                 </svg>
+              </button>
+            </div>
+            <div class="shape-context-row">
+              <button class="btn btn-sm btn-context-toggle" title="Add or modify the extra shadow container box">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="2" width="20" height="20" rx="3" ry="3" stroke-dasharray="3 3"></rect>
+                  <rect x="7" y="7" width="10" height="10" rx="1" ry="1"></rect>
+                </svg>
+                <span class="context-label">Shadow Box</span>
               </button>
             </div>
             <div class="shape-daily-energy-mount"></div>
@@ -407,7 +418,12 @@ export class ShapeToolbar {
     this.shapeCardContent = this.element.querySelector('.shape-card-content');
     this.loadPane = this.element.querySelector('.shape-load-pane');
     this.newPane = this.element.querySelector('.shape-new-pane');
+    this.settingsPane = this.element.querySelector('.shape-settings-pane');
     this.editPane = this.element.querySelector('.shape-edit-pane');
+    this.settingsHost = this.element.querySelector('.shape-settings-mount');
+    if (this.settingsMount) {
+      this.settingsHost.appendChild(this.settingsMount);
+    }
 
     this.loadShapeList = this.element.querySelector('.load-shape-list');
     this.btnDrawRectangle = this.element.querySelector('.btn-draw-rectangle');
@@ -470,13 +486,26 @@ export class ShapeToolbar {
       }
     });
 
+    if (this.settingsBtn) {
+      this.settingsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.closeDropdowns();
+        if (this.cardMode === 'settings') {
+          this.setCardMode(this.hasActiveShape ? 'edit' : null);
+        } else {
+          this.setCardMode('settings');
+        }
+      });
+    }
+
     document.addEventListener('click', (e) => {
       this.closeDropdowns();
       const clickedInsidePrimary = this.primaryElement.contains(e.target);
+      const clickedInsideSettingsBtn = this.settingsBtn ? this.settingsBtn.contains(e.target) : false;
       const clickedInsideCard = this.element.contains(e.target);
-      if (!clickedInsidePrimary && !clickedInsideCard) {
+      if (!clickedInsidePrimary && !clickedInsideSettingsBtn && !clickedInsideCard) {
         this.hideThumbPreview();
-        if (this.cardMode === 'load' || this.cardMode === 'new') {
+        if (this.cardMode === 'load' || this.cardMode === 'new' || this.cardMode === 'settings') {
           this.setCardMode(this.hasActiveShape ? 'edit' : null);
         }
       }
@@ -693,14 +722,18 @@ export class ShapeToolbar {
     if (this.btnNewShape) {
       this.btnNewShape.classList.toggle('active', mode === 'new');
     }
+    if (this.settingsBtn) {
+      this.settingsBtn.classList.toggle('active', mode === 'settings');
+    }
 
     if (this.cardMode === mode) return;
 
     const applyPane = (targetMode) => {
       this.loadPane.style.display = targetMode === 'load' ? 'flex' : 'none';
       this.newPane.style.display = targetMode === 'new' ? 'flex' : 'none';
+      this.settingsPane.style.display = targetMode === 'settings' ? 'flex' : 'none';
       this.editPane.style.display = targetMode === 'edit' ? 'flex' : 'none';
-      this.shapeCard.classList.remove('mode-load', 'mode-new', 'mode-edit');
+      this.shapeCard.classList.remove('mode-load', 'mode-new', 'mode-settings', 'mode-edit');
       if (targetMode) {
         this.shapeCard.classList.add(`mode-${targetMode}`);
       }
@@ -813,7 +846,7 @@ export class ShapeToolbar {
         this.btnContextToggle.classList.remove('active', 'btn-accent');
         this.contextLabel.textContent = 'Shadow Box';
       }
-      if (!hadShape || this.cardMode !== 'load' && this.cardMode !== 'new') {
+      if (!hadShape || (this.cardMode !== 'load' && this.cardMode !== 'new' && this.cardMode !== 'settings')) {
         this.setCardMode('edit');
       }
     } else {

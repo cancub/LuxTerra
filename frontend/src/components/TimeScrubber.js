@@ -30,7 +30,6 @@ export class TimeScrubber {
       <div class="timeline-header" style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem;">
         <div style="display: flex; align-items: center; gap: 10px;">
           <span class="time-readout" style="font-family: var(--font-mono); font-size: 1.15rem; font-weight: 700; color: var(--accent-sun);">12:00</span>
-          <span class="daylight-badge pill" style="font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4);">Daylight</span>
         </div>
         <div class="solar-readout" style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary);">
           <span>Az: <strong class="az-val" style="color: var(--text-primary);">180.0°</strong></span>
@@ -61,7 +60,6 @@ export class TimeScrubber {
 
     this.powerCurveMount = this.element.querySelector('.scrubber-power-curve-mount');
     this.timeReadout = this.element.querySelector('.time-readout');
-    this.daylightBadge = this.element.querySelector('.daylight-badge');
     this.azVal = this.element.querySelector('.az-val');
     this.elVal = this.element.querySelector('.el-val');
     this.sunriseVal = this.element.querySelector('.sunrise-val');
@@ -185,17 +183,5 @@ export class TimeScrubber {
     }).format(dt);
     this.azVal.textContent = `${item.solar_azimuth_deg.toFixed(1)}°`;
     this.elVal.textContent = `${item.solar_elevation_deg.toFixed(1)}°`;
-
-    if (item.is_daylight) {
-      this.daylightBadge.textContent = 'Daylight';
-      this.daylightBadge.style.background = 'rgba(245, 158, 11, 0.2)';
-      this.daylightBadge.style.borderColor = 'rgba(245, 158, 11, 0.4)';
-      this.daylightBadge.style.color = '#fbbf24';
-    } else {
-      this.daylightBadge.textContent = 'Night';
-      this.daylightBadge.style.background = 'rgba(30, 41, 59, 0.5)';
-      this.daylightBadge.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-      this.daylightBadge.style.color = 'var(--text-muted)';
-    }
   }
 }
