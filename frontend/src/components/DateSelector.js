@@ -38,7 +38,7 @@ export class DateSelector {
     this.wrapper.innerHTML = `
       <div style="display: inline-flex; align-items: center; gap: 6px;">
         <!-- Prev Day Button -->
-        <button class="btn btn-sm date-step-btn prev-day-btn" title="Previous Day" style="height: 28px; padding: 0 6px; border-radius: 4px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;">
+        <button class="glaze-nav-btn date-step-btn prev-day-btn" title="Previous Day" style="height: 28px; padding: 0 7px; border-radius: 6px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <polyline points="15 18 9 12 15 6"></polyline>
           </svg>
@@ -56,7 +56,7 @@ export class DateSelector {
         </button>
 
         <!-- Next Day Button -->
-        <button class="btn btn-sm date-step-btn next-day-btn" title="Next Day" style="height: 28px; padding: 0 6px; border-radius: 4px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;">
+        <button class="glaze-nav-btn date-step-btn next-day-btn" title="Next Day" style="height: 28px; padding: 0 7px; border-radius: 6px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <polyline points="9 18 15 12 9 6"></polyline>
           </svg>

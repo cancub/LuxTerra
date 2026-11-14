@@ -42,8 +42,8 @@ export class PlaybackEngine {
       </button>
 
       <div class="speed-toggle-group" style="display: inline-flex; gap: 3px; align-items: center; height: 28px;">
-        <button class="btn btn-sm speed-btn ${this.speedPreset === 15 ? 'active' : ''}" data-speed="15" style="height: 28px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px;">15 min/s</button>
-        <button class="btn btn-sm speed-btn ${this.speedPreset === 30 ? 'active' : ''}" data-speed="30" style="height: 28px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px;">30 min/s</button>
+        <button class="glaze-nav-btn speed-btn ${this.speedPreset === 15 ? 'active' : ''}" data-speed="15" style="height: 28px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px;">15 min/s</button>
+        <button class="glaze-nav-btn speed-btn ${this.speedPreset === 30 ? 'active' : ''}" data-speed="30" style="height: 28px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px;">30 min/s</button>
       </div>
     `;
 

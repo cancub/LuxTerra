@@ -536,6 +536,7 @@ if (appContainer) {
 
   const dateSelector = new DateSelector(dateSelectorMount, savedState.date || '2026-06-21', () => {
     updateDateState(dateSelector.getDate());
+    shapeToolbar?.refreshModificationState();
     triggerSimulation();
   });
 

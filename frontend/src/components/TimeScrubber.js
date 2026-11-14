@@ -27,19 +27,8 @@ export class TimeScrubber {
     this.element.innerHTML = `
       <div class="scrubber-power-curve-mount" id="scrubber-power-curve-mount" style="width: 100%;"></div>
 
-      <div class="timeline-header" style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem;">
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <span class="time-readout" style="font-family: var(--font-mono); font-size: 1.15rem; font-weight: 700; color: var(--accent-sun);">12:00</span>
-        </div>
-        <div class="solar-readout" style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary);">
-          <span>Az: <strong class="az-val" style="color: var(--text-primary);">180.0°</strong></span>
-          <span style="margin: 0 4px;">·</span>
-          <span>El: <strong class="el-val" style="color: var(--text-primary);">65.0°</strong></span>
-        </div>
-        <div class="sun-times" style="font-size: 0.78rem; font-weight: 500; color: var(--text-secondary); display: flex; gap: 12px;">
-          <span>🌅 <strong class="sunrise-val" style="color: var(--text-primary);">--:--</strong></span>
-          <span>🌇 <strong class="sunset-val" style="color: var(--text-primary);">--:--</strong></span>
-        </div>
+      <div class="timeline-header" style="display: flex; align-items: center; justify-content: center; font-size: 0.85rem;">
+        <span class="time-readout" style="font-family: var(--font-mono); font-size: 1.15rem; font-weight: 700; color: var(--accent-sun);">12:00</span>
       </div>
 
       <div class="slider-container" style="position: relative; width: 100%; height: 16px; display: flex; align-items: center;">
@@ -60,10 +49,6 @@ export class TimeScrubber {
 
     this.powerCurveMount = this.element.querySelector('.scrubber-power-curve-mount');
     this.timeReadout = this.element.querySelector('.time-readout');
-    this.azVal = this.element.querySelector('.az-val');
-    this.elVal = this.element.querySelector('.el-val');
-    this.sunriseVal = this.element.querySelector('.sunrise-val');
-    this.sunsetVal = this.element.querySelector('.sunset-val');
     this.slider = this.element.querySelector('.timeline-slider');
     this.skyTrack = this.element.querySelector('.sky-gradient-track');
 
@@ -181,7 +166,5 @@ export class TimeScrubber {
       minute: '2-digit',
       hour12: false
     }).format(dt);
-    this.azVal.textContent = `${item.solar_azimuth_deg.toFixed(1)}°`;
-    this.elVal.textContent = `${item.solar_elevation_deg.toFixed(1)}°`;
   }
 }

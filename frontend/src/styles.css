@@ -810,16 +810,34 @@ input:focus, select:focus {
 }
 
 /* Sleek Custom Date Picker & Astronomical Presets */
-.date-step-btn {
-  background: rgba(30, 41, 59, 0.8) !important;
-  border: 1px solid rgba(255, 255, 255, 0.18) !important;
-  color: var(--text-primary) !important;
-  transition: all 0.15s ease;
+.glaze-nav-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-weight: 500;
+  padding: 4px 8px;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 
-.date-step-btn:hover {
-  background: rgba(51, 65, 85, 0.95) !important;
-  border-color: rgba(255, 255, 255, 0.35) !important;
+.glaze-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.speed-btn.active {
+  background: rgba(56, 189, 248, 0.16);
+  border-color: rgba(56, 189, 248, 0.35);
+  color: var(--accent-blue);
+}
+
+.date-step-btn {
+  padding: 4px 6px;
 }
 
 .date-display-btn {

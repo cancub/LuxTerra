@@ -46,6 +46,14 @@ export class SolarDashboard {
         <span>GCR</span>
         <span class="array-gcr-badge" style="color: #94a3b8; font-weight: 600;">--%</span>
       </div>
+      <div class="array-spec-line" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
+        <span>Azimuth</span>
+        <span class="array-azimuth-badge" style="color: var(--text-secondary); font-weight: 600;">--°</span>
+      </div>
+      <div class="array-spec-line" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
+        <span>Elevation</span>
+        <span class="array-elevation-badge" style="color: var(--text-secondary); font-weight: 600;">--°</span>
+      </div>
     `;
   }
 
@@ -246,6 +254,8 @@ export class SolarDashboard {
       this.arrayDcAcRow = this.dailyElement.querySelector('.array-dcac-row');
       this.arrayDcAcBadge = this.dailyElement.querySelector('.array-dcac-badge');
       this.arrayGcrBadge = this.dailyElement.querySelector('.array-gcr-badge');
+      this.arrayAzimuthBadge = this.dailyElement.querySelector('.array-azimuth-badge');
+      this.arrayElevationBadge = this.dailyElement.querySelector('.array-elevation-badge');
     } else {
       this.kwhTotal = this.element.querySelector('.kwh-total');
       this.tiltVal = this.element.querySelector('.tilt-val');
@@ -258,6 +268,8 @@ export class SolarDashboard {
       this.arrayDcAcRow = this.element.querySelector('.array-dcac-row');
       this.arrayDcAcBadge = this.element.querySelector('.array-dcac-badge');
       this.arrayGcrBadge = this.element.querySelector('.array-gcr-badge');
+      this.arrayAzimuthBadge = this.element.querySelector('.array-azimuth-badge');
+      this.arrayElevationBadge = this.element.querySelector('.array-elevation-badge');
 
       if (this.arraySpecsHeaderRow) {
         this.arraySpecsHeaderRow.addEventListener('click', () => {
@@ -351,6 +363,8 @@ export class SolarDashboard {
       if (this.instantaneousTitle) this.instantaneousTitle.textContent = 'Instantaneous AC Power';
       if (this.kwhTotal) this.kwhTotal.textContent = '0.0';
       if (this.tiltVal) this.tiltVal.textContent = '--°';
+      if (this.arrayAzimuthBadge) this.arrayAzimuthBadge.textContent = '--°';
+      if (this.arrayElevationBadge) this.arrayElevationBadge.textContent = '--°';
       if (this.arraySpecsRow) this.arraySpecsRow.style.display = 'none';
       if (this.diffuseOnlyOverlay) this.diffuseOnlyOverlay.style.display = 'none';
       if (this.subIncidentVal) this.subIncidentVal.textContent = '+ 0.0 kW';
@@ -427,6 +441,15 @@ export class SolarDashboard {
     if (!metric) return;
     this.currentMetric = metric;
     this.currentIndex = stepIndex;
+
+    if (this.arrayAzimuthBadge) {
+      const az = metric.solar_azimuth_deg;
+      this.arrayAzimuthBadge.textContent = Number.isFinite(az) ? `${az.toFixed(1)}°` : '--°';
+    }
+    if (this.arrayElevationBadge) {
+      const el = metric.solar_elevation_deg;
+      this.arrayElevationBadge.textContent = Number.isFinite(el) ? `${el.toFixed(1)}°` : '--°';
+    }
 
     if (this.isHoveringPanel) {
       this.chart.setPlayhead(stepIndex, this.currentScaleFactor);

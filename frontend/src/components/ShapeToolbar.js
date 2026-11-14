@@ -158,8 +158,10 @@ export class ShapeToolbar {
     this.activeViewId = null;
     this.loadedShapeSnapshot = null;
     this.loadedViewSnapshot = null;
+    this.loadedDateSnapshot = null;
     this.isShapeModified = false;
     this.isViewModified = false;
+    this.isDateModified = false;
     this.isSavingNewName = false;
     this.isRestoringCamera = false;
     this.isApplyingHistory = false;
@@ -227,6 +229,7 @@ export class ShapeToolbar {
         pitch: matchedView.pitch,
         bearing: matchedView.bearing
       };
+      this.loadedDateSnapshot = matchedView.date || null;
       this.shapeHistory.reset(this.loadedShapeSnapshot);
       this.shapeHistory.push(currentShape);
       this.refreshModificationState();
@@ -372,6 +375,15 @@ export class ShapeToolbar {
                     </svg>
                     <span>Update camera view</span>
                   </button>
+                  <button class="toolbar-menu-item btn-save-date" title="Save current date to this shape">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                      <line x1="16" y1="2" x2="16" y2="6"></line>
+                      <line x1="8" y1="2" x2="8" y2="6"></line>
+                      <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
+                    <span>Update date</span>
+                  </button>
                   <div class="save-menu-divider"></div>
                   <button class="toolbar-menu-item btn-shape-reset" title="Reset shape to original state">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -446,6 +458,7 @@ export class ShapeToolbar {
     this.saveShapeLabel = this.element.querySelector('.save-shape-label');
     this.btnSaveAsNew = this.element.querySelector('.btn-save-as-new');
     this.btnSaveView = this.element.querySelector('.btn-save-view');
+    this.btnSaveDate = this.element.querySelector('.btn-save-date');
     this.btnClear = this.element.querySelector('.btn-shape-clear');
     this.dailyEnergyHost = this.element.querySelector('.shape-daily-energy-mount');
     if (this.dailyEnergyMount) {
@@ -608,6 +621,14 @@ export class ShapeToolbar {
       this.closeDropdowns();
       if (!this.isViewModified || this.activeViewId === null) return;
       this.saveChangesToActiveView();
+    });
+
+    // Save date
+    this.btnSaveDate.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.closeDropdowns();
+      if (!this.isDateModified || this.activeViewId === null) return;
+      this.saveChangesToActiveDate();
     });
 
     // History Back / Forward / Reset
@@ -925,9 +946,11 @@ export class ShapeToolbar {
     if (!currentShape) {
       this.isShapeModified = false;
       this.isViewModified = false;
+      this.isDateModified = false;
     } else if (this.activeViewId === null || !this.loadedShapeSnapshot) {
       this.isShapeModified = true;
       this.isViewModified = false;
+      this.isDateModified = false;
     } else {
       this.isShapeModified = !areShapesEqual(currentShape, this.loadedShapeSnapshot);
       if (this.isRestoringCamera) {
@@ -938,6 +961,10 @@ export class ShapeToolbar {
           ? !areViewsEqual(currentView, this.loadedViewSnapshot)
           : false;
       }
+      const currentDate = this.dateSelector ? this.dateSelector.getDate() : null;
+      this.isDateModified = Boolean(
+        this.loadedDateSnapshot && currentDate && currentDate !== this.loadedDateSnapshot
+      );
     }
 
     // Update Back / Forward / Reset buttons
@@ -953,7 +980,8 @@ export class ShapeToolbar {
     // Update Save menu highlight and dropdown items
     const canSaveShape = this.isShapeModified || this.isNameModified;
     const canSaveView = this.activeViewId !== null && this.isViewModified;
-    const hasPendingSave = canSaveShape || canSaveView;
+    const canSaveDate = this.activeViewId !== null && this.isDateModified;
+    const hasPendingSave = canSaveShape || canSaveView || canSaveDate;
     if (hasPendingSave) {
       this.btnSaveMenu.classList.add('btn-accent', 'modified');
       this.saveMenuLabel.textContent = 'Save*';
@@ -969,6 +997,9 @@ export class ShapeToolbar {
 
     this.btnSaveView.style.display = this.activeViewId !== null ? 'flex' : 'none';
     this.btnSaveView.disabled = !canSaveView;
+
+    this.btnSaveDate.style.display = this.activeViewId !== null ? 'flex' : 'none';
+    this.btnSaveDate.disabled = !canSaveDate;
   }
 
   saveNewShapeFromInlineOrPopover() {
@@ -1073,9 +1104,27 @@ export class ShapeToolbar {
 
     this.saveToStorage(this.savedViews);
     this.loadedViewSnapshot = camera;
+    this.loadedDateSnapshot = date || null;
     this.renderSavedList();
     this.refreshModificationState();
     this.showToast(`Saved view for "${this.savedViews[idx].name}"`, 'info');
+  }
+
+  saveChangesToActiveDate() {
+    const idx = this.savedViews.findIndex(v => v.id === this.activeViewId);
+    if (idx === -1) return;
+
+    const date = this.dateSelector ? this.dateSelector.getDate() : this.savedViews[idx].date;
+    this.savedViews[idx] = {
+      ...this.savedViews[idx],
+      date
+    };
+
+    this.saveToStorage(this.savedViews);
+    this.loadedDateSnapshot = date || null;
+    this.renderSavedList();
+    this.refreshModificationState();
+    this.showToast(`Saved date for "${this.savedViews[idx].name}"`, 'info');
   }
 
   loadView(view) {
@@ -1093,6 +1142,7 @@ export class ShapeToolbar {
       pitch: view.pitch,
       bearing: view.bearing
     };
+    this.loadedDateSnapshot = view.date || null;
     this.shapeHistory.reset(this.loadedShapeSnapshot);
     this.isRestoringCamera = true;
     this.closeDropdowns();
