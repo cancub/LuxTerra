@@ -628,10 +628,43 @@ export class ShapeToolbar {
       e.stopPropagation();
       this.closeDropdowns();
       const original = this.getOriginalShapeSnapshot();
-      if (!original) return;
-      this.shapeHistory.push(original);
-      this.applyShapeSnapshot(original);
-      this.showToast('Reset shape to original state', 'info');
+      const currentShape = this.getCurrentShapeSnapshot();
+      let didReset = false;
+
+      if (original && (!currentShape || !areShapesEqual(currentShape, original))) {
+        this.shapeHistory.push(original);
+        this.applyShapeSnapshot(original);
+        didReset = true;
+      }
+
+      if (this.isNameModified) {
+        this.syncShapeNameInput();
+        didReset = true;
+      }
+
+      if (this.isViewModified && this.loadedViewSnapshot && this.map && typeof this.map.flyTo === 'function') {
+        this.isRestoringCamera = true;
+        this.map.flyTo({
+          center: this.loadedViewSnapshot.center,
+          zoom: this.loadedViewSnapshot.zoom,
+          pitch: this.loadedViewSnapshot.pitch,
+          bearing: this.loadedViewSnapshot.bearing,
+          essential: true,
+          duration: 900
+        });
+        setTimeout(() => {
+          if (this.isRestoringCamera) {
+            this.isRestoringCamera = false;
+            this.refreshModificationState();
+          }
+        }, 1200);
+        didReset = true;
+      }
+
+      if (didReset) {
+        this.refreshModificationState();
+        this.showToast('Reset to original state', 'info');
+      }
     });
 
     // Clear shape
@@ -908,7 +941,9 @@ export class ShapeToolbar {
     this.btnHistoryBack.disabled = !this.shapeHistory.canUndo();
     this.btnHistoryForward.disabled = !this.shapeHistory.canRedo();
     const original = this.getOriginalShapeSnapshot();
-    const canReset = Boolean(currentShape && original && !areShapesEqual(currentShape, original));
+    const canResetShape = Boolean(currentShape && original && !areShapesEqual(currentShape, original));
+    const canResetView = Boolean(this.activeViewId !== null && this.isViewModified && this.loadedViewSnapshot);
+    const canReset = canResetShape || canResetView || this.isNameModified;
     this.btnShapeReset.style.display = this.activeViewId !== null ? 'flex' : 'none';
     this.btnShapeReset.disabled = !canReset;
 
