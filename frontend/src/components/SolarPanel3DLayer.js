@@ -781,14 +781,14 @@ export class SolarPanel3DLayer {
       gl.drawArrays(gl.LINES, 0, this.lineVertexCount);
     }
 
-    // 3. Draw Hovered Panel Vibrant Highlight (LINES)
+    // 3. Draw Hovered Panel Thick Solid Yellow Border (TRIANGLES)
     if (this.hoveredPanel && this.highlightVertexCount > 0 && this.highlightBuffer) {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.highlightBuffer);
       gl.enableVertexAttribArray(this.aPosLocation);
       gl.vertexAttribPointer(this.aPosLocation, 3, gl.FLOAT, false, 7 * 4, 0);
       gl.enableVertexAttribArray(this.aColorLocation);
       gl.vertexAttribPointer(this.aColorLocation, 4, gl.FLOAT, false, 7 * 4, 3 * 4);
-      gl.drawArrays(gl.LINES, 0, this.highlightVertexCount);
+      gl.drawArrays(gl.TRIANGLES, 0, this.highlightVertexCount);
     }
   }
 
@@ -823,22 +823,72 @@ export class SolarPanel3DLayer {
     }
 
     const pts = this.hoveredPanel.rtcVertices; // [b0, b1, m1, m0] in local RTC
-    const colHighlight = [0.22, 0.74, 0.97, 1.0]; // Bright electric cyan
-    const colAccent = [0.98, 0.80, 0.20, 0.95];   // Golden amber accent
+    const colYellow = [0.98, 0.80, 0.08, 1.0]; // Solid bright yellow (#facc15)
 
-    const lines = [];
-    // 4 perimeter lines for the hovered module
-    this.pushLine(lines, pts[0], pts[1], colHighlight);
-    this.pushLine(lines, pts[1], pts[2], colHighlight);
-    this.pushLine(lines, pts[2], pts[3], colHighlight);
-    this.pushLine(lines, pts[3], pts[0], colHighlight);
+    // Compute panel local axes and upward normal for a thick z-fighting-free quad border
+    const ux = pts[1].x - pts[0].x;
+    const uy = pts[1].y - pts[0].y;
+    const uz = pts[1].z - pts[0].z;
+    const uLen = Math.hypot(ux, uy, uz) || 1;
 
-    // Cross diagonals for architectural reticle highlight
-    this.pushLine(lines, pts[0], pts[2], colAccent);
-    this.pushLine(lines, pts[1], pts[3], colAccent);
+    const vx = pts[3].x - pts[0].x;
+    const vy = pts[3].y - pts[0].y;
+    const vz = pts[3].z - pts[0].z;
+    const vLen = Math.hypot(vx, vy, vz) || 1;
 
-    this.highlightVertices = new Float32Array(lines);
-    this.highlightVertexCount = lines.length / 7;
+    const uDir = { x: ux / uLen, y: uy / uLen, z: uz / uLen };
+    const vDir = { x: vx / vLen, y: vy / vLen, z: vz / vLen };
+
+    let nx = uy * vz - uz * vy;
+    let ny = uz * vx - ux * vz;
+    let nz = ux * vy - uy * vx;
+    const nLen = Math.hypot(nx, ny, nz) || 1;
+    nx /= nLen;
+    ny /= nLen;
+    nz /= nLen;
+    if (nz < 0) {
+      nx = -nx;
+      ny = -ny;
+      nz = -nz;
+    }
+
+    const minSide = Math.min(uLen, vLen);
+    const halfT = minSide * 0.055; // ~11% of module width total border thickness
+    const lift = minSide * 0.015;  // Slight lift above panel surface to prevent z-fighting
+
+    const offsetCorner = (pt, uSign, vSign) => ({
+      x: pt.x + uDir.x * halfT * uSign + vDir.x * halfT * vSign + nx * lift,
+      y: pt.y + uDir.y * halfT * uSign + vDir.y * halfT * vSign + ny * lift,
+      z: pt.z + uDir.z * halfT * uSign + vDir.z * halfT * vSign + nz * lift
+    });
+
+    const outer = [
+      offsetCorner(pts[0], -1, -1),
+      offsetCorner(pts[1], +1, -1),
+      offsetCorner(pts[2], +1, +1),
+      offsetCorner(pts[3], -1, +1)
+    ];
+    const inner = [
+      offsetCorner(pts[0], +1, +1),
+      offsetCorner(pts[1], -1, +1),
+      offsetCorner(pts[2], -1, -1),
+      offsetCorner(pts[3], +1, -1)
+    ];
+
+    const tris = [];
+    for (let i = 0; i < 4; i++) {
+      const next = (i + 1) % 4;
+      this.pushVertex(tris, outer[i], colYellow);
+      this.pushVertex(tris, outer[next], colYellow);
+      this.pushVertex(tris, inner[next], colYellow);
+
+      this.pushVertex(tris, outer[i], colYellow);
+      this.pushVertex(tris, inner[next], colYellow);
+      this.pushVertex(tris, inner[i], colYellow);
+    }
+
+    this.highlightVertices = new Float32Array(tris);
+    this.highlightVertexCount = tris.length / 7;
 
     const gl = this.gl;
     if (gl && this.highlightBuffer) {

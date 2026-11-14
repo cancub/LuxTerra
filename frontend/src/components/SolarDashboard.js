@@ -111,18 +111,6 @@ export class SolarDashboard {
           <span class="instantaneous-title" style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">
             Instantaneous AC Power
           </span>
-          <span class="hovered-panel-indicator" style="display: none; font-size: 0.62rem; color: #38bdf8; font-weight: 700; font-family: var(--font-mono); background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.35); padding: 1px 6px; border-radius: 4px;">
-            1 MODULE
-          </span>
-        </div>
-
-        <!-- Hovered Panel Breakdown Banner -->
-        <div class="panel-hover-banner" style="display: none; align-items: center; justify-content: space-between; background: rgba(56, 189, 248, 0.10); border: 1px solid rgba(56, 189, 248, 0.30); border-radius: 6px; padding: 4px 8px; margin-bottom: 6px;">
-          <div style="display: flex; align-items: center; gap: 5px;">
-            <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #38bdf8; box-shadow: 0 0 6px #38bdf8;"></span>
-            <span class="panel-hover-label" style="font-size: 0.68rem; color: #38bdf8; font-weight: 700; font-family: var(--font-mono);">Table 1 · Row 1 · Module 1 (Bottom)</span>
-          </div>
-          <span style="font-size: 0.60rem; color: #94a3b8; font-family: var(--font-mono);">Hover Preview</span>
         </div>
 
         <div class="subtraction-breakdown" style="display: flex; flex-direction: column; gap: 4px; font-family: var(--font-mono); font-size: 0.76rem;">
@@ -312,9 +300,6 @@ export class SolarDashboard {
     }
 
     this.instantaneousTitle = this.element.querySelector('.instantaneous-title');
-    this.hoveredPanelIndicator = this.element.querySelector('.hovered-panel-indicator');
-    this.panelHoverBanner = this.element.querySelector('.panel-hover-banner');
-    this.panelHoverLabel = this.element.querySelector('.panel-hover-label');
     this.isHoveringPanel = false;
 
     this.pvConfigMount = this.element.querySelector('.pv-config-internal-mount');
@@ -507,13 +492,6 @@ export class SolarDashboard {
     if (!panel || !breakdown) return;
     this.isHoveringPanel = true;
 
-    if (this.panelHoverBanner && this.panelHoverLabel) {
-      this.panelHoverBanner.style.display = 'flex';
-      this.panelHoverLabel.textContent = panel.label || 'Hovered Solar Panel';
-    }
-    if (this.hoveredPanelIndicator) {
-      this.hoveredPanelIndicator.style.display = 'inline-block';
-    }
     if (this.instantaneousTitle) {
       this.instantaneousTitle.textContent = 'Individual Panel AC Power';
     }
@@ -538,12 +516,6 @@ export class SolarDashboard {
 
   clearPanelTelemetry() {
     this.isHoveringPanel = false;
-    if (this.panelHoverBanner) {
-      this.panelHoverBanner.style.display = 'none';
-    }
-    if (this.hoveredPanelIndicator) {
-      this.hoveredPanelIndicator.style.display = 'none';
-    }
     if (this.instantaneousTitle) {
       this.instantaneousTitle.textContent = 'Instantaneous AC Power';
     }

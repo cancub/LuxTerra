@@ -273,9 +273,8 @@ test('SolarDashboard: showPanelTelemetry and clearPanelTelemetry display individ
 
   dashboard.showPanelTelemetry(mockPanel, mockBreakdown);
 
-  assert.equal(dashboard.panelHoverBanner.style.display, 'flex');
-  assert.equal(dashboard.panelHoverLabel.textContent, 'Table 1 · Row 1 · Module 1 (Bottom)');
-  assert.equal(dashboard.hoveredPanelIndicator.style.display, 'inline-block');
+  assert.equal(dashboard.panelHoverBanner, undefined);
+  assert.equal(dashboard.hoveredPanelIndicator, undefined);
   assert.equal(dashboard.instantaneousTitle.textContent, 'Individual Panel AC Power');
 
   assert.equal(dashboard.subIncidentVal.textContent, '+ 718 W');
@@ -288,8 +287,6 @@ test('SolarDashboard: showPanelTelemetry and clearPanelTelemetry display individ
 
   // Unhover restores array-wide kW values
   dashboard.clearPanelTelemetry();
-  assert.equal(dashboard.panelHoverBanner.style.display, 'none');
-  assert.equal(dashboard.hoveredPanelIndicator.style.display, 'none');
   assert.equal(dashboard.instantaneousTitle.textContent, 'Instantaneous AC Power');
   assert.equal(dashboard.subAcPowerVal.textContent, '31.6 kW');
   assert.equal(dashboard.subIncidentVal.textContent, '+ 55.8 kW');
