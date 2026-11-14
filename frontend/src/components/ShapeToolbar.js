@@ -233,6 +233,9 @@ export class ShapeToolbar {
     } else {
       this.shapeHistory.reset(currentShape);
     }
+
+    this.hasActiveShape = true;
+    this.setCardMode('edit');
   }
 
   loadSavedViews() {
@@ -743,6 +746,8 @@ export class ShapeToolbar {
   }
 
   setCardMode(mode) {
+    if (this.cardMode === mode) return;
+
     if (this.cardTransitionTimer) {
       clearTimeout(this.cardTransitionTimer);
       this.cardTransitionTimer = null;
@@ -758,8 +763,6 @@ export class ShapeToolbar {
     if (this.settingsBtn) {
       this.settingsBtn.classList.toggle('active', mode === 'settings');
     }
-
-    if (this.cardMode === mode) return;
 
     const applyPane = (targetMode) => {
       this.loadPane.style.display = targetMode === 'load' ? 'flex' : 'none';
