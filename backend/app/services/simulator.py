@@ -725,10 +725,11 @@ class SimulationOrchestrator:
                 opt_t = row_tilts.get(tbl.row_index, seasonal_tilt)
                 tbl.tilt_deg = opt_t
                 s_tilt = south_tilt_by_row.get(tbl.row_index)
-                total_tilt_weighted += opt_t * tbl.num_modules
-                total_mods_weighted += tbl.num_modules
+                total_tilt_weighted += opt_t * tbl.panel_count
+                total_mods_weighted += tbl.panel_count
                 new_table_svfs = []
-                for _ in range(tbl.num_columns):
+                num_pairs = max(1, (tbl.panel_count or 4) // 2)
+                for _ in range(num_pairs):
                     m_b = discrete_modules[mod_cursor]
                     m_t = discrete_modules[mod_cursor + 1]
                     mod_cursor += 2
