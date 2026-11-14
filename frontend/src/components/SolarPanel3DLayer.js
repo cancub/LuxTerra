@@ -826,18 +826,18 @@ export class SolarPanel3DLayer {
     const colYellow = [0.98, 0.80, 0.08, 1.0]; // Solid bright yellow (#facc15)
 
     // Compute panel local axes and upward normal for a thick z-fighting-free quad border
-    const ux = pts[1].x - pts[0].x;
-    const uy = pts[1].y - pts[0].y;
-    const uz = pts[1].z - pts[0].z;
+    const ux = pts[1][0] - pts[0][0];
+    const uy = pts[1][1] - pts[0][1];
+    const uz = pts[1][2] - pts[0][2];
     const uLen = Math.hypot(ux, uy, uz) || 1;
 
-    const vx = pts[3].x - pts[0].x;
-    const vy = pts[3].y - pts[0].y;
-    const vz = pts[3].z - pts[0].z;
+    const vx = pts[3][0] - pts[0][0];
+    const vy = pts[3][1] - pts[0][1];
+    const vz = pts[3][2] - pts[0][2];
     const vLen = Math.hypot(vx, vy, vz) || 1;
 
-    const uDir = { x: ux / uLen, y: uy / uLen, z: uz / uLen };
-    const vDir = { x: vx / vLen, y: vy / vLen, z: vz / vLen };
+    const uDir = [ux / uLen, uy / uLen, uz / uLen];
+    const vDir = [vx / vLen, vy / vLen, vz / vLen];
 
     let nx = uy * vz - uz * vy;
     let ny = uz * vx - ux * vz;
@@ -856,11 +856,11 @@ export class SolarPanel3DLayer {
     const halfT = minSide * 0.055; // ~11% of module width total border thickness
     const lift = minSide * 0.015;  // Slight lift above panel surface to prevent z-fighting
 
-    const offsetCorner = (pt, uSign, vSign) => ({
-      x: pt.x + uDir.x * halfT * uSign + vDir.x * halfT * vSign + nx * lift,
-      y: pt.y + uDir.y * halfT * uSign + vDir.y * halfT * vSign + ny * lift,
-      z: pt.z + uDir.z * halfT * uSign + vDir.z * halfT * vSign + nz * lift
-    });
+    const offsetCorner = (pt, uSign, vSign) => [
+      pt[0] + uDir[0] * halfT * uSign + vDir[0] * halfT * vSign + nx * lift,
+      pt[1] + uDir[1] * halfT * uSign + vDir[1] * halfT * vSign + ny * lift,
+      pt[2] + uDir[2] * halfT * uSign + vDir[2] * halfT * vSign + nz * lift
+    ];
 
     const outer = [
       offsetCorner(pts[0], -1, -1),
