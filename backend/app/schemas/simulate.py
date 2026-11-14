@@ -176,6 +176,7 @@ class SimulateResponse(BaseModel):
     visual_masks: Optional[List[str]] = Field(default=None, description="Optional top-of-canopy terrain shadow masks for top-down map rendering")
     visual_canopy_masks: Optional[List[str]] = Field(default=None, description="Optional top-of-canopy canopy shadow masks for top-down map rendering")
     canopy_shade_levels: Optional[List[str]] = Field(default=None, description="Base64 encoded uint8 stepped canopy shade levels (0=sun, 1..6=green gradient, 7=max shade)")
+    ground_canopy_shade_levels: Optional[List[str]] = Field(default=None, description="Base64 encoded uint8 ground-level stepped canopy shade levels for street map mode")
     canopy_transmittance: float = Field(default=0.15, description="Fractional direct beam canopy transmittance")
     layout: Optional[PVLayoutResult] = Field(default=None, description="Maximal solar panel distribution layout")
     night_mask: Optional[str] = Field(default=None, description="Base64 bitmask for nighttime frames (shaded inside shape, transparent outside)")

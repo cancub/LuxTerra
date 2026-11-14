@@ -164,6 +164,115 @@ void raymarch_dual_surface_kernel(
 }
 
 extern "C" __global__
+void raymarch_ground_and_top_kernel(
+    const float* __restrict__ dtm,
+    const float* __restrict__ dsm,
+    unsigned char* __restrict__ g_terrain_mask,
+    unsigned char* __restrict__ g_canopy_mask,
+    float* __restrict__ g_canopy_path_m,
+    unsigned char* __restrict__ t_terrain_mask,
+    unsigned char* __restrict__ t_canopy_mask,
+    float* __restrict__ t_canopy_path_m,
+    int H, int W,
+    int patch_y_offset, int patch_x_offset,
+    int patch_H, int patch_W,
+    float step_dr, float step_dc,
+    float tan_alpha,
+    float step_dist,
+    float step_3d_m,
+    int max_steps,
+    float ground_stand_height_m
+) {
+    int px = blockDim.x * blockIdx.x + threadIdx.x;
+    int py = blockDim.y * blockIdx.y + threadIdx.y;
+
+    if (px >= patch_W || py >= patch_H) return;
+
+    int r0 = patch_y_offset + py;
+    int c0 = patch_x_offset + px;
+
+    float z_dtm_0 = dtm[r0 * W + c0];
+    float z_dsm_0 = dsm[r0 * W + c0];
+
+    float z_base = z_dtm_0 + ground_stand_height_m;
+    float z_top = fmaxf(z_base, z_dsm_0);
+
+    unsigned char g_t_unshaded = 1;
+    unsigned char g_c_unshaded = 1;
+    float g_acc_path = 0.0f;
+
+    unsigned char t_t_unshaded = 1;
+    unsigned char t_c_unshaded = 1;
+    float t_acc_path = 0.0f;
+
+    for (int s = 1; s <= max_steps; ++s) {
+        float r_f = (float)r0 + (float)s * step_dr;
+        float c_f = (float)c0 + (float)s * step_dc;
+
+        if (r_f < 0.0f || r_f >= (float)(H - 1) || c_f < 0.0f || c_f >= (float)(W - 1)) {
+            break;
+        }
+
+        int r0_i = (int)floorf(r_f);
+        int c0_i = (int)floorf(c_f);
+        int r1_i = r0_i + 1;
+        int c1_i = c0_i + 1;
+
+        float dr = r_f - (float)r0_i;
+        float dc = c_f - (float)c0_i;
+
+        float z_dtm_00 = dtm[r0_i * W + c0_i];
+        float z_dtm_01 = dtm[r0_i * W + c1_i];
+        float z_dtm_10 = dtm[r1_i * W + c0_i];
+        float z_dtm_11 = dtm[r1_i * W + c1_i];
+        float z_dtm_top = (1.0f - dc) * z_dtm_00 + dc * z_dtm_01;
+        float z_dtm_bot = (1.0f - dc) * z_dtm_10 + dc * z_dtm_11;
+        float z_dtm_sampled = (1.0f - dr) * z_dtm_top + dr * z_dtm_bot;
+
+        float step_rise = ((float)s * step_dist) * tan_alpha;
+        float z_ray_g = z_base + step_rise;
+        float z_ray_t = z_top + step_rise;
+
+        if (z_dtm_sampled > z_ray_t) {
+            t_t_unshaded = 0;
+            t_c_unshaded = 0;
+            g_t_unshaded = 0;
+            g_c_unshaded = 0;
+            break;
+        }
+        if (g_t_unshaded != 0 && z_dtm_sampled > z_ray_g) {
+            g_t_unshaded = 0;
+            g_c_unshaded = 0;
+        }
+
+        float z_dsm_00 = dsm[r0_i * W + c0_i];
+        float z_dsm_01 = dsm[r0_i * W + c1_i];
+        float z_dsm_10 = dsm[r1_i * W + c0_i];
+        float z_dsm_11 = dsm[r1_i * W + c1_i];
+        float z_dsm_top = (1.0f - dc) * z_dsm_00 + dc * z_dsm_01;
+        float z_dsm_bot = (1.0f - dc) * z_dsm_10 + dc * z_dsm_11;
+        float z_dsm_sampled = fmaxf(z_dtm_sampled, (1.0f - dr) * z_dsm_top + dr * z_dsm_bot);
+
+        if (g_t_unshaded != 0 && z_dsm_sampled > z_ray_g) {
+            g_c_unshaded = 0;
+            g_acc_path += step_3d_m;
+        }
+        if (t_t_unshaded != 0 && z_dsm_sampled > z_ray_t) {
+            t_c_unshaded = 0;
+            t_acc_path += step_3d_m;
+        }
+    }
+
+    int out_idx = py * patch_W + px;
+    g_terrain_mask[out_idx] = g_t_unshaded;
+    g_canopy_mask[out_idx] = g_c_unshaded;
+    g_canopy_path_m[out_idx] = g_acc_path;
+    t_terrain_mask[out_idx] = t_t_unshaded;
+    t_canopy_mask[out_idx] = t_c_unshaded;
+    t_canopy_path_m[out_idx] = t_acc_path;
+}
+
+extern "C" __global__
 void compute_svf_kernel(
     const float* __restrict__ dtm,
     const float* __restrict__ dsm,
@@ -273,6 +382,7 @@ void compute_svf_kernel(
 
 _compiled_terrain_kernel = None
 _compiled_dual_kernel = None
+_compiled_ground_and_top_kernel = None
 _compiled_svf_kernel = None
 
 
@@ -296,6 +406,17 @@ def get_compiled_dual_raymarch_kernel():
         import cupy as cp
         _compiled_dual_kernel = cp.RawKernel(RAYMARCH_CUDA_SOURCE, "raymarch_dual_surface_kernel")
     return _compiled_dual_kernel
+
+
+def get_compiled_ground_and_top_kernel():
+    """
+    Returns the lazily compiled CuPy RawKernel instance for combined ground-level and top-of-canopy ray-marching.
+    """
+    global _compiled_ground_and_top_kernel
+    if _compiled_ground_and_top_kernel is None:
+        import cupy as cp
+        _compiled_ground_and_top_kernel = cp.RawKernel(RAYMARCH_CUDA_SOURCE, "raymarch_ground_and_top_kernel")
+    return _compiled_ground_and_top_kernel
 
 
 def get_compiled_svf_kernel():

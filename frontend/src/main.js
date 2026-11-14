@@ -173,6 +173,7 @@ if (appContainer) {
   let currentContextBbox = null;
   let currentSimulationData = null;
   let currentChmBytes = null;
+  let activeBaseLayer = savedState.layer === 'esri' ? 'esri' : 'osm';
   let baseSimulationConfig = {
     gcr: 1.0,
     moduleEfficiency: 0.20,
@@ -193,14 +194,18 @@ if (appContainer) {
     if (currentSimulationData) {
       const meta = currentSimulationData.metadata;
       if (metric.is_daylight && metric.mask_index !== null && currentSimulationData.masks) {
-        const maskStr = (currentSimulationData.visual_masks && currentSimulationData.visual_masks[metric.mask_index])
-          || currentSimulationData.masks[metric.mask_index];
-        const canopyMaskStr = (currentSimulationData.visual_canopy_masks && currentSimulationData.visual_canopy_masks[metric.mask_index])
-          || (currentSimulationData.canopy_masks ? currentSimulationData.canopy_masks[metric.mask_index] : null);
+        const isSatellite = activeBaseLayer === 'esri';
+        const maskStr = isSatellite
+          ? ((currentSimulationData.visual_masks && currentSimulationData.visual_masks[metric.mask_index]) || currentSimulationData.masks[metric.mask_index])
+          : currentSimulationData.masks[metric.mask_index];
+        const canopyMaskStr = isSatellite
+          ? ((currentSimulationData.visual_canopy_masks && currentSimulationData.visual_canopy_masks[metric.mask_index]) || (currentSimulationData.canopy_masks ? currentSimulationData.canopy_masks[metric.mask_index] : null))
+          : (currentSimulationData.canopy_masks ? currentSimulationData.canopy_masks[metric.mask_index] : null);
 
-        const canopyShadeStr = currentSimulationData.canopy_shade_levels
-          ? currentSimulationData.canopy_shade_levels[metric.mask_index]
-          : null;
+        const canopyShadeStr = isSatellite
+          ? (currentSimulationData.canopy_shade_levels ? currentSimulationData.canopy_shade_levels[metric.mask_index] : null)
+          : ((currentSimulationData.ground_canopy_shade_levels && currentSimulationData.ground_canopy_shade_levels[metric.mask_index])
+            || (currentSimulationData.canopy_shade_levels ? currentSimulationData.canopy_shade_levels[metric.mask_index] : null));
 
         let panelShadowBytes = null;
         if (solarPanel3DLayer.isVisible() && currentSimulationData.layout) {
@@ -211,7 +216,7 @@ if (appContainer) {
             meta.patch_bounds_wgs84,
             meta.grid_rows,
             meta.grid_cols,
-            currentChmBytes
+            isSatellite ? currentChmBytes : null
           );
         }
 
@@ -599,7 +604,12 @@ if (appContainer) {
   new LayerToggle(map, topRightControls, {
     initialLayer: savedState.layer,
     onLayerChange: (layerId) => {
+      activeBaseLayer = layerId;
       updateLayerState(layerId);
+      if (timeScrubber && currentSimulationData) {
+        const curIdx = timeScrubber.currentIndex !== undefined ? timeScrubber.currentIndex : 0;
+        timeScrubber.setStep(curIdx);
+      }
     }
   });
 }

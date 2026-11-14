@@ -593,5 +593,54 @@ def test_stacked_canopy_beer_lambert_equivalence():
         assert np.allclose(pg_two_5m[0], p_two_5m[0], atol=1e-4)
 
 
+def test_single_pass_ground_and_top_parity():
+    """
+    Single-pass compute_ground_and_top_shadow_masks_batch must match running
+    ground-level (top_of_canopy=False) and top-of-canopy (top_of_canopy=True) separately.
+    """
+    dtm = np.full((80, 80), 100.0, dtype=np.float32)
+    dtm[:, 55:65] = 140.0  # Hill to the east
+    dsm = dtm.copy()
+    dsm[:, 30:40] = 115.0  # 15m trees in the patch
+    dsm[:, 45:50] = 128.0  # Taller 28m trees east of the 15m trees
+
+    patch_y = slice(20, 60)
+    patch_x = slice(20, 60)
+    angles = [(90.0, 20.0), (180.0, 35.0)]
+
+    cpu_engine = NumPyOcclusionEngine()
+    gt_ref, gc_ref, gp_ref = cpu_engine.compute_dual_shadow_masks_with_path_batch(
+        dtm, dsm, patch_y, patch_x, angles, is_rooftop=False, ground_stand_height_m=1.5, top_of_canopy=False
+    )
+    tt_ref, tc_ref, tp_ref = cpu_engine.compute_dual_shadow_masks_with_path_batch(
+        dtm, dsm, patch_y, patch_x, angles, is_rooftop=False, ground_stand_height_m=1.5, top_of_canopy=True
+    )
+
+    gt, gc, gp, tt, tc, tp = cpu_engine.compute_ground_and_top_shadow_masks_batch(
+        dtm, dsm, patch_y, patch_x, angles, ground_stand_height_m=1.5
+    )
+
+    for i in range(len(angles)):
+        assert np.array_equal(gt[i], gt_ref[i])
+        assert np.array_equal(gc[i], gc_ref[i])
+        assert np.allclose(gp[i], gp_ref[i], atol=1e-5)
+        assert np.array_equal(tt[i], tt_ref[i])
+        assert np.array_equal(tc[i], tc_ref[i])
+        assert np.allclose(tp[i], tp_ref[i], atol=1e-5)
+
+    if is_gpu_available():
+        gpu_engine = CuPyOcclusionEngine()
+        ggt, ggc, ggp, gtt, gtc, gtp = gpu_engine.compute_ground_and_top_shadow_masks_batch(
+            dtm, dsm, patch_y, patch_x, angles, ground_stand_height_m=1.5
+        )
+        for i in range(len(angles)):
+            assert np.array_equal(ggt[i], gt[i])
+            assert np.array_equal(ggc[i], gc[i])
+            assert np.allclose(ggp[i], gp[i], atol=1e-4)
+            assert np.array_equal(gtt[i], tt[i])
+            assert np.array_equal(gtc[i], tc[i])
+            assert np.allclose(gtp[i], tp[i], atol=1e-4)
+
+
 
 
