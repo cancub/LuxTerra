@@ -12,6 +12,7 @@ export class SolarDashboard {
     this.container = container;
     this.onSeekTime = onSeekTime;
     this.chartContainer = options.chartContainer || null;
+    this.dailyEnergyContainer = options.dailyEnergyContainer || null;
     this.currentScaleFactor = 1.0;
     this.dailySummary = null;
     this.timeseries = [];
@@ -21,6 +22,31 @@ export class SolarDashboard {
     this.isArrayDetailsExpanded = false;
 
     this.render();
+  }
+
+  buildArraySpecRowsHtml() {
+    return `
+      <div class="array-spec-line" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
+        <span>Tilt</span>
+        <span class="tilt-val" style="color: #38bdf8; font-weight: 600;">--°</span>
+      </div>
+      <div class="array-spec-line" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
+        <span>Panels</span>
+        <span class="array-panels-badge" style="color: #38bdf8; font-weight: 600;">--</span>
+      </div>
+      <div class="array-spec-line" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
+        <span>Installed DC</span>
+        <span class="array-dc-badge" style="color: #fbbf24; font-weight: 600;">-- kWp</span>
+      </div>
+      <div class="array-spec-line array-dcac-row" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
+        <span>DC/AC Ratio</span>
+        <span class="array-dcac-badge" style="color: #a78bfa; font-weight: 600;">--</span>
+      </div>
+      <div class="array-spec-line" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
+        <span>GCR</span>
+        <span class="array-gcr-badge" style="color: #94a3b8; font-weight: 600;">--%</span>
+      </div>
+    `;
   }
 
   render() {
@@ -34,7 +60,7 @@ export class SolarDashboard {
     this.element.style.boxSizing = 'border-box';
     this.element.style.transition = 'all 0.25s ease';
 
-    this.element.innerHTML = `
+    const dailyEnergyHtml = this.dailyEnergyContainer ? '' : `
       <!-- Daily Energy Card (Displays daily energy and an expandable Array Details section) -->
       <div class="daily-energy-card" style="background: rgba(0,0,0,0.25); border-radius: 8px; padding: 8px 12px; border: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; gap: 4px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -58,32 +84,21 @@ export class SolarDashboard {
           </div>
 
           <div class="array-specs-details-container" style="display: none; flex-direction: column; gap: 3px; padding-left: 18px; border-left: 1px dashed rgba(255,255,255,0.12); margin-left: 6px; font-family: var(--font-mono); font-size: 0.72rem;">
-            <div class="array-spec-line" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
-              <span>Tilt</span>
-              <span class="tilt-val" style="color: #38bdf8; font-weight: 600;">--°</span>
-            </div>
-            <div class="array-spec-line" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
-              <span>Panels</span>
-              <span class="array-panels-badge" style="color: #38bdf8; font-weight: 600;">--</span>
-            </div>
-            <div class="array-spec-line" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
-              <span>Installed DC</span>
-              <span class="array-dc-badge" style="color: #fbbf24; font-weight: 600;">-- kWp</span>
-            </div>
-            <div class="array-spec-line array-dcac-row" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
-              <span>DC/AC Ratio</span>
-              <span class="array-dcac-badge" style="color: #a78bfa; font-weight: 600;">--</span>
-            </div>
-            <div class="array-spec-line" style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted);">
-              <span>GCR</span>
-              <span class="array-gcr-badge" style="color: #94a3b8; font-weight: 600;">--%</span>
-            </div>
+            ${this.buildArraySpecRowsHtml()}
           </div>
         </div>
       </div>
+    `;
+
+    const instantaneousCardStyle = this.dailyEnergyContainer
+      ? 'padding: 2px 0;'
+      : 'background: rgba(0,0,0,0.25); border-radius: 8px; padding: 10px 12px; border: 1px solid rgba(255,255,255,0.06);';
+
+    this.element.innerHTML = `
+      ${dailyEnergyHtml}
 
       <!-- Instantaneous AC Power (Stacked Subtraction: Clear-Sky − Geological Shade − Tree Shade = AC Power) -->
-      <div class="instantaneous-subtraction-card" style="background: rgba(0,0,0,0.25); border-radius: 8px; padding: 10px 12px; border: 1px solid rgba(255,255,255,0.06);">
+      <div class="instantaneous-subtraction-card" style="${instantaneousCardStyle}">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
           <span class="instantaneous-title" style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">
             Instantaneous AC Power
@@ -204,30 +219,59 @@ export class SolarDashboard {
       <div class="pv-config-internal-mount" style="display: none;"></div>
     `;
 
-    this.kwhTotal = this.element.querySelector('.kwh-total');
-    this.tiltVal = this.element.querySelector('.tilt-val');
-    this.arraySpecsRow = this.element.querySelector('.array-specs-row');
-    this.arraySpecsHeaderRow = this.element.querySelector('.array-specs-header-row');
-    this.arraySpecsDetails = this.element.querySelector('.array-specs-details-container');
-    this.arraySpecsChevron = this.element.querySelector('.array-specs-chevron');
-    this.arrayPanelsBadge = this.element.querySelector('.array-panels-badge');
-    this.arrayDcBadge = this.element.querySelector('.array-dc-badge');
-    this.arrayDcAcRow = this.element.querySelector('.array-dcac-row');
-    this.arrayDcAcBadge = this.element.querySelector('.array-dcac-badge');
-    this.arrayGcrBadge = this.element.querySelector('.array-gcr-badge');
+    if (this.dailyEnergyContainer) {
+      this.dailyElement = document.createElement('div');
+      this.dailyElement.className = 'daily-energy-flat';
+      this.dailyElement.innerHTML = `
+        <div class="daily-energy-flat-header">
+          <span class="daily-energy-flat-title">Daily Energy</span>
+          <div class="daily-energy-flat-value">
+            <span class="kwh-total">0.0</span> <span class="daily-energy-flat-unit">kWh</span>
+          </div>
+        </div>
+        <div class="array-specs-row array-specs-flat" style="display: none; flex-direction: column; gap: 3px; font-family: var(--font-mono); font-size: 0.72rem;">
+          ${this.buildArraySpecRowsHtml()}
+        </div>
+      `;
+      this.dailyEnergyContainer.appendChild(this.dailyElement);
 
-    if (this.arraySpecsHeaderRow) {
-      this.arraySpecsHeaderRow.addEventListener('click', () => {
-        this.toggleArrayDetailsExpanded();
-      });
-      this.arraySpecsHeaderRow.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
+      this.kwhTotal = this.dailyElement.querySelector('.kwh-total');
+      this.tiltVal = this.dailyElement.querySelector('.tilt-val');
+      this.arraySpecsRow = this.dailyElement.querySelector('.array-specs-row');
+      this.arraySpecsHeaderRow = null;
+      this.arraySpecsDetails = null;
+      this.arraySpecsChevron = null;
+      this.arrayPanelsBadge = this.dailyElement.querySelector('.array-panels-badge');
+      this.arrayDcBadge = this.dailyElement.querySelector('.array-dc-badge');
+      this.arrayDcAcRow = this.dailyElement.querySelector('.array-dcac-row');
+      this.arrayDcAcBadge = this.dailyElement.querySelector('.array-dcac-badge');
+      this.arrayGcrBadge = this.dailyElement.querySelector('.array-gcr-badge');
+    } else {
+      this.kwhTotal = this.element.querySelector('.kwh-total');
+      this.tiltVal = this.element.querySelector('.tilt-val');
+      this.arraySpecsRow = this.element.querySelector('.array-specs-row');
+      this.arraySpecsHeaderRow = this.element.querySelector('.array-specs-header-row');
+      this.arraySpecsDetails = this.element.querySelector('.array-specs-details-container');
+      this.arraySpecsChevron = this.element.querySelector('.array-specs-chevron');
+      this.arrayPanelsBadge = this.element.querySelector('.array-panels-badge');
+      this.arrayDcBadge = this.element.querySelector('.array-dc-badge');
+      this.arrayDcAcRow = this.element.querySelector('.array-dcac-row');
+      this.arrayDcAcBadge = this.element.querySelector('.array-dcac-badge');
+      this.arrayGcrBadge = this.element.querySelector('.array-gcr-badge');
+
+      if (this.arraySpecsHeaderRow) {
+        this.arraySpecsHeaderRow.addEventListener('click', () => {
           this.toggleArrayDetailsExpanded();
-        }
-      });
+        });
+        this.arraySpecsHeaderRow.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            this.toggleArrayDetailsExpanded();
+          }
+        });
+      }
+      this.toggleArrayDetailsExpanded(false);
     }
-    this.toggleArrayDetailsExpanded(false);
     this.diffuseOnlyOverlay = this.element.querySelector('.diffuse-only-overlay');
     this.subIncidentVal = this.element.querySelector('.sub-incident-val');
     this.subClearSkyVal = this.subIncidentVal; // Compatibility alias

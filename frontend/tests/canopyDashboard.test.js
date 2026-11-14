@@ -213,6 +213,30 @@ test('SolarDashboard: displays ground-mount layout specifications in Daily Energ
   assert.equal(dashboard.arraySpecsRow.style.display, 'none');
 });
 
+test('SolarDashboard: dailyEnergyContainer renders flat Daily Energy and omits inner border on bottom card', () => {
+  const container = createMockElement('div');
+  const dailyMount = createMockElement('div');
+  const dashboard = new SolarDashboard(container, () => {}, { dailyEnergyContainer: dailyMount });
+
+  assert.ok(dashboard.dailyElement);
+  assert.equal(dashboard.element.innerHTML.includes('daily-energy-card'), false);
+  assert.equal(dashboard.arraySpecsHeaderRow, null);
+
+  dashboard.setSimulationData({
+    daily_summary: { total_daily_kwh: 248.0, optimal_tilt_deg: 69.0, peak_power_kw: 168.0745 },
+    metadata: { deployment_mode: 'ground_mount', effective_gcr: 0.324 },
+    layout: { total_panels: 492, installed_dc_kw: 270.6, physical_gcr: 0.324 },
+    timeseries: []
+  });
+
+  assert.equal(dashboard.kwhTotal.textContent, '248.0');
+  assert.equal(dashboard.tiltVal.textContent, '69.0°');
+  assert.equal(dashboard.arrayPanelsBadge.textContent, '492');
+  assert.equal(dashboard.arrayDcBadge.textContent, '270.6 kWp');
+  assert.equal(dashboard.arrayDcAcBadge.textContent, '1.61');
+  assert.equal(dashboard.arrayGcrBadge.textContent, '32.4%');
+});
+
 test('SolarDashboard: showPanelTelemetry and clearPanelTelemetry display individual panel breakdown in card', () => {
   const container = createMockElement('div');
   const dashboard = new SolarDashboard(container);
