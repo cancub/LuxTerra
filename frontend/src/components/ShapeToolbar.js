@@ -337,6 +337,12 @@ export class ShapeToolbar {
                   <path d="M4 20v-7a4 4 0 0 1 4-4h12"></path>
                 </svg>
               </button>
+              <button class="btn btn-sm btn-square-icon btn-shape-reset" title="Reset to original" disabled>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path>
+                  <polyline points="3 3 3 8 8 8"></polyline>
+                </svg>
+              </button>
               <div class="edit-bar-divider"></div>
               <div class="toolbar-dropdown-group save-menu-group">
                 <button class="btn btn-sm btn-save-menu" title="Save or reset shape & view">
@@ -383,14 +389,6 @@ export class ShapeToolbar {
                       <line x1="3" y1="10" x2="21" y2="10"></line>
                     </svg>
                     <span>Update date</span>
-                  </button>
-                  <div class="save-menu-divider"></div>
-                  <button class="toolbar-menu-item btn-shape-reset" title="Reset shape to original state">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path>
-                      <polyline points="3 3 3 8 8 8"></polyline>
-                    </svg>
-                    <span>Reset to original</span>
                   </button>
                 </div>
               </div>
@@ -974,7 +972,7 @@ export class ShapeToolbar {
     const canResetShape = Boolean(currentShape && original && !areShapesEqual(currentShape, original));
     const canResetView = Boolean(this.activeViewId !== null && this.isViewModified && this.loadedViewSnapshot);
     const canReset = canResetShape || canResetView || this.isNameModified;
-    this.btnShapeReset.style.display = this.activeViewId !== null ? 'flex' : 'none';
+    this.btnShapeReset.style.display = this.activeViewId !== null ? '' : 'none';
     this.btnShapeReset.disabled = !canReset;
 
     // Update Save menu highlight and dropdown items
