@@ -911,7 +911,6 @@ export class ShapeToolbar {
       item.innerHTML = `
         <div class="view-item-info">
           <div class="view-item-name"></div>
-          <div class="view-item-detail"></div>
         </div>
         <div class="view-item-actions">
           <button class="btn-delete-view" title="Delete saved shape">&times;</button>
@@ -919,7 +918,6 @@ export class ShapeToolbar {
       `;
 
       item.querySelector('.view-item-name').textContent = view.name;
-      item.querySelector('.view-item-detail').textContent = (view.detail || '').replace(/^.*•\s*/, '');
 
       item.addEventListener('click', (e) => {
         e.stopPropagation();
