@@ -33,7 +33,7 @@ class ElevationTileInfo(BaseModel):
     Metadata for locally cached DTM GeoTIFF tiles.
     """
     filename: str
-    path: str
+    path: Optional[str] = None
     crs: str
     width: int
     height: int

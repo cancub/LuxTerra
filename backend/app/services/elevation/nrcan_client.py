@@ -2,7 +2,9 @@
 NRCan CanElevation / HRDEM STAC & WCS Client for Quebec LiDAR Elevation Data.
 """
 
+import contextlib
 import logging
+import re
 import uuid
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
@@ -25,6 +27,18 @@ class NRCanClient:
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "LuxTerra-ElevationClient/1.0"})
 
+    def close(self) -> None:
+        """Close the underlying HTTP session."""
+        if self.session is not None:
+            self.session.close()
+            self.session = None
+
+    def __enter__(self) -> "NRCanClient":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
+
     def query_tiles_by_bbox(
         self,
         min_lon: float,
@@ -44,34 +58,34 @@ class NRCanClient:
         
         try:
             logger.info(f"Querying NRCan STAC catalog for bbox [{bbox_str}]...")
-            resp = self.session.get(NRCAN_STAC_URL, params=params, timeout=self.timeout)
-            if resp.status_code == 200:
-                data = resp.json()
-                features = data.get("features", [])
-                logger.info(f"NRCan STAC returned {len(features)} matching tile(s).")
-                
-                results = []
-                for feat in features:
-                    assets = feat.get("assets", {})
-                    # Look for DTM and DSM Cloud-Optimized GeoTIFF assets
-                    dtm_asset = assets.get("dtm") or assets.get("data")
-                    dtm_url = dtm_asset.get("href") if dtm_asset else None
+            with contextlib.closing(self.session.get(NRCAN_STAC_URL, params=params, timeout=self.timeout)) as resp:
+                if resp.status_code == 200:
+                    data = resp.json()
+                    features = data.get("features", [])
+                    logger.info(f"NRCan STAC returned {len(features)} matching tile(s).")
                     
-                    dsm_asset = assets.get("dsm")
-                    dsm_url = dsm_asset.get("href") if dsm_asset else None
-                    
-                    results.append({
-                        "id": feat.get("id"),
-                        "bbox": feat.get("bbox"),
-                        "properties": feat.get("properties", {}),
-                        "dtm_url": dtm_url,
-                        "dsm_url": dsm_url,
-                        "assets": assets
-                    })
-                return results
-            else:
-                logger.warning(f"NRCan STAC API returned HTTP {resp.status_code}: {resp.text[:200]}")
-                return []
+                    results = []
+                    for feat in features:
+                        assets = feat.get("assets", {})
+                        # Look for DTM and DSM Cloud-Optimized GeoTIFF assets
+                        dtm_asset = assets.get("dtm") or assets.get("data")
+                        dtm_url = dtm_asset.get("href") if dtm_asset else None
+                        
+                        dsm_asset = assets.get("dsm")
+                        dsm_url = dsm_asset.get("href") if dsm_asset else None
+                        
+                        results.append({
+                            "id": feat.get("id"),
+                            "bbox": feat.get("bbox"),
+                            "properties": feat.get("properties", {}),
+                            "dtm_url": dtm_url,
+                            "dsm_url": dsm_url,
+                            "assets": assets
+                        })
+                    return results
+                else:
+                    logger.warning(f"NRCan STAC API returned HTTP {resp.status_code}: {resp.text[:200]}")
+                    return []
         except Exception as e:
             logger.warning(f"Failed to query NRCan STAC API: {e}")
             return []
@@ -92,13 +106,13 @@ class NRCanClient:
         logger.info(f"Downloading raster from {url} to {temp_path}...")
 
         try:
-            resp = self.session.get(url, stream=True, timeout=timeout)
-            resp.raise_for_status()
+            with contextlib.closing(self.session.get(url, stream=True, timeout=timeout)) as resp:
+                resp.raise_for_status()
 
-            with open(temp_path, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
-                        f.write(chunk)
+                with open(temp_path, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            f.write(chunk)
 
             temp_path.replace(output_path)
         except Exception:
@@ -127,16 +141,17 @@ class NRCanClient:
         Returns a tuple of (dtm_path, dsm_path).
         """
         target_dir = Path(target_dir)
-        item_id = prefix or item.get("id") or "tile"
+        raw_id = str(prefix or item.get("id") or "tile")
+        safe_id = re.sub(r"[^A-Za-z0-9._-]", "_", Path(raw_id).name).strip("._") or "tile"
         
         dtm_path = None
         if item.get("dtm_url"):
-            dest_dtm = target_dir / "dtm" / f"{item_id}_dtm.tif"
+            dest_dtm = target_dir / "dtm" / f"{safe_id}_dtm.tif"
             dtm_path = self.download_dtm_tile(item["dtm_url"], dest_dtm)
             
         dsm_path = None
         if item.get("dsm_url"):
-            dest_dsm = target_dir / "dsm" / f"{item_id}_dsm.tif"
+            dest_dsm = target_dir / "dsm" / f"{safe_id}_dsm.tif"
             dsm_path = self.download_dsm_tile(item["dsm_url"], dest_dsm)
             
         return (dtm_path, dsm_path)

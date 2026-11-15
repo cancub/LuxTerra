@@ -150,10 +150,9 @@ class LocalGeoTIFFProvider(ElevationProvider):
         """
         try:
             from .nrcan_client import NRCanClient
-            client = NRCanClient(timeout=20)
-
-            logger.info(f"Querying NRCan STAC for LiDAR DTM/DSM covering [{min_lon:.4f}, {min_lat:.4f}, {max_lon:.4f}, {max_lat:.4f}]...")
-            tiles = client.query_tiles_by_bbox(min_lon, min_lat, max_lon, max_lat, limit=5)
+            with NRCanClient(timeout=20) as client:
+                logger.info(f"Querying NRCan STAC for LiDAR DTM/DSM covering [{min_lon:.4f}, {min_lat:.4f}, {max_lon:.4f}, {max_lat:.4f}]...")
+                tiles = client.query_tiles_by_bbox(min_lon, min_lat, max_lon, max_lat, limit=5)
             if not tiles:
                 logger.warning(f"No NRCan LiDAR tiles found for bbox [{min_lon}, {min_lat}, {max_lon}, {max_lat}]")
                 return (None, None)
@@ -257,7 +256,9 @@ class LocalGeoTIFFProvider(ElevationProvider):
         )
         target_crs = geo_info["target_crs"]
 
-        dtm_path, dsm_path = self.find_covering_tile_pair(min_lon, min_lat, max_lon, max_lat)
+        b_min_lon, b_min_lat, b_max_lon, b_max_lat = geo_info["buffered_bounds_wgs84"]
+        tile_pairs = self.cache_manager.get_tile_pairs(b_min_lon, b_min_lat, b_max_lon, b_max_lat)
+        dtm_path, dsm_path = tile_pairs[0] if tile_pairs else (None, None)
         if not dtm_path or not dsm_path:
             logger.info(
                 f"Local elevation coverage incomplete (dtm={dtm_path is not None}, dsm={dsm_path is not None}) "
@@ -268,6 +269,8 @@ class LocalGeoTIFFProvider(ElevationProvider):
                 dtm_path = acq_dtm
             if not dsm_path and acq_dsm:
                 dsm_path = acq_dsm
+            if dtm_path:
+                tile_pairs = [(dtm_path, dsm_path)] + [p for p in tile_pairs if p[0] != dtm_path]
 
         if not dtm_path:
             raise FileNotFoundError(
@@ -286,7 +289,7 @@ class LocalGeoTIFFProvider(ElevationProvider):
             b_min_x, b_min_y, b_max_x, b_max_y, desired_w, desired_h
         )
 
-        # 1. Reproject bare-earth DTM
+        # 1. Reproject bare-earth DTM (compositing multiple intersecting tiles if needed)
         buffered_elevation, _ = _reproject_raster_to_grid(
             dtm_path, dst_transform, target_crs, desired_h, desired_w
         )
@@ -302,6 +305,28 @@ class LocalGeoTIFFProvider(ElevationProvider):
                 has_canopy = success
             except Exception as e:
                 logger.warning(f"Could not reproject DSM from {dsm_path}: {e}. Falling back to DTM.")
+
+        # Composite any additional intersecting tiles to fill boundary gaps
+        for extra_dtm, extra_dsm in tile_pairs[1:]:
+            if not extra_dtm or not extra_dtm.exists():
+                continue
+            try:
+                extra_elev, _ = _reproject_raster_to_grid(
+                    extra_dtm, dst_transform, target_crs, desired_h, desired_w
+                )
+                # Only fill where primary tile had nodata/zero edge fallback
+                fill_mask = (buffered_elevation == 0.0) & (extra_elev != 0.0)
+                if np.any(fill_mask):
+                    buffered_elevation[fill_mask] = extra_elev[fill_mask]
+                    if extra_dsm and extra_dsm.exists() and buffered_dsm is not None:
+                        extra_dsm_grid, extra_ok = _reproject_raster_to_grid(
+                            extra_dsm, dst_transform, target_crs, desired_h, desired_w, floor_grid=buffered_elevation
+                        )
+                        if extra_ok:
+                            buffered_dsm[fill_mask] = extra_dsm_grid[fill_mask]
+                            has_canopy = True
+            except Exception as e:
+                logger.debug(f"Skipping boundary composite tile {extra_dtm.name}: {e}")
         if buffered_dsm is None:
             buffered_dsm = buffered_elevation.copy()
 

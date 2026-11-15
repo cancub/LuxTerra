@@ -51,23 +51,24 @@ class TileCacheManager:
 
     def is_tile_cached(self, filename: str, layer: str = "dtm") -> bool:
         """Check if a tile exists on disk in the target layer directory and is a valid readable GeoTIFF."""
-        target_dir = self._get_target_dir(layer)
-        filepath = target_dir / filename
-        if not filepath.exists() or filepath.stat().st_size == 0:
-            return False
+        with self._lock:
+            target_dir = self._get_target_dir(layer)
+            filepath = target_dir / filename
+            if not filepath.exists() or filepath.stat().st_size == 0:
+                return False
 
-        # Fast-path: check if already verified in the manifest
-        if self._manifest_cache:
-            for tile in self._manifest_cache.get("tiles", []):
-                fn_key = "dsm_filename" if layer.lower() == "dsm" else "filename"
-                if tile.get(fn_key) == filename and tile.get("width", 0) > 0:
-                    return True
+            # Fast-path: check if already verified in the manifest
+            if self._manifest_cache:
+                for tile in self._manifest_cache.get("tiles", []):
+                    fn_key = "dsm_filename" if layer.lower() == "dsm" else "filename"
+                    if tile.get(fn_key) == filename and tile.get("width", 0) > 0:
+                        return True
 
-        try:
-            with rasterio.open(filepath) as src:
-                return src.width > 0 and src.height > 0
-        except Exception:
-            return False
+            try:
+                with rasterio.open(filepath) as src:
+                    return src.width > 0 and src.height > 0
+            except Exception:
+                return False
 
     def download_tile(self, url: str, filename: str, layer: str = "dtm", timeout: int = 60) -> Path:
         """
@@ -174,6 +175,58 @@ class TileCacheManager:
         self.upsert_manifest_tile(final_path, layer=layer)
         return final_path
 
+    def get_tile_pairs(
+        self,
+        min_lon: float,
+        min_lat: float,
+        max_lon: float,
+        max_lat: float
+    ) -> List[Tuple[Path, Optional[Path]]]:
+        """
+        Locates all cached DTM and DSM tile pairs intersecting the bounding box,
+        ordered with verified DSM-paired tiles first.
+        """
+        with self._lock:
+            manifest = self.load_manifest()
+            patch_box = box(min_lon, min_lat, max_lon, max_lat)
+
+            paired_candidates: List[Tuple[Path, Optional[Path]]] = []
+            dtm_only_candidates: List[Tuple[Path, Optional[Path]]] = []
+
+            for tile in manifest.get("tiles", []):
+                tile_wgs84 = box(*tile["bounds_wgs84"])
+                if not tile_wgs84.intersects(patch_box):
+                    continue
+
+                dtm_candidate = self.cache_dir / tile["filename"]
+                if not dtm_candidate.exists() and tile.get("path"):
+                    dtm_candidate = Path(tile["path"])
+
+                if not dtm_candidate.exists():
+                    continue
+
+                dsm_candidate = None
+                if tile.get("has_dsm") and tile.get("dsm_filename"):
+                    dsm_p = self.dsm_dir / tile["dsm_filename"]
+                    if dsm_p.exists():
+                        dsm_candidate = dsm_p
+                elif tile.get("dsm_path"):
+                    dsm_p = Path(tile["dsm_path"])
+                    if dsm_p.exists():
+                        dsm_candidate = dsm_p
+                else:
+                    stem_guess = dtm_candidate.name.replace("dtm", "dsm")
+                    dsm_p = self.dsm_dir / stem_guess
+                    if dsm_p.exists():
+                        dsm_candidate = dsm_p
+
+                if dsm_candidate is not None and dsm_candidate.exists():
+                    paired_candidates.append((dtm_candidate, dsm_candidate))
+                else:
+                    dtm_only_candidates.append((dtm_candidate, None))
+
+            return paired_candidates + dtm_only_candidates
+
     def get_tile_pair(
         self,
         min_lon: float,
@@ -186,45 +239,8 @@ class TileCacheManager:
         Prioritizes candidate tile pairs that have a valid surface/canopy DSM.
         Returns (dtm_path, dsm_path). If DSM is missing across all candidates, returns (dtm_path, None).
         """
-        manifest = self.load_manifest()
-        patch_box = box(min_lon, min_lat, max_lon, max_lat)
-
-        matching_candidates: List[Tuple[Path, Optional[Path]]] = []
-
-        for tile in manifest.get("tiles", []):
-            tile_wgs84 = box(*tile["bounds_wgs84"])
-            if tile_wgs84.intersects(patch_box):
-                dtm_candidate = self.cache_dir / tile["filename"]
-                if not dtm_candidate.exists():
-                    dtm_candidate = Path(tile["path"])
-                
-                if dtm_candidate.exists():
-                    dsm_candidate = None
-                    if tile.get("has_dsm") and tile.get("dsm_filename"):
-                        dsm_p = self.dsm_dir / tile["dsm_filename"]
-                        if dsm_p.exists():
-                            dsm_candidate = dsm_p
-                    elif tile.get("dsm_path"):
-                        dsm_p = Path(tile["dsm_path"])
-                        if dsm_p.exists():
-                            dsm_candidate = dsm_p
-                    else:
-                        # Fallback: check matching stem in dsm_dir
-                        stem_guess = dtm_candidate.name.replace("dtm", "dsm")
-                        dsm_p = self.dsm_dir / stem_guess
-                        if dsm_p.exists():
-                            dsm_candidate = dsm_p
-
-                    # If this candidate has a verified DSM on disk, return it immediately as the best match!
-                    if dsm_candidate is not None and dsm_candidate.exists():
-                        return (dtm_candidate, dsm_candidate)
-
-                    matching_candidates.append((dtm_candidate, dsm_candidate))
-
-        if matching_candidates:
-            return matching_candidates[0]
-
-        return (None, None)
+        pairs = self.get_tile_pairs(min_lon, min_lat, max_lon, max_lat)
+        return pairs[0] if pairs else (None, None)
 
     def _find_paired_dsm(self, dtm_filename: str) -> Optional[str]:
         possible_dsm_names = [
@@ -245,8 +261,8 @@ class TileCacheManager:
             min_lon, min_lat, max_lon, max_lat = geom_wgs84.bounds
 
             dsm_filename = self._find_paired_dsm(tif_file.name)
-            dsm_rel_path = f"/app/data/dsm/{dsm_filename}" if dsm_filename else None
-            dtm_rel_path = f"/app/data/dtm/{tif_file.name}"
+            dsm_rel_path = f"{self.dsm_dir.name}/{dsm_filename}" if dsm_filename else None
+            dtm_rel_path = f"{self.cache_dir.name}/{tif_file.name}"
 
             return {
                 "filename": tif_file.name,
@@ -294,47 +310,49 @@ class TileCacheManager:
 
     def upsert_manifest_tile(self, filepath: Path, layer: str = "dtm") -> Dict[str, Any]:
         """Incrementally add or update a single extracted tile in manifest.json without rescanning all .tif files."""
-        if not self.manifest_path.exists():
-            return self.update_manifest()
+        with self._lock:
+            if not self.manifest_path.exists():
+                return self.update_manifest()
 
-        manifest = self.load_manifest()
-        tiles = [dict(t) for t in manifest.get("tiles", [])]
+            manifest = self.load_manifest()
+            tiles = [dict(t) for t in manifest.get("tiles", [])]
 
-        if layer.lower() == "dsm":
-            updated = False
-            for tile in tiles:
-                fn = tile.get("filename", "")
-                if filepath.name in (fn.replace("dtm", "dsm"), fn.replace("DTM", "DSM"), fn):
-                    tile["has_dsm"] = True
-                    tile["dsm_filename"] = filepath.name
-                    tile["dsm_path"] = f"/app/data/dsm/{filepath.name}"
-                    updated = True
-            if not updated:
+            if layer.lower() == "dsm":
+                updated = False
+                for tile in tiles:
+                    fn = tile.get("filename", "")
+                    if filepath.name in (fn.replace("dtm", "dsm"), fn.replace("DTM", "DSM"), fn):
+                        tile["has_dsm"] = True
+                        tile["dsm_filename"] = filepath.name
+                        tile["dsm_path"] = f"{self.dsm_dir.name}/{filepath.name}"
+                        updated = True
+                if not updated:
+                    return manifest
+                return self._write_manifest_if_changed({"tiles": tiles})
+
+            try:
+                tile_info = self._build_tile_info(filepath)
+            except Exception as e:
+                logger.warning(f"Could not read tile {filepath.name} for manifest: {e}")
                 return manifest
+
+            tiles = [t for t in tiles if t.get("filename") != filepath.name]
+            tiles.append(tile_info)
             return self._write_manifest_if_changed({"tiles": tiles})
-
-        try:
-            tile_info = self._build_tile_info(filepath)
-        except Exception as e:
-            logger.warning(f"Could not read tile {filepath.name} for manifest: {e}")
-            return manifest
-
-        tiles = [t for t in tiles if t.get("filename") != filepath.name]
-        tiles.append(tile_info)
-        return self._write_manifest_if_changed({"tiles": tiles})
 
     def update_manifest(self) -> Dict[str, Any]:
         """
         Scans all GeoTIFF files in cache_dir and dsm_dir, updating manifest.json with paired spatial metadata.
         """
-        manifest = {"tiles": []}
-        for tif_file in self.cache_dir.glob("*.tif"):
-            try:
-                manifest["tiles"].append(self._build_tile_info(tif_file))
-            except Exception as e:
-                logger.warning(f"Could not read tile {tif_file.name} for manifest: {e}")
+        with self._lock:
+            manifest = {"tiles": []}
+            for tif_file in self.cache_dir.glob("*.tif"):
+                try:
+                    manifest["tiles"].append(self._build_tile_info(tif_file))
+                except Exception as e:
+                    logger.warning(f"Could not read tile {tif_file.name} for manifest: {e}")
 
-        return self._write_manifest_if_changed(manifest)
+            return self._write_manifest_if_changed(manifest)
 
     def load_manifest(self) -> Dict[str, Any]:
         """Load manifest.json with in-memory mtime caching, or build it if missing."""
