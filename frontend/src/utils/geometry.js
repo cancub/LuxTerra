@@ -4,7 +4,12 @@
  */
 
 export const EARTH_RADIUS_METERS = 6371008.8; // Mean Earth radius (IUGG / WGS84)
+export const METERS_PER_DEG_LAT = 111320.0;
 export const MAX_PATCH_AREA_M2 = 100000.0; // 10 hectares (LuxTerra specification limit)
+
+export function metersPerDegLon(latDeg) {
+  return METERS_PER_DEG_LAT * Math.max(0.1, Math.cos((latDeg * Math.PI) / 180.0));
+}
 
 /**
  * Normalizes coordinates ensuring min <= max.
@@ -360,9 +365,8 @@ export function computeScreenAlignedRect(startPoint, endPoint, unproject, maxAre
  */
 export function circleToPolygonAndBbox(centerLngLat, radiusM, steps = 32) {
   const [lon, lat] = centerLngLat;
-  const latRad = (lat * Math.PI) / 180;
-  const dLat = radiusM / 111320;
-  const dLon = radiusM / (111320 * Math.max(0.1, Math.cos(latRad)));
+  const dLat = radiusM / METERS_PER_DEG_LAT;
+  const dLon = radiusM / metersPerDegLon(lat);
 
   const ring = [];
   for (let i = 0; i < steps; i++) {

@@ -19,6 +19,7 @@
 
 import maplibregl from 'maplibre-gl';
 import { decodeBitmask } from '../utils/maskDecoder.js';
+import { metersPerDegLon } from '../utils/geometry.js';
 
 const MercatorCoordinate = maplibregl.MercatorCoordinate || (maplibregl.default && maplibregl.default.MercatorCoordinate);
 
@@ -524,7 +525,7 @@ export class SolarPanel3DLayer {
           const cosAzDelta = Math.cos(azDeltaRad);
           if (cosAzDelta > 0.001) {
             const deltaXM = rowPitchM * Math.tan(azDeltaRad);
-            const mPerDegLon = 111320.0 * Math.cos((centerLat_B * Math.PI) / 180.0);
+            const mPerDegLon = metersPerDegLon(centerLat_B);
             const deltaLon = mPerDegLon > 0 ? deltaXM / mPerDegLon : 0.0;
             const lonShadowSource = centerLon_B - deltaLon;
 

@@ -3,6 +3,8 @@
  * Unpacks 1-bit-per-pixel Base64 buffers into typed arrays and ImageData.
  */
 
+import { METERS_PER_DEG_LAT, metersPerDegLon as getMetersPerDegLon } from './geometry.js';
+
 // RGBA: (15, 23, 42, 0.70) => Little-endian 32-bit unsigned word: (178 << 24) | (42 << 16) | (23 << 8) | 15
 export const TERRAIN_SHADOW_WORD = (((178 << 24) | (42 << 16) | (23 << 8) | 15) >>> 0); // 0xB22a170f
 export const SHADOW_PIXEL_WORD = TERRAIN_SHADOW_WORD; // Backwards compatibility
@@ -270,8 +272,8 @@ export function rasterizePanelShadowMask(layout, solarAzimuthDeg, solarElevation
   if (lonSpan <= 0 || latSpan <= 0) return null;
 
   const centerLat = 0.5 * (minLat + maxLat);
-  const metersPerDegLat = 111132.95;
-  const metersPerDegLon = 111412.84 * Math.cos((centerLat * Math.PI) / 180.0);
+  const metersPerDegLat = METERS_PER_DEG_LAT;
+  const metersPerDegLon = getMetersPerDegLon(centerLat);
 
   const azRad = (solarAzimuthDeg * Math.PI) / 180.0;
   const elRad = (Math.max(1.5, solarElevationDeg) * Math.PI) / 180.0;

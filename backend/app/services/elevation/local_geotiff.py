@@ -324,6 +324,8 @@ class LocalGeoTIFFProvider(ElevationProvider):
         patch_elevation = buffered_elevation[patch_slice_y, patch_slice_x]
         median_elevation = float(np.median(patch_elevation)) if patch_elevation.size > 0 else float(np.median(buffered_elevation))
 
+        patch_transform = dst_transform @ rasterio.Affine.translation(x_start, y_start)
+
         result = {
             "buffered_elevation": buffered_elevation,
             "dtm": buffered_elevation,
@@ -335,6 +337,7 @@ class LocalGeoTIFFProvider(ElevationProvider):
             "resolution_m": float(target_resolution_m),
             "crs": target_crs,
             "affine_transform": dst_transform,
+            "patch_affine_transform": patch_transform,
             "median_elevation_m": median_elevation,
             "geo_info": geo_info,
             "tile_source": str(dtm_path.name),

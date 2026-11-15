@@ -24,6 +24,8 @@ import {
   clampPolygonToMaxArea,
   polygonToGeoJSON,
   computeDistanceMeters,
+  METERS_PER_DEG_LAT,
+  metersPerDegLon,
   computeScreenAlignedRect,
   circleToPolygonAndBbox,
   openPolygonRing,
@@ -1985,9 +1987,8 @@ export class BoxDrawer {
 
     const [w, s, e, n] = innerBbox;
     const midLat = (s + n) / 2.0;
-    const deltaLat = marginMeters / 111320.0;
-    const mPerDegLon = 111320.0 * Math.cos(midLat * Math.PI / 180.0);
-    const deltaLon = marginMeters / Math.max(1.0, mPerDegLon);
+    const deltaLat = marginMeters / METERS_PER_DEG_LAT;
+    const deltaLon = marginMeters / metersPerDegLon(midLat);
 
     this.setContextBox([
       w - deltaLon,

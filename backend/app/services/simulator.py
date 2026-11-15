@@ -447,6 +447,23 @@ class SimulationOrchestrator:
         patch_w = patch_slice_x.stop - patch_slice_x.start
         cell_area_m2 = request.resolution_m * request.resolution_m
 
+        import rasterio
+        import rasterio.features
+        import rasterio.transform
+        target_crs = elev_data["crs"]
+        patch_transform = elev_data.get("patch_affine_transform")
+        if patch_transform is None and elev_data.get("affine_transform") is not None:
+            patch_transform = elev_data["affine_transform"] @ rasterio.Affine.translation(
+                patch_slice_x.start, patch_slice_y.start
+            )
+        if patch_transform is None:
+            p_min_x, p_min_y, p_max_x, p_max_y = geo_info["patch_bounds_metric"]
+            patch_transform = rasterio.transform.from_bounds(
+                p_min_x, p_min_y, p_max_x, p_max_y, patch_w, patch_h
+            )
+        wgs84_to_utm = get_transformer("EPSG:4326", target_crs)
+        inv_patch_transform = ~patch_transform
+
         # Compute seasonal canopy transmittance
         transmittance = calculate_canopy_transmittance(request.date, mode=request.canopy_mode)
         canopy_transmittance = transmittance.direct
@@ -459,16 +476,8 @@ class SimulationOrchestrator:
         has_context_expansion = bool(request.context_bbox is not None)
 
         def _rasterize_domain(geom_wgs84):
-            import rasterio.features
-            import rasterio.transform
-
-            target_crs = elev_data["crs"]
             geom_utm = transform_geometry(geom_wgs84, "EPSG:4326", target_crs)
             area_m2 = float(geom_utm.area)
-            p_min_x, p_min_y, p_max_x, p_max_y = geo_info["patch_bounds_metric"]
-            patch_transform = rasterio.transform.from_bounds(
-                p_min_x, p_min_y, p_max_x, p_max_y, patch_w, patch_h
-            )
             rast = rasterio.features.rasterize(
                 [geom_utm],
                 out_shape=(patch_h, patch_w),
@@ -753,6 +762,14 @@ class SimulationOrchestrator:
                     v_cells_b = 0.5 * ((np.arange(CELL_ROWS) + 0.5) / float(CELL_ROWS))
                     v_cells_t = 0.5 + 0.5 * ((np.arange(CELL_ROWS) + 0.5) / float(CELL_ROWS))
 
+                    def _wgs84_to_rc(lon_arr, lat_arr):
+                        ux, uy = wgs84_to_utm.transform(lon_arr, lat_arr)
+                        col_f = inv_patch_transform.a * ux + inv_patch_transform.b * uy + inv_patch_transform.c
+                        row_f = inv_patch_transform.d * ux + inv_patch_transform.e * uy + inv_patch_transform.f
+                        cc = np.clip(np.floor(col_f).astype(np.intp), 0, patch_w - 1)
+                        rr = np.clip(np.floor(row_f).astype(np.intp), 0, patch_h - 1)
+                        return rr, cc
+
                     def _cell_grid_indices(v_vec):
                         uu = u_cells[None, :]  # (1, 6)
                         vv = v_vec[:, None]    # (12, 1)
@@ -762,24 +779,16 @@ class SimulationOrchestrator:
                         lat_n = (1.0 - uu) * c3[1] + uu * c2[1]
                         c_lon = (1.0 - vv) * lon_s + vv * lon_n
                         c_lat = (1.0 - vv) * lat_s + vv * lat_n
-                        if lon_span > 0:
-                            cc = np.clip((((c_lon - min_lon) / lon_span) * patch_w).astype(np.intp), 0, patch_w - 1)
-                        else:
-                            cc = np.zeros((CELL_ROWS, CELL_COLS), dtype=np.intp)
-                        if lat_span > 0:
-                            rr = np.clip((((max_lat - c_lat) / lat_span) * patch_h).astype(np.intp), 0, patch_h - 1)
-                        else:
-                            rr = np.zeros((CELL_ROWS, CELL_COLS), dtype=np.intp)
-                        return rr, cc
+                        return _wgs84_to_rc(c_lon, c_lat)
 
                     cell_rows_b, cell_cols_b = _cell_grid_indices(v_cells_b)
                     cell_rows_t, cell_cols_t = _cell_grid_indices(v_cells_t)
 
-                    col_b = min(patch_w - 1, max(0, int(((c_lon_b - min_lon) / lon_span) * patch_w))) if lon_span > 0 else 0
-                    row_b = min(patch_h - 1, max(0, int(((max_lat - c_lat_b) / lat_span) * patch_h))) if lat_span > 0 else 0
+                    row_b_arr, col_b_arr = _wgs84_to_rc(c_lon_b, c_lat_b)
+                    row_b, col_b = int(row_b_arr), int(col_b_arr)
 
-                    col_t = min(patch_w - 1, max(0, int(((c_lon_t - min_lon) / lon_span) * patch_w))) if lon_span > 0 else 0
-                    row_t = min(patch_h - 1, max(0, int(((max_lat - c_lat_t) / lat_span) * patch_h))) if lat_span > 0 else 0
+                    row_t_arr, col_t_arr = _wgs84_to_rc(c_lon_t, c_lat_t)
+                    row_t, col_t = int(row_t_arr), int(col_t_arr)
 
                     has_south_rack = False
                     if not is_front_row and south_tables:
