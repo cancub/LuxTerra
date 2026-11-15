@@ -639,6 +639,8 @@ export class SolarPanel3DLayer {
           rowIndex: tbl.row_index,
           colIndex: k,
           position: 'bottom',
+          tiltDeg: tblTiltDeg,
+          azimuthDeg: tbl.azimuth_deg !== undefined ? tbl.azimuth_deg : 180.0,
           label: `Table ${tbl.table_id + 1} · Row ${tbl.row_index + 1} · Module ${k * 2 + 1} (Bottom)`,
           centerLngLat: [centerLon_B, centerLat_B],
           rtcVertices: [b0, b1, m1, m0],
@@ -657,6 +659,8 @@ export class SolarPanel3DLayer {
           rowIndex: tbl.row_index,
           colIndex: k,
           position: 'top',
+          tiltDeg: tblTiltDeg,
+          azimuthDeg: tbl.azimuth_deg !== undefined ? tbl.azimuth_deg : 180.0,
           label: `Table ${tbl.table_id + 1} · Row ${tbl.row_index + 1} · Module ${k * 2 + 2} (Top)`,
           centerLngLat: [centerLon_T, centerLat_T],
           rtcVertices: [m0, m1, t1_pt, t0_pt],
@@ -1176,15 +1180,48 @@ export class SolarPanel3DLayer {
     const avgSvf = this.avgSvf && this.avgSvf > 0 ? this.avgSvf : 1.0;
     const svfRatio = panelSvf / avgSvf;
 
+    // Weight direct/diffuse irradiance by panel tilt when rows have distinct tilts
+    let tiltDirectWeight = 1.0;
+    let tiltDiffuseWeight = 1.0;
+    if (this.panels.length > 1 && panel.tiltDeg !== undefined) {
+      const solarAz = metric.solar_azimuth_deg !== undefined ? metric.solar_azimuth_deg : this.currentSun.azimuth;
+      const solarEl = metric.solar_elevation_deg !== undefined ? metric.solar_elevation_deg : this.currentSun.elevation;
+      const elRad = (solarEl * Math.PI) / 180.0;
+      const sinEl = Math.sin(elRad);
+      const cosEl = Math.cos(elRad);
+
+      const calcPanelFactors = (p) => {
+        const tRad = ((p.tiltDeg !== undefined ? p.tiltDeg : 30.0) * Math.PI) / 180.0;
+        const pAz = p.azimuthDeg !== undefined ? p.azimuthDeg : 180.0;
+        const azDiff = ((solarAz - pAz) * Math.PI) / 180.0;
+        const cosInc = Math.max(0.0, sinEl * Math.cos(tRad) + cosEl * Math.sin(tRad) * Math.cos(azDiff));
+        const skyTilt = 0.5 * (1.0 + Math.cos(tRad));
+        return { cosInc, skyTilt };
+      };
+
+      const pFactors = calcPanelFactors(panel);
+      let sumCosInc = 0.0;
+      let sumSkyTilt = 0.0;
+      for (let i = 0; i < this.panels.length; i++) {
+        const f = calcPanelFactors(this.panels[i]);
+        sumCosInc += f.cosInc;
+        sumSkyTilt += f.skyTilt;
+      }
+      const avgCosInc = sumCosInc / this.panels.length;
+      const avgSkyTilt = sumSkyTilt / this.panels.length;
+      if (avgCosInc > 1e-6) tiltDirectWeight = pFactors.cosInc / avgCosInc;
+      if (avgSkyTilt > 1e-6) tiltDiffuseWeight = pFactors.skyTilt / avgSkyTilt;
+    }
+
     let incidentW;
     let diffuseW;
     if (metric.incident_power_kw !== undefined && metric.diffuse_power_kw !== undefined) {
-      incidentW = (metric.incident_power_kw / totalPanels) * 1000.0;
-      diffuseW = ((metric.diffuse_power_kw / totalPanels) * 1000.0) * svfRatio;
+      incidentW = ((metric.incident_power_kw / totalPanels) * 1000.0) * tiltDirectWeight;
+      diffuseW = ((metric.diffuse_power_kw / totalPanels) * 1000.0) * svfRatio * tiltDiffuseWeight;
     } else {
       const unshadedW = (arrayUnshadedKw / totalPanels) * 1000.0;
-      incidentW = unshadedW * 0.85;
-      diffuseW = (unshadedW * 0.15) * svfRatio;
+      incidentW = (unshadedW * 0.85) * tiltDirectWeight;
+      diffuseW = (unshadedW * 0.15) * svfRatio * tiltDiffuseWeight;
     }
 
     let geoLossW = 0.0;

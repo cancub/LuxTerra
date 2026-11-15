@@ -518,12 +518,19 @@ export class SolarDashboard {
     }
 
     const sf = this.currentScaleFactor || 1.0;
-    const incW = Math.round((breakdown.incidentW !== undefined ? breakdown.incidentW : (breakdown.unshadedW * 0.85)) * sf);
-    const diffW = Math.round((breakdown.diffuseW !== undefined ? breakdown.diffuseW : (breakdown.unshadedW - incW)) * sf);
-    const gW = Math.round((breakdown.geoLossW || 0) * sf);
-    const tW = Math.round((breakdown.treeLossW || 0) * sf);
-    const sW = Math.round((breakdown.selfLossW || 0) * sf);
-    const totShadeW = Math.round((breakdown.totalShadeW !== undefined ? breakdown.totalShadeW : (gW + tW + sW)) * sf);
+    const rawIncW = breakdown.incidentW !== undefined ? breakdown.incidentW : ((breakdown.unshadedW || 0) * 0.85);
+    const rawDiffW = breakdown.diffuseW !== undefined ? breakdown.diffuseW : ((breakdown.unshadedW || 0) - rawIncW);
+    const rawGeoW = breakdown.geoLossW || 0;
+    const rawTreeW = breakdown.treeLossW || 0;
+    const rawSelfW = breakdown.selfLossW || 0;
+    const rawTotShadeW = breakdown.totalShadeW !== undefined ? breakdown.totalShadeW : (rawGeoW + rawTreeW + rawSelfW);
+
+    const incW = Math.round(rawIncW * sf);
+    const diffW = Math.round(rawDiffW * sf);
+    const gW = Math.round(rawGeoW * sf);
+    const tW = Math.round(rawTreeW * sf);
+    const sW = Math.round(rawSelfW * sf);
+    const totShadeW = Math.round(rawTotShadeW * sf);
     const acW = Math.round((breakdown.acPowerW || 0) * sf);
 
     if (this.subIncidentVal) this.subIncidentVal.textContent = `+ ${incW} W`;

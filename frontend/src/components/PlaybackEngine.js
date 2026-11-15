@@ -9,6 +9,7 @@ export class PlaybackEngine {
     this.onStep = onStep;
 
     this.isPlaying = false;
+    this.hasSimulation = false;
     this.speedPreset = 15; // 15 or 30 min/s
     this.stepMinutes = 1;
     this.totalSteps = 1440;
@@ -65,11 +66,15 @@ export class PlaybackEngine {
   }
 
   setSimulationContext(totalSteps, stepMinutes = 1) {
+    this.hasSimulation = totalSteps > 0;
     this.totalSteps = totalSteps > 0 ? totalSteps : 1440;
     this.stepMinutes = stepMinutes > 0 ? stepMinutes : 1;
   }
 
   setCurrentStep(stepIndex) {
+    if (this.isPlaying && stepIndex === this.currentStep) {
+      return;
+    }
     this.currentStep = stepIndex;
     this.fractionalStep = stepIndex;
   }
@@ -83,7 +88,7 @@ export class PlaybackEngine {
   }
 
   play() {
-    if (this.isPlaying) return;
+    if (this.isPlaying || !this.hasSimulation || this.totalSteps <= 0) return;
     this.isPlaying = true;
     this.iconPlay.style.display = 'none';
     this.iconPause.style.display = 'block';
@@ -103,8 +108,8 @@ export class PlaybackEngine {
       this.fractionalStep += deltaSec * stepsPerSec;
 
       if (this.fractionalStep >= this.totalSteps) {
-        // Loop around smoothly
-        this.fractionalStep = 0;
+        // Loop around smoothly while preserving sub-step remainder
+        this.fractionalStep = this.fractionalStep % this.totalSteps;
       }
 
       const nextStep = Math.floor(this.fractionalStep);
