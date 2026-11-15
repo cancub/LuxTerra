@@ -190,3 +190,37 @@ def test_calculate_module_rack_sky_view_factor():
     )
     assert 0.85 < svf_bot < svf_top < 1.0
 
+
+def test_center_pivot_mixed_tilt_self_shading_and_svf():
+    # With center-pivoted racks, when south_tilt_deg=45 and north tilt_deg=15:
+    # d_gap = 10.57 - 0.5 * 4.56 * (cos(45) + cos(15))
+    f_mixed = calculate_row_self_shading_fraction(
+        row_pitch_m=10.57,
+        slant_height_m=4.56,
+        tilt_deg=15.0,
+        solar_azimuth_deg=180.0,
+        solar_elevation_deg=15.0,
+        south_tilt_deg=45.0,
+    )
+    # Expected analytical value for center-pivot:
+    import math
+    d_gap = 10.57 - 0.5 * 4.56 * (math.cos(math.radians(45.0)) + math.cos(math.radians(15.0)))
+    s_y = (4.56 * math.sin(math.radians(45.0))) / math.tan(math.radians(15.0))
+    denom = math.cos(math.radians(15.0)) + math.sin(math.radians(15.0)) / math.tan(math.radians(15.0))
+    expected_f = (s_y - d_gap) / denom / 4.56
+    assert pytest.approx(f_mixed, abs=1e-6) == expected_f
+
+    svf_mixed = calculate_module_rack_sky_view_factor(
+        row_pitch_m=10.57,
+        slant_height_m=4.56,
+        tilt_deg=15.0,
+        is_top_module=False,
+        has_south_obstruction=True,
+        south_tilt_deg=45.0,
+    )
+    dz = 4.56 * math.sin(math.radians(45.0)) - 0.25 * 4.56 * math.sin(math.radians(15.0))
+    dy = 10.57 - 0.5 * 4.56 * math.cos(math.radians(45.0)) + (0.25 - 0.5) * 4.56 * math.cos(math.radians(15.0))
+    tan_psi = dz / dy
+    expected_svf = 1.0 - (1.0 / 3.0) * (1.0 - 1.0 / (1.0 + tan_psi * tan_psi))
+    assert pytest.approx(svf_mixed, abs=1e-6) == expected_svf
+

@@ -322,7 +322,7 @@ export class SolarPanel3DLayer {
     const tanAlphaP = Math.tan((elDeg * Math.PI) / 180.0) / cosAzDelta;
     if (tanAlphaP <= 1e-5) return 1.0;
 
-    const dGap = rowPitchM - slantHM * Math.cos(southRad);
+    const dGap = rowPitchM - 0.5 * slantHM * (Math.cos(southRad) + Math.cos(tiltRad));
     const hRise = slantHM * Math.sin(southRad);
     const sY = hRise / tanAlphaP;
 
@@ -339,14 +339,15 @@ export class SolarPanel3DLayer {
    * Calculates the inter-row diffuse sky view factor multiplier for a module in a 2P table
    * due to solid obstruction of the lower southern sky dome by the rack in front of it.
    */
-  calculateModuleRackSvf(rowPitchM, slantHM, tiltDeg, isTop, hasSouthObstruction) {
+  calculateModuleRackSvf(rowPitchM, slantHM, tiltDeg, isTop, hasSouthObstruction, southTiltDeg = null) {
     if (!hasSouthObstruction || rowPitchM <= 0.0 || slantHM <= 0.0) {
       return 1.0;
     }
     const tiltRad = (tiltDeg * Math.PI) / 180.0;
+    const southRad = ((southTiltDeg !== null && southTiltDeg !== undefined ? southTiltDeg : tiltDeg) * Math.PI) / 180.0;
     const fFrac = isTop ? 0.75 : 0.25;
-    const dz = (1.0 - fFrac) * slantHM * Math.sin(tiltRad);
-    const dy = rowPitchM - (1.0 - fFrac) * slantHM * Math.cos(tiltRad);
+    const dz = slantHM * Math.sin(southRad) - fFrac * slantHM * Math.sin(tiltRad);
+    const dy = rowPitchM - 0.5 * slantHM * Math.cos(southRad) + (fFrac - 0.5) * slantHM * Math.cos(tiltRad);
     if (dy <= 0.1 || dz <= 0.0) {
       return 1.0;
     }
@@ -560,12 +561,15 @@ export class SolarPanel3DLayer {
         const isSelfShaded_B = selfShadeFrac > 0.0;
         const isSelfShaded_T = selfShadeFrac >= 0.5;
 
+        const southRackTiltDeg = (southTables.length > 0 && southTables[0].tilt_deg !== undefined)
+          ? southTables[0].tilt_deg
+          : tblTiltDeg;
         const svf_B = (tbl.module_svf && tbl.module_svf[2 * k] !== undefined)
           ? tbl.module_svf[2 * k]
-          : this.calculateModuleRackSvf(rowPitchM, slantH, tblTiltDeg, false, hasSouthRack);
+          : this.calculateModuleRackSvf(rowPitchM, slantH, tblTiltDeg, false, hasSouthRack, southRackTiltDeg);
         const svf_T = (tbl.module_svf && tbl.module_svf[2 * k + 1] !== undefined)
           ? tbl.module_svf[2 * k + 1]
-          : this.calculateModuleRackSvf(rowPitchM, slantH, tblTiltDeg, true, hasSouthRack);
+          : this.calculateModuleRackSvf(rowPitchM, slantH, tblTiltDeg, true, hasSouthRack, southRackTiltDeg);
 
         // Render 12x6 (72-cell) split/half-cut cell grid for each module
         const CELL_ROWS = 12;

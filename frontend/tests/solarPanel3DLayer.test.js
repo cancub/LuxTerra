@@ -527,3 +527,20 @@ test('SolarPanel3DLayer: per-panel 3D Sky View Factor (SVF) scales individual pa
   assert.equal(Math.round(sumDiffuseW), 330);
 });
 
+test('SolarPanel3DLayer: center-pivot self-shading and SVF match backend formulas for mixed tilts', () => {
+  const layer = new SolarPanel3DLayer();
+  const fMixed = layer.calculateRowSelfShadeFraction(10.57, 4.56, 15.0, 180.0, 15.0, 45.0);
+  const dGap = 10.57 - 0.5 * 4.56 * (Math.cos((45.0 * Math.PI) / 180.0) + Math.cos((15.0 * Math.PI) / 180.0));
+  const sY = (4.56 * Math.sin((45.0 * Math.PI) / 180.0)) / Math.tan((15.0 * Math.PI) / 180.0);
+  const denom = Math.cos((15.0 * Math.PI) / 180.0) + Math.sin((15.0 * Math.PI) / 180.0) / Math.tan((15.0 * Math.PI) / 180.0);
+  const expectedF = (sY - dGap) / denom / 4.56;
+  assert.ok(Math.abs(fMixed - expectedF) < 1e-6);
+
+  const svfMixed = layer.calculateModuleRackSvf(10.57, 4.56, 15.0, false, true, 45.0);
+  const dz = 4.56 * Math.sin((45.0 * Math.PI) / 180.0) - 0.25 * 4.56 * Math.sin((15.0 * Math.PI) / 180.0);
+  const dy = 10.57 - 0.5 * 4.56 * Math.cos((45.0 * Math.PI) / 180.0) + (0.25 - 0.5) * 4.56 * Math.cos((15.0 * Math.PI) / 180.0);
+  const tanPsi = dz / dy;
+  const expectedSvf = 1.0 - (1.0 / 3.0) * (1.0 - 1.0 / (1.0 + tanPsi * tanPsi));
+  assert.ok(Math.abs(svfMixed - expectedSvf) < 1e-6);
+});
+

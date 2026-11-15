@@ -278,7 +278,7 @@ def _optimize_row_tilts(
 
         if south_tilt_deg is not None:
             south_rad = np.radians(south_tilt_deg)
-            d_gap = row_pitch_m - slant_h * np.cos(south_rad)
+            d_gap = row_pitch_m - 0.5 * slant_h * (np.cos(south_rad) + np.cos(tilt_rad))
             h_rise = slant_h * np.sin(south_rad)
             s_y = h_rise * inv_tan_alpha_p
             denom = np.cos(tilt_rad) + np.sin(tilt_rad) * inv_tan_alpha_p
@@ -721,6 +721,56 @@ class SimulationOrchestrator:
             module_area_m2 = layout.module_width_m * layout.module_length_m
             module_conv = module_area_m2 * pv_cfg.module_efficiency * pv_cfg.system_derate / 1000.0
 
+            def _wgs84_to_rc(lon_arr, lat_arr):
+                ux, uy = wgs84_to_utm.transform(lon_arr, lat_arr)
+                col_f = inv_patch_transform.a * ux + inv_patch_transform.b * uy + inv_patch_transform.c
+                row_f = inv_patch_transform.d * ux + inv_patch_transform.e * uy + inv_patch_transform.f
+                cc = np.clip(np.floor(col_f).astype(np.intp), 0, patch_w - 1)
+                rr = np.clip(np.floor(row_f).astype(np.intp), 0, patch_h - 1)
+                return rr, cc
+
+            u_cells_base = (np.arange(CELL_COLS) + 0.5) / float(CELL_COLS)
+            v_cells_b = 0.5 * ((np.arange(CELL_ROWS) + 0.5) / float(CELL_ROWS))
+            v_cells_t = 0.5 + 0.5 * ((np.arange(CELL_ROWS) + 0.5) / float(CELL_ROWS))
+
+            def _compute_pair_geometry(corners, k, num_pairs):
+                c0, c1, c2, c3 = corners[0], corners[1], corners[2], corners[3]
+                t0 = k / float(num_pairs)
+                t1 = (k + 1) / float(num_pairs)
+                t_mid = (k + 0.5) / float(num_pairs)
+
+                lon_bot = (1.0 - t_mid) * c0[0] + t_mid * c1[0]
+                lat_bot = (1.0 - t_mid) * c0[1] + t_mid * c1[1]
+                lon_top = (1.0 - t_mid) * c3[0] + t_mid * c2[0]
+                lat_top = (1.0 - t_mid) * c3[1] + t_mid * c2[1]
+
+                c_lon_b = 0.75 * lon_bot + 0.25 * lon_top
+                c_lat_b = 0.75 * lat_bot + 0.25 * lat_top
+                c_lon_t = 0.25 * lon_bot + 0.75 * lon_top
+                c_lat_t = 0.25 * lat_bot + 0.75 * lat_top
+
+                u_cells = t0 + u_cells_base * (t1 - t0)
+
+                def _cell_grid_indices(v_vec):
+                    uu = u_cells[None, :]
+                    vv = v_vec[:, None]
+                    lon_s = (1.0 - uu) * c0[0] + uu * c1[0]
+                    lat_s = (1.0 - uu) * c0[1] + uu * c1[1]
+                    lon_n = (1.0 - uu) * c3[0] + uu * c2[0]
+                    lat_n = (1.0 - uu) * c3[1] + uu * c2[1]
+                    c_lon = (1.0 - vv) * lon_s + vv * lon_n
+                    c_lat = (1.0 - vv) * lat_s + vv * lat_n
+                    return _wgs84_to_rc(c_lon, c_lat)
+
+                cell_rows_b, cell_cols_b = _cell_grid_indices(v_cells_b)
+                cell_rows_t, cell_cols_t = _cell_grid_indices(v_cells_t)
+                row_b_arr, col_b_arr = _wgs84_to_rc(c_lon_b, c_lat_b)
+                row_t_arr, col_t_arr = _wgs84_to_rc(c_lon_t, c_lat_t)
+                return (
+                    c_lon_b, c_lat_b, int(row_b_arr), int(col_b_arr), cell_rows_b, cell_cols_b,
+                    c_lon_t, c_lat_t, int(row_t_arr), int(col_t_arr), cell_rows_t, cell_cols_t,
+                )
+
             tables_by_row = {}
             for tbl in layout.tables:
                 tables_by_row.setdefault(tbl.row_index, []).append(tbl)
@@ -731,10 +781,6 @@ class SimulationOrchestrator:
                 corners = tbl.corners_wgs84
                 if not corners or len(corners) < 4:
                     continue
-                c0 = corners[0]  # SW
-                c1 = corners[1]  # SE
-                c2 = corners[2]  # NE
-                c3 = corners[3]  # NW
 
                 panel_count = tbl.panel_count or 4
                 num_pairs = max(1, panel_count // 2)
@@ -743,52 +789,10 @@ class SimulationOrchestrator:
                 table_svfs = []
 
                 for k in range(num_pairs):
-                    t0 = k / float(num_pairs)
-                    t1 = (k + 1) / float(num_pairs)
-                    t_mid = (k + 0.5) / float(num_pairs)
-
-                    lon_bot = (1.0 - t_mid) * c0[0] + t_mid * c1[0]
-                    lat_bot = (1.0 - t_mid) * c0[1] + t_mid * c1[1]
-                    lon_top = (1.0 - t_mid) * c3[0] + t_mid * c2[0]
-                    lat_top = (1.0 - t_mid) * c3[1] + t_mid * c2[1]
-
-                    c_lon_b = 0.75 * lon_bot + 0.25 * lon_top
-                    c_lat_b = 0.75 * lat_bot + 0.25 * lat_top
-                    c_lon_t = 0.25 * lon_bot + 0.75 * lon_top
-                    c_lat_t = 0.25 * lat_bot + 0.75 * lat_top
-
-                    # Precompute 12x6 (72-cell) grid indices for bottom and top modules
-                    u_cells = t0 + ((np.arange(CELL_COLS) + 0.5) / float(CELL_COLS)) * (t1 - t0)
-                    v_cells_b = 0.5 * ((np.arange(CELL_ROWS) + 0.5) / float(CELL_ROWS))
-                    v_cells_t = 0.5 + 0.5 * ((np.arange(CELL_ROWS) + 0.5) / float(CELL_ROWS))
-
-                    def _wgs84_to_rc(lon_arr, lat_arr):
-                        ux, uy = wgs84_to_utm.transform(lon_arr, lat_arr)
-                        col_f = inv_patch_transform.a * ux + inv_patch_transform.b * uy + inv_patch_transform.c
-                        row_f = inv_patch_transform.d * ux + inv_patch_transform.e * uy + inv_patch_transform.f
-                        cc = np.clip(np.floor(col_f).astype(np.intp), 0, patch_w - 1)
-                        rr = np.clip(np.floor(row_f).astype(np.intp), 0, patch_h - 1)
-                        return rr, cc
-
-                    def _cell_grid_indices(v_vec):
-                        uu = u_cells[None, :]  # (1, 6)
-                        vv = v_vec[:, None]    # (12, 1)
-                        lon_s = (1.0 - uu) * c0[0] + uu * c1[0]
-                        lat_s = (1.0 - uu) * c0[1] + uu * c1[1]
-                        lon_n = (1.0 - uu) * c3[0] + uu * c2[0]
-                        lat_n = (1.0 - uu) * c3[1] + uu * c2[1]
-                        c_lon = (1.0 - vv) * lon_s + vv * lon_n
-                        c_lat = (1.0 - vv) * lat_s + vv * lat_n
-                        return _wgs84_to_rc(c_lon, c_lat)
-
-                    cell_rows_b, cell_cols_b = _cell_grid_indices(v_cells_b)
-                    cell_rows_t, cell_cols_t = _cell_grid_indices(v_cells_t)
-
-                    row_b_arr, col_b_arr = _wgs84_to_rc(c_lon_b, c_lat_b)
-                    row_b, col_b = int(row_b_arr), int(col_b_arr)
-
-                    row_t_arr, col_t_arr = _wgs84_to_rc(c_lon_t, c_lat_t)
-                    row_t, col_t = int(row_t_arr), int(col_t_arr)
+                    (
+                        c_lon_b, c_lat_b, row_b, col_b, cell_rows_b, cell_cols_b,
+                        c_lon_t, c_lat_t, row_t, col_t, cell_rows_t, cell_cols_t,
+                    ) = _compute_pair_geometry(corners, k, num_pairs)
 
                     has_south_rack = False
                     if not is_front_row and south_tables:
@@ -876,7 +880,8 @@ class SimulationOrchestrator:
             for pos, r_idx in enumerate(distinct_rows):
                 south_tilt_by_row[r_idx] = row_tilts[distinct_rows[pos - 1]] if pos > 0 else None
 
-            # Update layout table tilts & recompute per-module SVF with optimized row tilts
+            # Update layout table tilts, center-pivoted footprints, cell grids & per-module SVF
+            utm_to_wgs84 = get_transformer(target_crs, "EPSG:4326")
             mod_cursor = 0
             total_tilt_weighted = 0.0
             total_mods_weighted = 0
@@ -886,18 +891,44 @@ class SimulationOrchestrator:
                     continue
                 opt_t = row_tilts.get(tbl.row_index, seasonal_tilt)
                 tbl.tilt_deg = opt_t
+                slant_h = tbl.slant_height_m or 4.56
+                actual_depth_m = round(slant_h * float(np.cos(np.radians(opt_t))), 2)
+                tbl.depth_m = actual_depth_m
+                if tbl.center_wgs84 and len(tbl.center_wgs84) >= 2 and tbl.width_m:
+                    c_x, c_y = wgs84_to_utm.transform(tbl.center_wgs84[0], tbl.center_wgs84[1])
+                    half_w = 0.5 * tbl.width_m
+                    half_d = 0.5 * slant_h * float(np.cos(np.radians(opt_t)))
+                    utmx = [c_x - half_w, c_x + half_w, c_x + half_w, c_x - half_w]
+                    utmy = [c_y - half_d, c_y - half_d, c_y + half_d, c_y + half_d]
+                    lons, lats = utm_to_wgs84.transform(utmx, utmy)
+                    tbl.corners_wgs84 = [
+                        [round(float(lo), 7), round(float(la), 7)]
+                        for lo, la in zip(lons, lats)
+                    ]
+                    corners = tbl.corners_wgs84
+
                 s_tilt = south_tilt_by_row.get(tbl.row_index)
                 total_tilt_weighted += opt_t * tbl.panel_count
                 total_mods_weighted += tbl.panel_count
                 new_table_svfs = []
                 num_pairs = max(1, (tbl.panel_count or 4) // 2)
-                for _ in range(num_pairs):
+                for k in range(num_pairs):
+                    (
+                        c_lon_b, c_lat_b, row_b, col_b, cell_rows_b, cell_cols_b,
+                        c_lon_t, c_lat_t, row_t, col_t, cell_rows_t, cell_cols_t,
+                    ) = _compute_pair_geometry(corners, k, num_pairs)
                     m_b = discrete_modules[mod_cursor]
                     m_t = discrete_modules[mod_cursor + 1]
                     mod_cursor += 2
+                    m_b["center_lon"], m_b["center_lat"] = c_lon_b, c_lat_b
+                    m_b["row_idx"], m_b["col_idx"] = row_b, col_b
+                    m_b["cell_rows"], m_b["cell_cols"] = cell_rows_b, cell_cols_b
+                    m_t["center_lon"], m_t["center_lat"] = c_lon_t, c_lat_t
+                    m_t["row_idx"], m_t["col_idx"] = row_t, col_t
+                    m_t["cell_rows"], m_t["cell_cols"] = cell_rows_t, cell_cols_t
                     r_svf_b = calculate_module_rack_sky_view_factor(
                         row_pitch_m=layout.row_pitch_m,
-                        slant_height_m=tbl.slant_height_m or 4.56,
+                        slant_height_m=slant_h,
                         tilt_deg=opt_t,
                         is_top_module=False,
                         has_south_obstruction=m_b["has_south_rack"],
@@ -905,14 +936,14 @@ class SimulationOrchestrator:
                     )
                     r_svf_t = calculate_module_rack_sky_view_factor(
                         row_pitch_m=layout.row_pitch_m,
-                        slant_height_m=tbl.slant_height_m or 4.56,
+                        slant_height_m=slant_h,
                         tilt_deg=opt_t,
                         is_top_module=True,
                         has_south_obstruction=m_t["has_south_rack"],
                         south_tilt_deg=s_tilt
                     )
-                    m_b["svf"] = float(np.clip(float(svf_grid[m_b["row_idx"], m_b["col_idx"]]) * r_svf_b, 0.05, 1.0))
-                    m_t["svf"] = float(np.clip(float(svf_grid[m_t["row_idx"], m_t["col_idx"]]) * r_svf_t, 0.05, 1.0))
+                    m_b["svf"] = float(np.clip(float(svf_grid[row_b, col_b]) * r_svf_b, 0.05, 1.0))
+                    m_t["svf"] = float(np.clip(float(svf_grid[row_t, col_t]) * r_svf_t, 0.05, 1.0))
                     new_table_svfs.extend([round(m_b["svf"], 4), round(m_t["svf"], 4)])
                 tbl.module_svf = new_table_svfs
 

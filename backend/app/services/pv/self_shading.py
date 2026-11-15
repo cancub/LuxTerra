@@ -62,8 +62,8 @@ def calculate_row_self_shading_fraction(
     if tan_alpha_p <= 1e-5:
         return 1.0
 
-    # Ground gap between top edge of south row and bottom edge of north row
-    d_gap = row_pitch_m - slant_height_m * np.cos(south_rad)
+    # Ground gap between top edge of south row and bottom edge of north row (center-pivoted racks)
+    d_gap = row_pitch_m - 0.5 * slant_height_m * (np.cos(south_rad) + np.cos(tilt_rad))
     h_rise = slant_height_m * np.sin(south_rad)
 
     # Northward shadow extension from south row's top edge
@@ -105,7 +105,7 @@ def calculate_module_rack_sky_view_factor(
     frac_up_slant = 0.75 if is_top_module else 0.25
 
     dz = slant_height_m * np.sin(south_rad) - frac_up_slant * slant_height_m * np.sin(tilt_rad)
-    dy = row_pitch_m - slant_height_m * np.cos(south_rad) + frac_up_slant * slant_height_m * np.cos(tilt_rad)
+    dy = row_pitch_m - 0.5 * slant_height_m * np.cos(south_rad) + (frac_up_slant - 0.5) * slant_height_m * np.cos(tilt_rad)
 
     if dy <= 0.1 or dz <= 0.0:
         return 1.0
