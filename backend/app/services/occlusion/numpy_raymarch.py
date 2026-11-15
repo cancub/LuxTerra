@@ -15,6 +15,21 @@ from .ray_math import (
 )
 
 
+def _sample_bilinear(
+    grid: np.ndarray,
+    r0_i: np.ndarray,
+    c0_i: np.ndarray,
+    dr: np.ndarray,
+    dc: np.ndarray,
+) -> np.ndarray:
+    """Bilinearly interpolate a 2D grid at fractional offsets (dr, dc) from (r0_i, c0_i)."""
+    r1_i = r0_i + 1
+    c1_i = c0_i + 1
+    z_top = (1.0 - dc) * grid[r0_i, c0_i] + dc * grid[r0_i, c1_i]
+    z_bot = (1.0 - dc) * grid[r1_i, c0_i] + dc * grid[r1_i, c1_i]
+    return (1.0 - dr) * z_top + dr * z_bot
+
+
 class NumPyOcclusionEngine(OcclusionEngine):
     """
     CPU-based ray-marcher using vectorized NumPy operations.
@@ -76,20 +91,11 @@ class NumPyOcclusionEngine(OcclusionEngine):
 
             r0_i = np.floor(rf_ib).astype(np.int32)
             c0_i = np.floor(cf_ib).astype(np.int32)
-            r1_i = r0_i + 1
-            c1_i = c0_i + 1
 
             dr = rf_ib - r0_i.astype(np.float32)
             dc = cf_ib - c0_i.astype(np.float32)
 
-            z00 = elevation_grid[r0_i, c0_i]
-            z01 = elevation_grid[r0_i, c1_i]
-            z10 = elevation_grid[r1_i, c0_i]
-            z11 = elevation_grid[r1_i, c1_i]
-
-            z_top = (1.0 - dc) * z00 + dc * z01
-            z_bottom = (1.0 - dc) * z10 + dc * z11
-            z_terrain = (1.0 - dr) * z_top + dr * z_bottom
+            z_terrain = _sample_bilinear(elevation_grid, r0_i, c0_i, dr, dc)
 
             z_ray = z0[in_bounds] + (np.float32(s) * s_dist * t_alpha)
 
@@ -195,14 +201,7 @@ class NumPyOcclusionEngine(OcclusionEngine):
             dr = rf_ib - r0_i.astype(np.float32)
             dc = cf_ib - c0_i.astype(np.float32)
 
-            # Bilinear DTM
-            z_dtm_00 = dtm_grid[r0_i, c0_i]
-            z_dtm_01 = dtm_grid[r0_i, c1_i]
-            z_dtm_10 = dtm_grid[r1_i, c0_i]
-            z_dtm_11 = dtm_grid[r1_i, c1_i]
-            z_dtm_top = (1.0 - dc) * z_dtm_00 + dc * z_dtm_01
-            z_dtm_bot = (1.0 - dc) * z_dtm_10 + dc * z_dtm_11
-            z_dtm_sampled = (1.0 - dr) * z_dtm_top + dr * z_dtm_bot
+            z_dtm_sampled = _sample_bilinear(dtm_grid, r0_i, c0_i, dr, dc)
 
             z_ray = z0[in_bounds] + (np.float32(s) * s_dist * t_alpha)
 
@@ -219,14 +218,7 @@ class NumPyOcclusionEngine(OcclusionEngine):
 
             # 2. Canopy block (for rays not blocked by terrain)
             if include_tree_canopy:
-                # Bilinear DSM
-                z_dsm_00 = dsm_grid[r0_i, c0_i]
-                z_dsm_01 = dsm_grid[r0_i, c1_i]
-                z_dsm_10 = dsm_grid[r1_i, c0_i]
-                z_dsm_11 = dsm_grid[r1_i, c1_i]
-                z_dsm_top = (1.0 - dc) * z_dsm_00 + dc * z_dsm_01
-                z_dsm_bot = (1.0 - dc) * z_dsm_10 + dc * z_dsm_11
-                z_dsm_sampled = np.maximum(z_dtm_sampled, (1.0 - dr) * z_dsm_top + dr * z_dsm_bot)
+                z_dsm_sampled = np.maximum(z_dtm_sampled, _sample_bilinear(dsm_grid, r0_i, c0_i, dr, dc))
 
                 canopy_occluded = (~terrain_occluded) & (z_dsm_sampled > z_ray)
                 if np.any(canopy_occluded):
@@ -356,15 +348,11 @@ class NumPyOcclusionEngine(OcclusionEngine):
 
             r0_i = np.floor(rf_ib).astype(np.int32)
             c0_i = np.floor(cf_ib).astype(np.int32)
-            r1_i = r0_i + 1
-            c1_i = c0_i + 1
 
             dr = rf_ib - r0_i.astype(np.float32)
             dc = cf_ib - c0_i.astype(np.float32)
 
-            z_dtm_top = (1.0 - dc) * dtm_grid[r0_i, c0_i] + dc * dtm_grid[r0_i, c1_i]
-            z_dtm_bot = (1.0 - dc) * dtm_grid[r1_i, c0_i] + dc * dtm_grid[r1_i, c1_i]
-            z_dtm_sampled = (1.0 - dr) * z_dtm_top + dr * z_dtm_bot
+            z_dtm_sampled = _sample_bilinear(dtm_grid, r0_i, c0_i, dr, dc)
 
             step_rise = np.float32(s) * s_dist * t_alpha
             z_ray_g = z_base[in_bounds] + step_rise
@@ -388,9 +376,7 @@ class NumPyOcclusionEngine(OcclusionEngine):
                 t_t_unshaded[tr, tc] = False
                 t_c_unshaded[tr, tc] = False
 
-            z_dsm_top = (1.0 - dc) * dsm_grid[r0_i, c0_i] + dc * dsm_grid[r0_i, c1_i]
-            z_dsm_bot = (1.0 - dc) * dsm_grid[r1_i, c0_i] + dc * dsm_grid[r1_i, c1_i]
-            z_dsm_sampled = np.maximum(z_dtm_sampled, (1.0 - dr) * z_dsm_top + dr * z_dsm_bot)
+            z_dsm_sampled = np.maximum(z_dtm_sampled, _sample_bilinear(dsm_grid, r0_i, c0_i, dr, dc))
 
             g_c_occ = g_active & (~g_t_occ) & (z_dsm_sampled > z_ray_g)
             if np.any(g_c_occ):
@@ -532,17 +518,11 @@ class NumPyOcclusionEngine(OcclusionEngine):
 
                 r0_i = np.floor(rf_ib).astype(np.int32)
                 c0_i = np.floor(cf_ib).astype(np.int32)
-                r1_i = r0_i + 1
-                c1_i = c0_i + 1
 
                 dr = rf_ib - r0_i.astype(np.float32)
                 dc = cf_ib - c0_i.astype(np.float32)
 
-                z_dtm_00 = dtm_grid[r0_i, c0_i]
-                z_dtm_01 = dtm_grid[r0_i, c1_i]
-                z_dtm_10 = dtm_grid[r1_i, c0_i]
-                z_dtm_11 = dtm_grid[r1_i, c1_i]
-                z_dtm_sampled = (1.0 - dr) * ((1.0 - dc) * z_dtm_00 + dc * z_dtm_01) + dr * ((1.0 - dc) * z_dtm_10 + dc * z_dtm_11)
+                z_dtm_sampled = _sample_bilinear(dtm_grid, r0_i, c0_i, dr, dc)
 
                 dist = np.float32(s * resolution_m)
                 tan_t = (z_dtm_sampled - z0[in_bounds]) / dist
@@ -554,13 +534,9 @@ class NumPyOcclusionEngine(OcclusionEngine):
                 max_tan_dsm[active_r, active_c] = np.maximum(max_tan_dsm[active_r, active_c], tan_t)
 
                 if include_tree_canopy:
-                    z_dsm_00 = dsm_grid[r0_i, c0_i]
-                    z_dsm_01 = dsm_grid[r0_i, c1_i]
-                    z_dsm_10 = dsm_grid[r1_i, c0_i]
-                    z_dsm_11 = dsm_grid[r1_i, c1_i]
                     z_dsm_sampled = np.maximum(
                         z_dtm_sampled,
-                        (1.0 - dr) * ((1.0 - dc) * z_dsm_00 + dc * z_dsm_01) + dr * ((1.0 - dc) * z_dsm_10 + dc * z_dsm_11)
+                        _sample_bilinear(dsm_grid, r0_i, c0_i, dr, dc),
                     )
                     tan_s = (z_dsm_sampled - z0[in_bounds]) / dist
                     max_tan_dsm[active_r, active_c] = np.maximum(max_tan_dsm[active_r, active_c], tan_s)

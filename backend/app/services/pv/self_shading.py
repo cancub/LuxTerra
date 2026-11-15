@@ -142,9 +142,7 @@ def calculate_array_self_shading_fraction(
         return 0.0
 
     latitude = ref_table.center_wgs84[1] if (ref_table.center_wgs84 and len(ref_table.center_wgs84) > 1) else 45.5
-    delta_x_m = layout.row_pitch_m * np.tan(az_delta_rad)
-    m_per_deg_lon = 111320.0 * np.cos(np.radians(latitude))
-    delta_lon = delta_x_m / m_per_deg_lon if m_per_deg_lon > 0 else 0.0
+    delta_lon = compute_south_delta_lon(latitude, layout.row_pitch_m, np.tan(az_delta_rad))
 
     total_shaded_panel_units = 0.0
     for r in distinct_rows:
@@ -156,12 +154,12 @@ def calculate_array_self_shading_fraction(
             continue
 
         for tbl in tables_by_row[r]:
-            corners = tbl.corners_wgs84
-            if not corners or len(corners) < 4:
+            bounds = _table_lon_bounds(tbl.corners_wgs84)
+            if bounds is None:
                 continue
 
-            t_min_lon = min(corners[0][0], corners[3][0]) - delta_lon
-            t_max_lon = max(corners[1][0], corners[2][0]) - delta_lon
+            t_min_lon = bounds[0] - delta_lon
+            t_max_lon = bounds[1] - delta_lon
             t_len = t_max_lon - t_min_lon
             if t_len <= 1e-9:
                 continue
@@ -169,18 +167,57 @@ def calculate_array_self_shading_fraction(
             # Compute horizontal obstruction overlap against tables in southern row
             overlap_lon = 0.0
             for st in south_tables:
-                sc = st.corners_wgs84
-                if not sc or len(sc) < 4:
+                st_bounds = _table_lon_bounds(st.corners_wgs84)
+                if st_bounds is None:
                     continue
-                st_min = min(sc[0][0], sc[3][0])
-                st_max = max(sc[1][0], sc[2][0])
-                ov = max(0.0, min(t_max_lon, st_max) - max(t_min_lon, st_min))
+                ov = max(0.0, min(t_max_lon, st_bounds[1]) - max(t_min_lon, st_bounds[0]))
                 overlap_lon += ov
 
             overlap_frac = float(np.clip(overlap_lon / t_len, 0.0, 1.0))
             total_shaded_panel_units += tbl.panel_count * row_shaded_fraction * overlap_frac
 
     return float(total_shaded_panel_units / layout.total_panels)
+
+
+def compute_south_delta_lon(lat_deg: float, row_pitch_m: float, tan_az_delta):
+    """East-West longitude shift (degrees) from a receiver at lat_deg toward the southern row along row_pitch_m."""
+    m_per_deg_lon = 111320.0 * np.cos(np.radians(lat_deg))
+    if m_per_deg_lon <= 0:
+        return np.zeros_like(tan_az_delta, dtype=np.float64) if isinstance(tan_az_delta, np.ndarray) else 0.0
+    return (row_pitch_m * tan_az_delta) / m_per_deg_lon
+
+
+def _table_lon_bounds(corners) -> tuple[float, float] | None:
+    if not corners or len(corners) < 4:
+        return None
+    return min(corners[0][0], corners[3][0]), max(corners[1][0], corners[2][0])
+
+
+def has_south_rack_obstruction(
+    center_lon: float,
+    center_lat: float,
+    row_pitch_m: float,
+    tan_az_delta,
+    south_tables,
+):
+    """Return whether a ray from (center_lon, center_lat) intersects any south_table longitude span."""
+    delta_lon = compute_south_delta_lon(center_lat, row_pitch_m, tan_az_delta)
+    lon_source = center_lon - delta_lon
+    if isinstance(lon_source, np.ndarray):
+        obs = np.zeros(lon_source.shape, dtype=bool)
+        for st in south_tables:
+            bounds = _table_lon_bounds(st.corners_wgs84)
+            if bounds is None:
+                continue
+            obs |= (lon_source >= bounds[0]) & (lon_source <= bounds[1])
+        return obs
+    for st in south_tables:
+        bounds = _table_lon_bounds(st.corners_wgs84)
+        if bounds is None:
+            continue
+        if bounds[0] <= lon_source <= bounds[1]:
+            return True
+    return False
 
 
 CELL_ROWS = 12

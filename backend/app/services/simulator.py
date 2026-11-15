@@ -33,6 +33,7 @@ from .pv.self_shading import (
     CELL_ROWS,
     CELL_COLS,
     calculate_array_self_shading_fraction,
+    has_south_rack_obstruction,
     calculate_row_self_shading_fraction,
     calculate_module_rack_sky_view_factor,
     compute_split_halfcut_module_losses,
@@ -199,17 +200,13 @@ def _optimize_row_tilts(
     for m_idx, mod in enumerate(discrete_modules):
         if mod["is_front_row"] or not mod["south_tables"]:
             continue
-        m_per_deg_lon = 111320.0 * np.cos(np.radians(mod["center_lat"]))
-        delta_lon = (row_pitch_m * tan_az_delta) / m_per_deg_lon if m_per_deg_lon > 0 else np.zeros(n_t)
-        lon_src = mod["center_lon"] - delta_lon
-        obs = np.zeros(n_t, dtype=bool)
-        for st in mod["south_tables"]:
-            sc = st.corners_wgs84
-            if not sc or len(sc) < 4:
-                continue
-            st_min = min(sc[0][0], sc[3][0])
-            st_max = max(sc[1][0], sc[2][0])
-            obs |= (lon_src >= st_min) & (lon_src <= st_max)
+        obs = has_south_rack_obstruction(
+            mod["center_lon"],
+            mod["center_lat"],
+            row_pitch_m,
+            tan_az_delta,
+            mod["south_tables"],
+        )
         south_obs_mat[m_idx] = obs & (cos_az_delta > 0.001) & (el_arr > 0.0)
 
     # Group module indices by row_index
@@ -1062,22 +1059,18 @@ class SimulationOrchestrator:
                         else:
                             canopy_tau_cells = np.ones((CELL_ROWS, CELL_COLS), dtype=np.float64)
 
-                        has_obstruction = False
-                        if rack_self_frac > 1e-4 and (not mod["is_front_row"]) and mod["south_tables"]:
-                            delta_x_m = layout.row_pitch_m * tan_az_delta
-                            m_per_deg_lon = 111320.0 * np.cos(np.radians(mod["center_lat"]))
-                            delta_lon = delta_x_m / m_per_deg_lon if m_per_deg_lon > 0 else 0.0
-                            lon_source = mod["center_lon"] - delta_lon
-
-                            for st in mod["south_tables"]:
-                                sc = st.corners_wgs84
-                                if not sc or len(sc) < 4:
-                                    continue
-                                st_min = min(sc[0][0], sc[3][0])
-                                st_max = max(sc[1][0], sc[2][0])
-                                if st_min <= lon_source <= st_max:
-                                    has_obstruction = True
-                                    break
+                        has_obstruction = (
+                            rack_self_frac > 1e-4
+                            and (not mod["is_front_row"])
+                            and bool(mod["south_tables"])
+                            and has_south_rack_obstruction(
+                                mod["center_lon"],
+                                mod["center_lat"],
+                                layout.row_pitch_m,
+                                tan_az_delta,
+                                mod["south_tables"],
+                            )
+                        )
 
                         geo_frac, self_frac, canopy_frac, direct_frac = compute_split_halfcut_module_losses(
                             terrain_lit_cells=terrain_lit_cells,

@@ -59,14 +59,7 @@ void raymarch_terrain_kernel(
         float dr = r_f - (float)r0_i;
         float dc = c_f - (float)c0_i;
 
-        float z00 = elevation[r0_i * W + c0_i];
-        float z01 = elevation[r0_i * W + c1_i];
-        float z10 = elevation[r1_i * W + c0_i];
-        float z11 = elevation[r1_i * W + c1_i];
-
-        float z_top = (1.0f - dc) * z00 + dc * z01;
-        float z_bottom = (1.0f - dc) * z10 + dc * z11;
-        float z_terrain = (1.0f - dr) * z_top + dr * z_bottom;
+        float z_terrain = sample_bilinear(elevation, W, r0_i, c0_i, dr, dc);
 
         float z_ray = z0 + ((float)s * step_dist) * tan_alpha;
 
@@ -137,14 +130,7 @@ void raymarch_dual_surface_kernel(
         float dr = r_f - (float)r0_i;
         float dc = c_f - (float)c0_i;
 
-        // Bilinear sample DTM
-        float z_dtm_00 = dtm[r0_i * W + c0_i];
-        float z_dtm_01 = dtm[r0_i * W + c1_i];
-        float z_dtm_10 = dtm[r1_i * W + c0_i];
-        float z_dtm_11 = dtm[r1_i * W + c1_i];
-        float z_dtm_top = (1.0f - dc) * z_dtm_00 + dc * z_dtm_01;
-        float z_dtm_bot = (1.0f - dc) * z_dtm_10 + dc * z_dtm_11;
-        float z_dtm_sampled = (1.0f - dr) * z_dtm_top + dr * z_dtm_bot;
+        float z_dtm_sampled = sample_bilinear(dtm, W, r0_i, c0_i, dr, dc);
 
         float z_ray = z0 + ((float)s * step_dist) * tan_alpha;
 
@@ -154,15 +140,7 @@ void raymarch_dual_surface_kernel(
             is_canopy_unshaded = 0;
             break;
         } else if (include_tree_canopy != 0) {
-            // Bilinear sample DSM
-            float z_dsm_00 = dsm[r0_i * W + c0_i];
-            float z_dsm_01 = dsm[r0_i * W + c1_i];
-            float z_dsm_10 = dsm[r1_i * W + c0_i];
-            float z_dsm_11 = dsm[r1_i * W + c1_i];
-            float z_dsm_top = (1.0f - dc) * z_dsm_00 + dc * z_dsm_01;
-            float z_dsm_bot = (1.0f - dc) * z_dsm_10 + dc * z_dsm_11;
-            float z_dsm_sampled = (1.0f - dr) * z_dsm_top + dr * z_dsm_bot;
-            z_dsm_sampled = fmaxf(z_dtm_sampled, z_dsm_sampled);
+            float z_dsm_sampled = fmaxf(z_dtm_sampled, sample_bilinear(dsm, W, r0_i, c0_i, dr, dc));
 
             if (z_dsm_sampled > z_ray) {
                 // Blocked by tree canopy or elevated structure
@@ -238,13 +216,7 @@ void raymarch_ground_and_top_kernel(
         float dr = r_f - (float)r0_i;
         float dc = c_f - (float)c0_i;
 
-        float z_dtm_00 = dtm[r0_i * W + c0_i];
-        float z_dtm_01 = dtm[r0_i * W + c1_i];
-        float z_dtm_10 = dtm[r1_i * W + c0_i];
-        float z_dtm_11 = dtm[r1_i * W + c1_i];
-        float z_dtm_top = (1.0f - dc) * z_dtm_00 + dc * z_dtm_01;
-        float z_dtm_bot = (1.0f - dc) * z_dtm_10 + dc * z_dtm_11;
-        float z_dtm_sampled = (1.0f - dr) * z_dtm_top + dr * z_dtm_bot;
+        float z_dtm_sampled = sample_bilinear(dtm, W, r0_i, c0_i, dr, dc);
 
         float step_rise = ((float)s * step_dist) * tan_alpha;
         float z_ray_g = z_base + step_rise;
@@ -262,13 +234,7 @@ void raymarch_ground_and_top_kernel(
             g_c_unshaded = 0;
         }
 
-        float z_dsm_00 = dsm[r0_i * W + c0_i];
-        float z_dsm_01 = dsm[r0_i * W + c1_i];
-        float z_dsm_10 = dsm[r1_i * W + c0_i];
-        float z_dsm_11 = dsm[r1_i * W + c1_i];
-        float z_dsm_top = (1.0f - dc) * z_dsm_00 + dc * z_dsm_01;
-        float z_dsm_bot = (1.0f - dc) * z_dsm_10 + dc * z_dsm_11;
-        float z_dsm_sampled = fmaxf(z_dtm_sampled, (1.0f - dr) * z_dsm_top + dr * z_dsm_bot);
+        float z_dsm_sampled = fmaxf(z_dtm_sampled, sample_bilinear(dsm, W, r0_i, c0_i, dr, dc));
 
         if (g_t_unshaded != 0 && z_dsm_sampled > z_ray_g) {
             g_c_unshaded = 0;
@@ -352,12 +318,7 @@ void compute_svf_kernel(
             float dr = r_f - (float)r0_i;
             float dc = c_f - (float)c0_i;
 
-            float z_dtm_00 = dtm[r0_i * W + c0_i];
-            float z_dtm_01 = dtm[r0_i * W + c1_i];
-            float z_dtm_10 = dtm[r1_i * W + c0_i];
-            float z_dtm_11 = dtm[r1_i * W + c1_i];
-            float z_dtm_sampled = (1.0f - dr) * ((1.0f - dc) * z_dtm_00 + dc * z_dtm_01)
-                                + dr * ((1.0f - dc) * z_dtm_10 + dc * z_dtm_11);
+            float z_dtm_sampled = sample_bilinear(dtm, W, r0_i, c0_i, dr, dc);
 
             float dist = (float)s * step_dist;
             float tan_t = (z_dtm_sampled - z0) / dist;
@@ -369,13 +330,7 @@ void compute_svf_kernel(
             }
 
             if (include_tree_canopy != 0) {
-                float z_dsm_00 = dsm[r0_i * W + c0_i];
-                float z_dsm_01 = dsm[r0_i * W + c1_i];
-                float z_dsm_10 = dsm[r1_i * W + c0_i];
-                float z_dsm_11 = dsm[r1_i * W + c1_i];
-                float z_dsm_sampled = (1.0f - dr) * ((1.0f - dc) * z_dsm_00 + dc * z_dsm_01)
-                                    + dr * ((1.0f - dc) * z_dsm_10 + dc * z_dsm_11);
-                z_dsm_sampled = fmaxf(z_dtm_sampled, z_dsm_sampled);
+                float z_dsm_sampled = fmaxf(z_dtm_sampled, sample_bilinear(dsm, W, r0_i, c0_i, dr, dc));
 
                 float tan_s = (z_dsm_sampled - z0) / dist;
                 if (tan_s > max_tan_dsm) {
