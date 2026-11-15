@@ -38,11 +38,12 @@ dist/
 dist-ssr/
 *.local
 
-# GIS & Elevation Rasters (do not track heavy raw TIFs)
+# GIS & Elevation Rasters (do not track heavy raw TIFs or runtime cache index)
 data/dtm/*.tif
 data/dtm/*.TIF
 data/dtm/*.tiff
 data/dtm/*.TIFF
+data/dtm/manifest.json
 data/dtm/tmp/
 data/dsm/*.tif
 data/dsm/*.TIF
@@ -50,6 +51,10 @@ data/dsm/*.tiff
 data/dsm/*.TIFF
 data/dsm/tmp/
 *.vrt
+
+# Local cluster & deployment overrides
+k8s/luxterra.yaml
+scripts/deploy.sh
 
 # IDE & OS
 .vscode/

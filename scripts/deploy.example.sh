@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REGISTRY="127.0.0.1:30500"
+REGISTRY="${REGISTRY:-localhost:5000}"
 IMAGE="${REGISTRY}/luxterra:latest"
-NAMESPACE="webapps"
+NAMESPACE="${NAMESPACE:-webapps}"
+MANIFEST="${MANIFEST:-k8s/luxterra.yaml}"
+CONTAINER_CLI="${CONTAINER_CLI:-docker}"
 
 echo "==> Building container image ${IMAGE}..."
-podman build -t "${IMAGE}" .
+"${CONTAINER_CLI}" build -t "${IMAGE}" .
 
-echo "==> Pushing image to local k3s registry..."
-podman push --tls-verify=false "${IMAGE}"
+echo "==> Pushing image to registry ${REGISTRY}..."
+"${CONTAINER_CLI}" push "${IMAGE}"
 
-echo "==> Applying Kubernetes manifests to namespace '${NAMESPACE}'..."
-kubectl apply -f k8s/luxterra.yaml
+echo "==> Applying Kubernetes manifests (${MANIFEST}) to namespace '${NAMESPACE}'..."
+kubectl apply -f "${MANIFEST}"
 
 echo "==> Restarting deployment to pull latest image..."
 kubectl rollout restart deployment/luxterra -n "${NAMESPACE}"

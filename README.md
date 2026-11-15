@@ -54,10 +54,12 @@ cd frontend
 npm test
 ```
 
-## Container & Kubernetes Deployment (`webapps` Namespace)
-Build the multi-stage container image, push it to the local k3s registry (`127.0.0.1:30500`), and roll out to the `webapps` namespace with NVIDIA GPU runtime access, Let's Encrypt TLS (`cert-manager`), and Google OAuth forwardAuth (`oauth2-proxy`):
+## Container & Kubernetes Deployment
+Copy the example deployment templates and customize them for your cluster, registry, host paths, and ingress domain:
 ```bash
+cp k8s/luxterra.example.yaml k8s/luxterra.yaml
+cp scripts/deploy.example.sh scripts/deploy.sh
+chmod +x scripts/deploy.sh
 ./scripts/deploy.sh
 ```
-- **External URL:** `https://luxterra.alfok.ca`
-- **Local LAN URL:** `http://luxterra.local`
+Both `k8s/luxterra.yaml` and `scripts/deploy.sh` are gitignored so local cluster details stay out of version control.

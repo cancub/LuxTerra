@@ -18,11 +18,11 @@ spec:
         app: luxterra
     spec:
       nodeSelector:
-        kubernetes.io/hostname: delores
+        kubernetes.io/hostname: <your-gpu-node>
       runtimeClassName: nvidia
       containers:
         - name: luxterra
-          image: 127.0.0.1:30500/luxterra:latest
+          image: <your-registry>/luxterra:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
@@ -59,11 +59,11 @@ spec:
       volumes:
         - name: dtm-cache
           hostPath:
-            path: /home/alf/Code/dsh-sandbox/workspace/LuxTerra/data/dtm
+            path: /path/to/LuxTerra/data/dtm
             type: DirectoryOrCreate
         - name: dsm-cache
           hostPath:
-            path: /home/alf/Code/dsh-sandbox/workspace/LuxTerra/data/dsm
+            path: /path/to/LuxTerra/data/dsm
             type: DirectoryOrCreate
 ---
 apiVersion: v1
@@ -91,15 +91,16 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
-    traefik.ingress.kubernetes.io/router.middlewares: webapps-oauth-errors@kubernetescrd,webapps-oauth-auth@kubernetescrd
+    # Optional: attach forwardAuth middleware (e.g., oauth2-proxy)
+    # traefik.ingress.kubernetes.io/router.middlewares: <namespace>-oauth-errors@kubernetescrd,<namespace>-oauth-auth@kubernetescrd
 spec:
   ingressClassName: traefik
   tls:
     - hosts:
-        - luxterra.alfok.ca
+        - luxterra.example.com
       secretName: luxterra-tls
   rules:
-    - host: luxterra.alfok.ca
+    - host: luxterra.example.com
       http:
         paths:
           - path: /
@@ -109,59 +110,3 @@ spec:
                 name: luxterra
                 port:
                   number: 80
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: luxterra-local-ingress
-  namespace: webapps
-  annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
-spec:
-  ingressClassName: traefik
-  rules:
-    - host: luxterra.local
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: luxterra
-                port:
-                  number: 80
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: luxterra-oauth2-bypass-ingress
-  namespace: webapps
-  annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
-spec:
-  ingressClassName: traefik
-  tls:
-    - hosts:
-        - luxterra.alfok.ca
-      secretName: luxterra-tls
-  rules:
-    - host: luxterra.alfok.ca
-      http:
-        paths:
-          - path: /oauth2
-            pathType: Prefix
-            backend:
-              service:
-                name: oauth2-proxy
-                port:
-                  number: 4180
-    - host: luxterra.local
-      http:
-        paths:
-          - path: /oauth2
-            pathType: Prefix
-            backend:
-              service:
-                name: oauth2-proxy
-                port:
-                  number: 4180
