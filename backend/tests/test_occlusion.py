@@ -533,7 +533,7 @@ def test_stacked_canopy_beer_lambert_equivalence():
     3. Quantization maps 0 shade -> 0, single tree -> 1..6, and saturation -> 7.
     4. CPU and GPU path-length ray-marchers match closely.
     """
-    from app.services.occlusion.ray_math import (
+    from backend.app.services.occlusion.ray_math import (
         compute_canopy_transmittance_grid,
         quantize_canopy_shade_levels,
     )
