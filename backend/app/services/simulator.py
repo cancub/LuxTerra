@@ -205,67 +205,154 @@ def _optimize_row_tilts(
     for m_idx, mod in enumerate(discrete_modules):
         mod_indices_by_row.setdefault(mod["table_row_index"], []).append(m_idx)
 
-    row_tilts = {}
-    slant_h = float(layout.tables[0].slant_height_m or 4.56) if layout.tables else 4.56
-
-    def eval_row_energy(r_idx: int, theta_deg: float, south_tilt_deg: Optional[float]) -> float:
+    # Precompute per-row vectorized aggregates for fast joint DP + coordinate refinement
+    row_agg = {}
+    for r_idx in distinct_rows:
         m_idxs = mod_indices_by_row.get(r_idx, [])
         if not m_idxs:
+            continue
+        bot_obs_idxs = [m for m in m_idxs if not discrete_modules[m]["is_top"] and discrete_modules[m]["has_south_rack"]]
+        bot_free_idxs = [m for m in m_idxs if not discrete_modules[m]["is_top"] and not discrete_modules[m]["has_south_rack"]]
+        top_obs_idxs = [m for m in m_idxs if discrete_modules[m]["is_top"] and discrete_modules[m]["has_south_rack"]]
+        top_free_idxs = [m for m in m_idxs if discrete_modules[m]["is_top"] and not discrete_modules[m]["has_south_rack"]]
+
+        bot_all = bot_obs_idxs + bot_free_idxs
+        top_all = top_obs_idxs + top_free_idxs
+
+        tau_bot_all = np.sum(tau_tc[bot_all], axis=0) if bot_all else np.zeros(n_t)
+        tau_bot_obs = np.sum(np.where(south_obs_mat[bot_all], tau_tc[bot_all], 0.0), axis=0) if bot_all else np.zeros(n_t)
+        tau_top_all = np.sum(tau_tc[top_all], axis=0) if top_all else np.zeros(n_t)
+        tau_top_obs = np.sum(np.where(south_obs_mat[top_all], tau_tc[top_all], 0.0), axis=0) if top_all else np.zeros(n_t)
+
+        def _svf_arr(idxs):
+            if not idxs:
+                return np.empty(0, dtype=np.float64)
+            return np.array([float(svf_grid[discrete_modules[m]["row_idx"], discrete_modules[m]["col_idx"]]) for m in idxs], dtype=np.float64)
+
+        row_agg[r_idx] = {
+            "tau_bot_all": tau_bot_all,
+            "tau_bot_obs": tau_bot_obs,
+            "tau_top_all": tau_top_all,
+            "tau_top_obs": tau_top_obs,
+            "svf_bot_obs": _svf_arr(bot_obs_idxs),
+            "svf_bot_free": _svf_arr(bot_free_idxs),
+            "svf_top_obs": _svf_arr(top_obs_idxs),
+            "svf_top_free": _svf_arr(top_free_idxs),
+        }
+
+    slant_h = float(layout.tables[0].slant_height_m or 4.56) if layout.tables else 4.56
+    inv_tan_alpha_p = np.where(tan_alpha_p > 1e-5, 1.0 / np.maximum(tan_alpha_p, 1e-6), 0.0)
+    valid_sun = tan_alpha_p > 1e-5
+
+    def eval_row_energy(r_idx: int, theta_deg: float, south_tilt_deg: Optional[float]) -> float:
+        agg = row_agg.get(r_idx)
+        if agg is None:
             return 0.0
         aoi = pvlib.irradiance.aoi(theta_deg, 180.0, zen_arr, az_arr)
         cos_aoi = np.maximum(0.0, np.cos(np.radians(aoi)))
         poa_dir = dni_arr * cos_aoi
         tilt_rad = np.radians(theta_deg)
-        poa_dif = dhi_arr * 0.5 * (1.0 + np.cos(tilt_rad))
+        poa_dif_sum = float(np.sum(dhi_arr * 0.5 * (1.0 + np.cos(tilt_rad))))
 
-        # Vectorized self-shading fraction over daylight timesteps for this (theta, south_tilt)
         if south_tilt_deg is not None:
             south_rad = np.radians(south_tilt_deg)
             d_gap = row_pitch_m - slant_h * np.cos(south_rad)
             h_rise = slant_h * np.sin(south_rad)
-            s_y = np.where(tan_alpha_p > 1e-5, h_rise / np.maximum(tan_alpha_p, 1e-6), 1e9)
-            denom = np.cos(tilt_rad) + (np.sin(tilt_rad) / np.maximum(tan_alpha_p, 1e-6))
+            s_y = h_rise * inv_tan_alpha_p
+            denom = np.cos(tilt_rad) + np.sin(tilt_rad) * inv_tan_alpha_p
             rack_f = np.where(
-                (tan_alpha_p > 1e-5) & (s_y > d_gap) & (denom > 1e-5),
+                valid_sun & (s_y > d_gap) & (denom > 1e-5),
                 np.clip(((s_y - d_gap) / np.maximum(denom, 1e-6)) / slant_h, 0.0, 1.0),
                 0.0
             )
             bot_f = np.clip(rack_f * 2.0, 0.0, 1.0)
             top_f = np.clip((rack_f - 0.5) * 2.0, 0.0, 1.0)
         else:
-            bot_f = np.zeros(n_t, dtype=np.float64)
-            top_f = np.zeros(n_t, dtype=np.float64)
+            bot_f = 0.0
+            top_f = 0.0
 
-        total_e = 0.0
-        for m_idx in m_idxs:
-            mod = discrete_modules[m_idx]
-            f_mod = top_f if mod["is_top"] else bot_f
-            unblocked = np.where(south_obs_mat[m_idx], 1.0 - f_mod, 1.0)
-            dir_e = float(np.sum(poa_dir * unblocked * tau_tc[m_idx]))
-            rack_svf = calculate_module_rack_sky_view_factor(
+        dir_e = float(
+            np.sum(poa_dir * (agg["tau_bot_all"] - bot_f * agg["tau_bot_obs"] + agg["tau_top_all"] - top_f * agg["tau_top_obs"]))
+        )
+
+        dif_e = 0.0
+        for is_top, has_obs, svf_arr in (
+            (False, True, agg["svf_bot_obs"]),
+            (False, False, agg["svf_bot_free"]),
+            (True, True, agg["svf_top_obs"]),
+            (True, False, agg["svf_top_free"]),
+        ):
+            if svf_arr.size == 0:
+                continue
+            r_svf = calculate_module_rack_sky_view_factor(
                 row_pitch_m=row_pitch_m,
                 slant_height_m=slant_h,
                 tilt_deg=theta_deg,
-                is_top_module=mod["is_top"],
-                has_south_obstruction=mod["has_south_rack"],
+                is_top_module=is_top,
+                has_south_obstruction=has_obs,
                 south_tilt_deg=south_tilt_deg
             )
-            mod_svf = float(np.clip(float(svf_grid[mod["row_idx"], mod["col_idx"]]) * rack_svf, 0.05, 1.0))
-            dif_e = float(np.sum(poa_dif * mod_svf))
-            total_e += dir_e + dif_e
-        return total_e
+            dif_e += poa_dif_sum * float(np.sum(np.clip(svf_arr * r_svf, 0.05, 1.0)))
 
-    for pos, r_idx in enumerate(distinct_rows):
-        south_tilt = row_tilts[distinct_rows[pos - 1]] if pos > 0 else None
-        # Coarse sweep 0..84 deg in 2 deg steps, then 0.2 deg refinement around peak
-        coarse_grid = np.arange(0.0, 86.0, 2.0)
-        best_t = float(max(coarse_grid, key=lambda t: eval_row_energy(r_idx, float(t), south_tilt)))
-        fine_lo = max(0.0, best_t - 2.0)
-        fine_hi = min(85.0, best_t + 2.0)
-        fine_grid = np.arange(fine_lo, fine_hi + 0.05, 0.2)
-        best_t = float(max(fine_grid, key=lambda t: eval_row_energy(r_idx, float(t), south_tilt)))
-        row_tilts[r_idx] = round(best_t, 1)
+        return dir_e + dif_e
 
+    # 1. Joint Global Optimization via Dynamic Programming (Viterbi) on 2-deg coarse grid (0..84 deg)
+    coarse_grid = [float(t) for t in np.arange(0.0, 86.0, 2.0)]
+    n_g = len(coarse_grid)
+    n_r = len(distinct_rows)
+
+    dp = np.zeros((n_r, n_g), dtype=np.float64)
+    back = np.zeros((n_r, n_g), dtype=np.intp)
+
+    r0 = distinct_rows[0]
+    for j, th in enumerate(coarse_grid):
+        dp[0, j] = eval_row_energy(r0, th, None)
+
+    for k in range(1, n_r):
+        rk = distinct_rows[k]
+        for j, th in enumerate(coarse_grid):
+            best_val = -1.0
+            best_i = 0
+            for i, s_th in enumerate(coarse_grid):
+                val = dp[k - 1, i] + eval_row_energy(rk, th, s_th)
+                if val > best_val:
+                    best_val = val
+                    best_i = i
+            dp[k, j] = best_val
+            back[k, j] = best_i
+
+    best_idx = int(np.argmax(dp[n_r - 1]))
+    opt_tilts = [0.0] * n_r
+    for k in range(n_r - 1, -1, -1):
+        opt_tilts[k] = coarse_grid[best_idx]
+        if k > 0:
+            best_idx = int(back[k, best_idx])
+
+    # 2. Coordinate Refinement (2 passes, 0.2 deg step) maximizing total array energy
+    for _ in range(2):
+        for k in range(n_r):
+            rk = distinct_rows[k]
+            s_th = opt_tilts[k - 1] if k > 0 else None
+            n_th = opt_tilts[k + 1] if k + 1 < n_r else None
+            rk_next = distinct_rows[k + 1] if k + 1 < n_r else None
+
+            fine_lo = max(0.0, opt_tilts[k] - 2.0)
+            fine_hi = min(85.0, opt_tilts[k] + 2.0)
+            fine_grid = np.arange(fine_lo, fine_hi + 0.05, 0.2)
+
+            best_t = opt_tilts[k]
+            best_e = -1.0
+            for t_cand in fine_grid:
+                tc = float(t_cand)
+                e_pair = eval_row_energy(rk, tc, s_th)
+                if rk_next is not None and n_th is not None:
+                    e_pair += eval_row_energy(rk_next, n_th, tc)
+                if e_pair > best_e:
+                    best_e = e_pair
+                    best_t = tc
+            opt_tilts[k] = best_t
+
+    row_tilts = {distinct_rows[k]: round(opt_tilts[k], 1) for k in range(n_r)}
     return row_tilts
 
 
