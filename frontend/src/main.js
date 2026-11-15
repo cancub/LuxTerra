@@ -72,6 +72,20 @@ if (appContainer) {
 
     <!-- Bottom Timeline Dock -->
     <div class="bottom-dock" id="bottom-dock">
+      <div class="mobile-dock-header" id="mobile-dock-header">
+        <div class="mobile-dock-handle" aria-hidden="true"></div>
+        <div class="mobile-dock-summary-row">
+          <div class="mobile-kpi-group">
+            <span class="mobile-kpi-item">AC: <strong id="mobile-kpi-ac" class="mobile-kpi-ac">0.0 kW</strong></span>
+            <span class="mobile-kpi-sep">|</span>
+            <span class="mobile-kpi-item">Daily: <strong id="mobile-kpi-daily" class="mobile-kpi-daily">0.0 kWh</strong></span>
+          </div>
+          <div class="mobile-dock-actions">
+            <button id="mobile-date-pill-btn" class="btn btn-sm mobile-date-pill" type="button" title="Select Simulation Date">Jun 21 ▾</button>
+            <button id="mobile-dock-expand-btn" class="btn btn-sm mobile-dock-expand-btn" type="button" aria-expanded="false" title="Expand Telemetry & Power Curve">⌃</button>
+          </div>
+        </div>
+      </div>
       <div class="energy-metrics-mount" id="energy-metrics-mount"></div>
       <div class="timeline-cluster" id="timeline-cluster">
         <div id="timeline-scrubber-mount" style="width: 100%; display: flex; justify-content: center;"></div>
@@ -222,12 +236,39 @@ if (appContainer) {
     }
   };
 
+  const bottomDock = document.getElementById('bottom-dock');
+  const mobileKpiAc = document.getElementById('mobile-kpi-ac');
+  const mobileKpiDaily = document.getElementById('mobile-kpi-daily');
+  const mobileDatePillBtn = document.getElementById('mobile-date-pill-btn');
+  const mobileDockExpandBtn = document.getElementById('mobile-dock-expand-btn');
+
+  const syncMobileKpis = () => {
+    if (!solarDashboard) return;
+    if (mobileKpiAc && solarDashboard.subAcPowerVal) {
+      mobileKpiAc.textContent = solarDashboard.subAcPowerVal.textContent || '0.0 kW';
+    }
+    if (mobileKpiDaily && solarDashboard.kwhTotal) {
+      const kwh = solarDashboard.kwhTotal.textContent || '0.0';
+      mobileKpiDaily.textContent = `${kwh} kWh`;
+    }
+  };
+
+  if (mobileDockExpandBtn && bottomDock) {
+    mobileDockExpandBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const expanded = bottomDock.classList.toggle('mobile-expanded');
+      mobileDockExpandBtn.setAttribute('aria-expanded', String(expanded));
+      mobileDockExpandBtn.textContent = expanded ? '⌄' : '⌃';
+    });
+  }
+
   const timeScrubber = new TimeScrubber(timelineScrubberMount, (index, metric) => {
     if (playbackEngine) {
       playbackEngine.setCurrentStep(index);
     }
     if (solarDashboard) {
       solarDashboard.updateTelemetry(metric, index);
+      syncMobileKpis();
     }
 
     if (currentSimulationData) {
@@ -306,6 +347,7 @@ if (appContainer) {
     const scaleFactor = gcrRatio * effRatio * prRatio;
 
     solarDashboard.setScaleFactor(scaleFactor);
+    syncMobileKpis();
   }, { isModal: true });
 
   const toastContainer = document.getElementById('toast-container');
@@ -386,6 +428,7 @@ if (appContainer) {
     shadowCanvasLayer.setPatchBounds(data.metadata.patch_bounds_wgs84);
     solarPanel3DLayer.setLayout(data.layout);
     solarDashboard.setSimulationData(data, 1.0);
+    syncMobileKpis();
     timeScrubber.setTimeseries(data.timeseries, data.daily_summary);
     playbackEngine.setSimulationContext(data.timeseries.length, data.metadata.time_step_minutes);
     lastSimulationKey = simKey;
@@ -613,6 +656,13 @@ if (appContainer) {
     shapeToolbar?.refreshModificationState();
     triggerSimulation();
   });
+  dateSelector.setMobilePillButton(mobileDatePillBtn);
+  if (mobileDatePillBtn) {
+    mobileDatePillBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dateSelector.toggleMobilePopover();
+    });
+  }
 
   const boxDrawer = new BoxDrawer(map, null, (selection) => {
     if (selection && selection.bbox) {
@@ -650,6 +700,7 @@ if (appContainer) {
         timeScrubber.setTimeseries([]);
       }
       solarDashboard.setSimulationData(null);
+      syncMobileKpis();
     }
   });
 
@@ -736,7 +787,8 @@ if (appContainer) {
       <path d="M20 21l-3-4"></path>
       <path d="M12 17v4"></path>
     </svg>
-    <span>3D Panels</span>
+    <span class="panels-label-full">3D Panels</span>
+    <span class="panels-label-short">3D</span>
   `;
   panelsToggleBtn.addEventListener('click', () => {
     const isNowVisible = !solarPanel3DLayer.isVisible();

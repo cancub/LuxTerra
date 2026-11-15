@@ -1594,3 +1594,231 @@ input:focus, select:focus {
   font-weight: 600;
   color: var(--text-secondary);
 }
+
+/* Mobile Compact Dock & Controls (hidden on desktop) */
+.mobile-dock-header,
+.cal-mobile-close,
+.panels-label-short {
+  display: none;
+}
+
+.panels-label-full {
+  display: inline;
+}
+
+@media (max-width: 768px) {
+  .panels-label-full {
+    display: none;
+  }
+
+  .panels-label-short {
+    display: inline;
+    font-weight: 700;
+  }
+
+  .top-bar {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .top-left-column {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .top-command-bar {
+    width: 100%;
+    justify-content: space-between;
+    padding: 5px 8px;
+    gap: 4px;
+    box-sizing: border-box;
+  }
+
+  .top-right-controls {
+    align-self: flex-end;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+
+  #panels-toggle-btn {
+    padding: 0 10px;
+    height: 34px;
+    gap: 5px;
+  }
+
+  .maplibregl-ctrl-top-right {
+    top: 146px !important;
+    right: 12px !important;
+  }
+
+  .maplibregl-ctrl-zoom-in,
+  .maplibregl-ctrl-zoom-out {
+    display: none !important;
+  }
+
+  .maplibregl-ctrl-bottom-left,
+  .maplibregl-ctrl-bottom-right {
+    bottom: 132px !important;
+  }
+
+  .cal-mobile-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .date-selector-card {
+    display: none !important;
+  }
+
+  .date-selector-card.mobile-open {
+    display: flex !important;
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1600;
+    width: min(300px, calc(100vw - 24px)) !important;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.78);
+  }
+
+  .bottom-dock {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    width: auto;
+    transform: none;
+    gap: 6px;
+    align-items: stretch;
+    pointer-events: none;
+  }
+
+  .bottom-dock.mobile-expanded {
+    max-height: 74vh;
+    overflow-y: auto;
+    pointer-events: auto;
+    padding-bottom: 4px;
+  }
+
+  .mobile-dock-header {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    pointer-events: auto;
+    background: var(--bg-card);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-card);
+    border-radius: 14px 14px 8px 8px;
+    padding: 6px 12px 8px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  }
+
+  .mobile-dock-handle {
+    width: 34px;
+    height: 3px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.45);
+    margin: 0 auto;
+  }
+
+  .mobile-dock-summary-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .mobile-kpi-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    min-width: 0;
+  }
+
+  .mobile-kpi-item {
+    white-space: nowrap;
+  }
+
+  .mobile-kpi-ac {
+    color: #38bdf8;
+    font-family: var(--font-mono);
+    font-weight: 700;
+  }
+
+  .mobile-kpi-daily {
+    color: #10b981;
+    font-family: var(--font-mono);
+    font-weight: 700;
+  }
+
+  .mobile-kpi-sep {
+    color: rgba(148, 163, 184, 0.35);
+  }
+
+  .mobile-dock-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .mobile-date-pill {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    border-radius: 8px;
+    background: rgba(30, 41, 59, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    color: var(--text-primary);
+  }
+
+  .mobile-dock-expand-btn {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    font-size: 0.9rem;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .bottom-dock:not(.mobile-expanded) .energy-metrics-mount {
+    display: none;
+  }
+
+  .bottom-dock:not(.mobile-expanded) .scrubber-power-curve-mount {
+    display: none;
+  }
+
+  .bottom-dock:not(.mobile-expanded) .timeline-ticks {
+    display: none !important;
+  }
+
+  .timeline-panel {
+    padding: 10px 12px !important;
+    gap: 8px !important;
+    border-radius: 8px 8px 14px 14px !important;
+  }
+
+  .timeline-header {
+    justify-content: space-between !important;
+    gap: 8px !important;
+  }
+
+  .time-readout {
+    font-size: 1.02rem !important;
+  }
+
+  .shape-toolbar-card,
+  .shape-edit-card {
+    max-width: calc(100vw - 74px);
+  }
+}

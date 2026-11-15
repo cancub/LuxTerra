@@ -31,7 +31,10 @@ export class DateSelector {
       <div class="calendar-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
         <button class="glaze-nav-btn cal-prev-month" title="Previous Month" style="padding: 2px 8px; height: 26px;">‹</button>
         <span class="cal-month-year" style="font-weight: 700; font-size: 0.88rem; color: var(--text-primary);">June 2026</span>
-        <button class="glaze-nav-btn cal-next-month" title="Next Month" style="padding: 2px 8px; height: 26px;">›</button>
+        <div style="display: flex; align-items: center; gap: 4px;">
+          <button class="glaze-nav-btn cal-next-month" title="Next Month" style="padding: 2px 8px; height: 26px;">›</button>
+          <button class="glaze-nav-btn cal-mobile-close" title="Close Calendar" aria-label="Close Calendar" style="padding: 2px 7px; height: 26px;">✕</button>
+        </div>
       </div>
 
       <div class="calendar-weekdays" style="display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 0.7rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">
@@ -84,8 +87,35 @@ export class DateSelector {
       this.setDate(`${y}-${m}-${d}`);
     });
 
+    this.wrapper.querySelector('.cal-mobile-close')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.closeMobilePopover();
+    });
+
     this.renderCalendarDays();
     this.container.appendChild(this.wrapper);
+  }
+
+  getFormattedShortDate() {
+    const shortMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const parts = (this.currentDate || '').split('-').map(Number);
+    if (parts.length !== 3 || parts.some(Number.isNaN)) return this.currentDate;
+    return `${shortMonths[parts[1] - 1] || 'Jun'} ${parts[2]}`;
+  }
+
+  setMobilePillButton(btn) {
+    this.mobilePillBtn = btn || null;
+    if (this.mobilePillBtn) {
+      this.mobilePillBtn.textContent = `${this.getFormattedShortDate()} ▾`;
+    }
+  }
+
+  toggleMobilePopover() {
+    this.wrapper.classList.toggle('mobile-open');
+  }
+
+  closeMobilePopover() {
+    this.wrapper.classList.remove('mobile-open');
   }
 
   shiftMonth(delta) {
@@ -154,6 +184,7 @@ export class DateSelector {
   }
 
   setDate(newDate, triggerCallback = true) {
+    this.closeMobilePopover();
     if (this.currentDate === newDate) return;
     this.currentDate = newDate;
 
@@ -161,6 +192,9 @@ export class DateSelector {
     this.viewYear = y;
     this.viewMonth = m - 1;
     this.renderCalendarDays();
+    if (this.mobilePillBtn) {
+      this.mobilePillBtn.textContent = `${this.getFormattedShortDate()} ▾`;
+    }
 
     if (triggerCallback) {
       this.onDateChange(newDate);
