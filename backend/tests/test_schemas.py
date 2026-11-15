@@ -102,3 +102,49 @@ def test_simulate_request_invalid_efficiency():
             date="2026-06-21",
             module_efficiency=0.90 # > 0.40 max limit
         )
+
+
+def test_simulate_request_malformed_bbox_with_polygon_raises_validation_error():
+    poly = [[-73.618, 45.503], [-73.617, 45.503], [-73.617, 45.504]]
+    # Missing required key
+    with pytest.raises(ValidationError):
+        SimulateRequest.model_validate({
+            "bbox": {"min_lon": -73.618, "min_lat": 45.503, "max_lon": -73.617},
+            "polygon": poly,
+            "date": "2026-06-21",
+        })
+    # Non-numeric / list value (previously raised TypeError -> HTTP 500)
+    with pytest.raises(ValidationError):
+        SimulateRequest.model_validate({
+            "bbox": {"min_lon": [1], "min_lat": 45.503, "max_lon": -73.617, "max_lat": 45.504},
+            "polygon": poly,
+            "date": "2026-06-21",
+        })
+    # Out-of-range WGS84 value (previously bypassed via model_construct)
+    with pytest.raises(ValidationError):
+        SimulateRequest.model_validate({
+            "bbox": {"min_lon": -200.0, "min_lat": 45.503, "max_lon": -73.617, "max_lat": 45.504},
+            "polygon": poly,
+            "date": "2026-06-21",
+        })
+
+
+def test_simulate_request_degenerate_zero_area_polygon_rejected():
+    collinear = [[-73.618, 45.503], [-73.6175, 45.5035], [-73.617, 45.504]]
+    with pytest.raises(ValidationError, match="zero or degenerate area"):
+        SimulateRequest(
+            bbox=GeoBoundingBox(
+                min_lon=-73.618,
+                min_lat=45.503,
+                max_lon=-73.617,
+                max_lat=45.504,
+            ),
+            polygon=collinear,
+            date="2026-06-21",
+        )
+
+
+def test_utm_crs_clamped_at_antimeridian():
+    from backend.app.services.elevation.geo_utils import get_utm_crs_for_lon_lat
+    assert get_utm_crs_for_lon_lat(180.0, 45.0) == "EPSG:32660"
+    assert get_utm_crs_for_lon_lat(-180.0, -45.0) == "EPSG:32701"

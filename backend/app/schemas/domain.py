@@ -3,6 +3,7 @@ Domain models and validation schemas for LuxTerra solar and occlusion simulation
 """
 
 from enum import Enum
+import math
 from typing import Optional, List, Any
 from pydantic import BaseModel, Field, model_validator
 
@@ -33,9 +34,22 @@ class GeoBoundingBox(BaseModel):
             max_lon = data.get("max_lon")
             max_lat = data.get("max_lat")
             if all(v is not None for v in (min_lon, min_lat, max_lon, max_lat)):
+                try:
+                    f_min_lon = float(min_lon)
+                    f_min_lat = float(min_lat)
+                    f_max_lon = float(max_lon)
+                    f_max_lat = float(max_lat)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"Invalid bounding box coordinate: {exc}") from exc
+
+                if not all(math.isfinite(v) for v in (f_min_lon, f_min_lat, f_max_lon, f_max_lat)):
+                    raise ValueError("Bounding box coordinates must be finite numbers.")
+
                 n_min_lon, n_min_lat, n_max_lon, n_max_lat = normalize_bbox(
-                    float(min_lon), float(min_lat), float(max_lon), float(max_lat)
+                    f_min_lon, f_min_lat, f_max_lon, f_max_lat
                 )
+                if not (-180.0 <= n_min_lon <= n_max_lon <= 180.0 and -90.0 <= n_min_lat <= n_max_lat <= 90.0):
+                    raise ValueError("Bounding box coordinates out of WGS84 range.")
                 data["min_lon"] = n_min_lon
                 data["min_lat"] = n_min_lat
                 data["max_lon"] = n_max_lon

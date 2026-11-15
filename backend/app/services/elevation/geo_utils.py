@@ -33,7 +33,7 @@ def get_utm_crs_for_lon_lat(lon: float, lat: float) -> str:
     Determine the optimal UTM EPSG code for a given WGS84 longitude and latitude.
     For Quebec (Zones 17, 18, 19, 20 North), this ensures metric accuracy.
     """
-    zone = int((lon + 180) // 6) + 1
+    zone = max(1, min(60, int((lon + 180.0) // 6.0) + 1))
     epsg = 32600 + zone if lat >= 0 else 32700 + zone
     return f"EPSG:{epsg}"
 
@@ -74,6 +74,10 @@ def calculate_polygon_area_meters(coordinates: List[List[float]]) -> float:
     if not coordinates or len(coordinates) < 3:
         return 0.0
     poly_wgs84 = ShapelyPolygon(coordinates)
+    if not poly_wgs84.is_valid:
+        poly_wgs84 = poly_wgs84.buffer(0)
+    if poly_wgs84.is_empty or poly_wgs84.area <= 0.0:
+        return 0.0
     center_lon = float(poly_wgs84.centroid.x)
     center_lat = float(poly_wgs84.centroid.y)
     utm_crs = get_utm_crs_for_lon_lat(center_lon, center_lat)

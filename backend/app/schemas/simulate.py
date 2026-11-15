@@ -2,6 +2,7 @@
 Pydantic schemas for the simulation request and response payloads.
 """
 
+import math
 from typing import Any, List, Literal, Optional
 from datetime import date
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -72,15 +73,27 @@ class SimulateRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def allow_enclosing_bbox_for_polygon(cls, data: Any) -> Any:
-        if isinstance(data, dict) and data.get("polygon") and len(data["polygon"]) >= 3:
+        if isinstance(data, dict) and isinstance(data.get("polygon"), list) and len(data["polygon"]) >= 3:
             raw_bbox = data.get("bbox")
-            if isinstance(raw_bbox, dict):
-                n_w, n_s, n_e, n_n = normalize_bbox(
-                    float(raw_bbox["min_lon"]),
-                    float(raw_bbox["min_lat"]),
-                    float(raw_bbox["max_lon"]),
-                    float(raw_bbox["max_lat"]),
-                )
+            if isinstance(raw_bbox, dict) and all(
+                k in raw_bbox and raw_bbox[k] is not None
+                for k in ("min_lon", "min_lat", "max_lon", "max_lat")
+            ):
+                try:
+                    f_w = float(raw_bbox["min_lon"])
+                    f_s = float(raw_bbox["min_lat"])
+                    f_e = float(raw_bbox["max_lon"])
+                    f_n = float(raw_bbox["max_lat"])
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"Invalid bounding box coordinate: {exc}") from exc
+
+                if not all(math.isfinite(v) for v in (f_w, f_s, f_e, f_n)):
+                    raise ValueError("Bounding box coordinates must be finite numbers.")
+
+                n_w, n_s, n_e, n_n = normalize_bbox(f_w, f_s, f_e, f_n)
+                if not (-180.0 <= n_w <= n_e <= 180.0 and -90.0 <= n_s <= n_n <= 90.0):
+                    raise ValueError("Bounding box coordinates out of WGS84 range.")
+
                 data = dict(data)
                 data["bbox"] = GeoBoundingBox.model_construct(
                     min_lon=n_w, min_lat=n_s, max_lon=n_e, max_lat=n_n
@@ -135,8 +148,12 @@ class SimulateRequest(BaseModel):
                     "Visual context boundary must fully enclose the solar array boundary."
                 )
 
-        if self.polygon and len(self.polygon) >= 3:
+        if self.polygon and len(self.polygon) > 0:
+            if len(self.polygon) < 3:
+                raise ValueError("Selected polygon must have at least 3 vertices.")
             poly_area = calculate_polygon_area_meters(self.polygon)
+            if poly_area <= 0.1:
+                raise ValueError("Selected polygon has zero or degenerate area.")
             if poly_area > max_area:
                 raise ValueError(
                     f"Selected polygon area ({poly_area:,.1f} m²) exceeds the maximum allowable limit of {max_area:,.0f} m²."
