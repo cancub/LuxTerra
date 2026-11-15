@@ -4,9 +4,9 @@
  */
 
 import maplibregl from 'maplibre-gl';
+import { QUEBEC_CENTER, DEFAULT_ZOOM } from '../utils/stateStorage.js';
 
-export const QUEBEC_CENTER = [-71.208, 46.813]; // Quebec City
-export const DEFAULT_ZOOM = 6;
+export { QUEBEC_CENTER, DEFAULT_ZOOM };
 
 export function initMap(containerId = 'map', options = {}) {
   const center = options.center || QUEBEC_CENTER;

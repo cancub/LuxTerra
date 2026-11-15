@@ -42,24 +42,6 @@ from .pv.self_shading import (
 TZ_QUEBEC = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
 
 
-def _polygon_mask_2d(xs: np.ndarray, ys: np.ndarray, poly_xy: list) -> np.ndarray:
-    """Vectorized point-in-polygon mask for grid cell centers (xs, ys) in metric CRS."""
-    n = len(poly_xy)
-    if n < 3:
-        return np.zeros((len(ys), len(xs)), dtype=bool)
-    px = xs[None, :]
-    py = ys[:, None]
-    inside = np.zeros((len(ys), len(xs)), dtype=bool)
-    x1, y1 = poly_xy[-1]
-    for x2, y2 in poly_xy:
-        cond = (y1 > py) != (y2 > py)
-        if np.any(cond):
-            x_intersect = (x2 - x1) * (py - y1) / ((y2 - y1) if y2 != y1 else 1e-12) + x1
-            inside ^= cond & (px < x_intersect)
-        x1, y1 = x2, y2
-    return inside
-
-
 def _apply_shade_overrides(
     dtm_grid: np.ndarray,
     dsm_grid: np.ndarray,
@@ -68,6 +50,10 @@ def _apply_shade_overrides(
     overrides: list,
 ):
     """Apply polygon (or legacy circular) geology/canopy overrides onto writable copies of the elevation grids."""
+    import rasterio
+    import rasterio.features
+    from shapely.geometry import Polygon as ShapelyPolygon
+
     dtm = dtm_grid.copy()
     dsm = dsm_grid.copy()
     chm = chm_grid.copy() if chm_grid is not None else None
@@ -81,6 +67,8 @@ def _apply_shade_overrides(
     for ov in overrides:
         if getattr(ov, "polygon", None):
             poly_xy = [transformer.transform(float(pt[0]), float(pt[1])) for pt in ov.polygon]
+            if len(poly_xy) < 3:
+                continue
             xs_poly = [p[0] for p in poly_xy]
             ys_poly = [p[1] for p in poly_xy]
             min_x, max_x = min(xs_poly), max(xs_poly)
@@ -93,9 +81,15 @@ def _apply_shade_overrides(
             if c1 <= c0 or r1 <= r0:
                 continue
 
-            xs = b_min_x + (np.arange(c0, c1, dtype=np.float64) + 0.5) * dx
-            ys = b_max_y - (np.arange(r0, r1, dtype=np.float64) + 0.5) * dy
-            mask = _polygon_mask_2d(xs, ys, poly_xy)
+            sub_transform = rasterio.Affine(dx, 0.0, b_min_x + c0 * dx, 0.0, -dy, b_max_y - r0 * dy)
+            mask = rasterio.features.rasterize(
+                [ShapelyPolygon(poly_xy)],
+                out_shape=(r1 - r0, c1 - c0),
+                transform=sub_transform,
+                fill=0,
+                default_value=1,
+                dtype=np.uint8,
+            ).astype(bool)
         else:
             lon, lat = float(ov.center[0]), float(ov.center[1])
             r_m = float(ov.radius_m)

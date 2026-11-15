@@ -9,6 +9,7 @@ export const APP_STATE_STORAGE_KEY = 'luxterra_app_state';
 
 export const QUEBEC_CENTER = [-71.208, 46.813];
 export const DEFAULT_ZOOM = 6;
+export const DEFAULT_TIMEZONE = 'America/Toronto';
 
 export const DEFAULT_APP_STATE = Object.freeze({
   version: 1,

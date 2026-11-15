@@ -450,3 +450,17 @@ export function clampContextBboxToMaxArea(bbox, innerBbox = null, maxAreaM2 = MA
   const clamped = clampBboxToMaxArea(minLon, minLat, maxLon, maxLat, maxAreaM2);
   return [minLon, minLat, clamped.curLon, clamped.curLat];
 }
+
+export function roundCoord5(n) {
+  return Number(Number(n).toFixed(5));
+}
+
+export function normalizeBboxCoords(bbox) {
+  if (!Array.isArray(bbox) || bbox.length !== 4) return null;
+  return bbox.map(roundCoord5);
+}
+
+export function normalizePolygonCoords(polygon) {
+  if (!Array.isArray(polygon) || polygon.length === 0) return null;
+  return polygon.map(pt => [roundCoord5(pt[0]), roundCoord5(pt[1])]);
+}

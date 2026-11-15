@@ -11,7 +11,12 @@
  *    - Clear active shape
  */
 
-import { computePolygonDimensions, circleToPolygonAndBbox } from '../utils/geometry.js';
+import {
+  computePolygonDimensions,
+  circleToPolygonAndBbox,
+  normalizeBboxCoords as normalizeBbox,
+  normalizePolygonCoords as normalizePolygon,
+} from '../utils/geometry.js';
 import { captureShapeThumbnail, lookupShapeLocation } from '../utils/shapePreview.js';
 
 export const STORAGE_KEY = 'luxterra_saved_views';
@@ -20,20 +25,6 @@ export const ACTIVE_VIEW_STORAGE_KEY = 'luxterra_active_view_id';
 export function filterLegacyPresets(views) {
   if (!Array.isArray(views)) return [];
   return views.filter(v => v && !v.isPreset && !v.id?.startsWith('preset_'));
-}
-
-function roundCoord(n) {
-  return Number(Number(n).toFixed(5));
-}
-
-function normalizePolygon(polygon) {
-  if (!Array.isArray(polygon) || polygon.length === 0) return null;
-  return polygon.map(pt => [roundCoord(pt[0]), roundCoord(pt[1])]);
-}
-
-function normalizeBbox(bbox) {
-  if (!Array.isArray(bbox) || bbox.length !== 4) return null;
-  return bbox.map(roundCoord);
 }
 
 /**

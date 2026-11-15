@@ -3,8 +3,10 @@
  * 24-hour timeline scrubber slider with sunrise/sunset markers and instantaneous solar geometry readout.
  */
 
+import { DEFAULT_TIMEZONE } from '../utils/stateStorage.js';
+
 const TORONTO_TIME_FMT = new Intl.DateTimeFormat('fr-CA', {
-  timeZone: 'America/Toronto',
+  timeZone: DEFAULT_TIMEZONE,
   hour: '2-digit',
   minute: '2-digit',
   hour12: false

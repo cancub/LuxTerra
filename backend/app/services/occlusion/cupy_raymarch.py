@@ -46,6 +46,16 @@ class CuPyOcclusionEngine(OcclusionEngine):
     def _validate_slices(self, elevation_grid: np.ndarray, patch_slice_y: slice, patch_slice_x: slice) -> Tuple[int, int, int, int]:
         return validate_patch_slices(elevation_grid, patch_slice_y, patch_slice_x)
 
+    @staticmethod
+    def _grid_dims(patch_W: int, patch_H: int) -> Tuple[Tuple[int, int, int], Tuple[int, int, int]]:
+        block_dim = (16, 16, 1)
+        grid_dim = (
+            (patch_W + block_dim[0] - 1) // block_dim[0],
+            (patch_H + block_dim[1] - 1) // block_dim[1],
+            1,
+        )
+        return grid_dim, block_dim
+
     def compute_shadow_mask(
         self,
         elevation_grid: np.ndarray,
@@ -71,12 +81,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
         d_elevation = cp.asarray(elevation_grid, dtype=cp.float32)
         d_mask = cp.empty((patch_H, patch_W), dtype=cp.uint8)
 
-        block_dim = (16, 16, 1)
-        grid_dim = (
-            (patch_W + block_dim[0] - 1) // block_dim[0],
-            (patch_H + block_dim[1] - 1) // block_dim[1],
-            1
-        )
+        grid_dim, block_dim = self._grid_dims(patch_W, patch_H)
 
         self.kernel(
             grid_dim,
@@ -121,12 +126,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
         d_elevation = cp.asarray(elevation_grid, dtype=cp.float32)
         d_mask = cp.empty((patch_H, patch_W), dtype=cp.uint8)
 
-        block_dim = (16, 16, 1)
-        grid_dim = (
-            (patch_W + block_dim[0] - 1) // block_dim[0],
-            (patch_H + block_dim[1] - 1) // block_dim[1],
-            1
-        )
+        grid_dim, block_dim = self._grid_dims(patch_W, patch_H)
 
         results = []
         for azimuth, elevation in sun_angles:
@@ -193,12 +193,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
         d_terrain_mask = cp.empty((patch_H, patch_W), dtype=cp.uint8)
         d_canopy_mask = cp.empty((patch_H, patch_W), dtype=cp.uint8)
 
-        block_dim = (16, 16, 1)
-        grid_dim = (
-            (patch_W + block_dim[0] - 1) // block_dim[0],
-            (patch_H + block_dim[1] - 1) // block_dim[1],
-            1
-        )
+        grid_dim, block_dim = self._grid_dims(patch_W, patch_H)
 
         step_3d_m = compute_canopy_step_3d_m(ray_params.step_dist, ray_params.tan_alpha)
         self.dual_kernel(
@@ -279,12 +274,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
         d_dtm = cp.asarray(dtm_grid, dtype=cp.float32)
         d_dsm = cp.asarray(dsm_grid, dtype=cp.float32)
 
-        block_dim = (16, 16, 1)
-        grid_dim = (
-            (patch_W + block_dim[0] - 1) // block_dim[0],
-            (patch_H + block_dim[1] - 1) // block_dim[1],
-            1
-        )
+        grid_dim, block_dim = self._grid_dims(patch_W, patch_H)
 
         # Batch allocate GPU output tensors to avoid per-timestep PCIe syncs
         num_angles = len(sun_angles)
@@ -357,12 +347,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
         d_dtm = cp.asarray(dtm_grid, dtype=cp.float32)
         d_dsm = cp.asarray(dsm_grid, dtype=cp.float32)
 
-        block_dim = (16, 16, 1)
-        grid_dim = (
-            (patch_W + block_dim[0] - 1) // block_dim[0],
-            (patch_H + block_dim[1] - 1) // block_dim[1],
-            1
-        )
+        grid_dim, block_dim = self._grid_dims(patch_W, patch_H)
 
         num_angles = len(sun_angles)
         d_g_t = cp.zeros((num_angles, patch_H, patch_W), dtype=cp.uint8)
@@ -559,12 +544,7 @@ class CuPyOcclusionEngine(OcclusionEngine):
             d_roi = cp.empty((1,), dtype=cp.uint8)
             has_roi = np.int32(0)
 
-        block_dim = (16, 16, 1)
-        grid_dim = (
-            (patch_W + block_dim[0] - 1) // block_dim[0],
-            (patch_H + block_dim[1] - 1) // block_dim[1],
-            1
-        )
+        grid_dim, block_dim = self._grid_dims(patch_W, patch_H)
 
         self.svf_kernel(
             grid_dim,

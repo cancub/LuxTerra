@@ -18,6 +18,7 @@ import { PVConfigPanel } from './components/PVConfigPanel.js';
 import { SolarDashboard } from './components/SolarDashboard.js';
 import { SolarPanel3DLayer } from './components/SolarPanel3DLayer.js';
 import { rasterizePanelShadowMask, base64ToBytes, decodeBitmask } from './utils/maskDecoder.js';
+import { normalizeBboxCoords as normalizeBboxKey, normalizePolygonCoords as normalizePolygonKey } from './utils/geometry.js';
 import { runSimulation } from './services/api.js';
 import {
   loadAppState,
@@ -387,18 +388,6 @@ if (appContainer) {
     timeScrubber.setTimeseries(data.timeseries, data.daily_summary);
     playbackEngine.setSimulationContext(data.timeseries.length, data.metadata.time_step_minutes);
     lastSimulationKey = simKey;
-  }
-
-  function roundCoord5(n) {
-    return Number(Number(n).toFixed(5));
-  }
-
-  function normalizeBboxKey(bbox) {
-    return Array.isArray(bbox) ? bbox.map(roundCoord5) : null;
-  }
-
-  function normalizePolygonKey(polygon) {
-    return Array.isArray(polygon) ? polygon.map(pt => [roundCoord5(pt[0]), roundCoord5(pt[1])]) : null;
   }
 
   async function triggerSimulation() {
