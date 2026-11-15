@@ -50,17 +50,22 @@ void main() {
 // Color palette
 const COL_SUNLIT_TOP = [0.96, 0.98, 1.00, 0.98];      // Crisp sunlit white with light sky reflection
 const COL_SUNLIT_BOT = [0.90, 0.93, 0.96, 0.98];      // Crisp architectural white
-const COL_CANOPY_SHADE = [0.09, 0.24, 0.17, 0.95];    // Rich forest green tree canopy shade
-const COL_GEOLOGICAL_SHADE = [0.06, 0.09, 0.16, 0.96];// Deep dark slate geological/terrain/self shadow
+const COL_CANOPY_SHADE = [26 / 255, 99 / 255, 45 / 255, 177 / 255]; // #1A632DB1 starting canopy shade
+const COL_GEOLOGICAL_SHADE = [0.06, 0.09, 0.16, 0.96];               // Deep dark slate geological/terrain/self shadow
 // Stepped green-to-dark-shadow canopy gradient (levels 1..6); level 7+ saturates to COL_GEOLOGICAL_SHADE
-const COL_CANOPY_SHADE_LEVELS = [
-  COL_CANOPY_SHADE,
-  [20 / 255, 54 / 255, 43 / 255, 0.95],
-  [19 / 255, 48 / 255, 42 / 255, 0.95],
-  [17 / 255, 42 / 255, 40 / 255, 0.95],
-  [16 / 255, 36 / 255, 39 / 255, 0.96],
-  [15 / 255, 30 / 255, 38 / 255, 0.96],
-];
+const COL_CANOPY_SHADE_LEVELS = Array.from({ length: 6 }, (_, k) => {
+  const t = k / 6;
+  return [
+    COL_CANOPY_SHADE[0] + (COL_GEOLOGICAL_SHADE[0] - COL_CANOPY_SHADE[0]) * t,
+    COL_CANOPY_SHADE[1] + (COL_GEOLOGICAL_SHADE[1] - COL_CANOPY_SHADE[1]) * t,
+    COL_CANOPY_SHADE[2] + (COL_GEOLOGICAL_SHADE[2] - COL_CANOPY_SHADE[2]) * t,
+    COL_CANOPY_SHADE[3] + (COL_GEOLOGICAL_SHADE[3] - COL_CANOPY_SHADE[3]) * t,
+  ];
+});
+
+// Effective direct-beam shade fraction (1 - T_canopy) for each quantized canopy level 0..7,
+// matching the Beer-Lambert threshold midpoints in backend ray_math.compute_canopy_shade_thresholds
+const CANOPY_LEVEL_SHADE_FRAC = [0.0, 0.09, 0.25, 0.41, 0.57, 0.74, 0.90, 0.995];
 
 // Structural framing colors
 const COL_FRAME = [0.72, 0.78, 0.86, 0.95];          // Aluminum rack perimeter frame
@@ -775,7 +780,7 @@ export class SolarPanel3DLayer {
 
     const cellLitTerrain = new Uint8Array(CELL_ROWS * CELL_COLS);
     const cellSelfShade = new Uint8Array(CELL_ROWS * CELL_COLS);
-    const cellCanopyShade = new Uint8Array(CELL_ROWS * CELL_COLS);
+    const cellCanopyShade = new Float32Array(CELL_ROWS * CELL_COLS);
 
     for (let sIdx = 0; sIdx < this._panelRenderSpecs.length; sIdx++) {
       const spec = this._panelRenderSpecs[sIdx];
@@ -833,7 +838,9 @@ export class SolarPanel3DLayer {
 
           cellLitTerrain[cellIdx] = inTerrain ? 0 : 1;
           cellSelfShade[cellIdx] = isRowSelfShaded ? 1 : 0;
-          cellCanopyShade[cellIdx] = inCanopy ? 1 : 0;
+          cellCanopyShade[cellIdx] = inCanopy
+            ? (canopyLevel >= 1 ? CANOPY_LEVEL_SHADE_FRAC[Math.min(7, canopyLevel)] : (1.0 - tau))
+            : 0.0;
           cellIdx++;
 
           let colBot, colTop;
@@ -878,13 +885,13 @@ export class SolarPanel3DLayer {
           const cEnd = cStart + 2;
           let subTerrain = false;
           let subSelf = false;
-          let subCanopy = false;
+          let subCanopyLoss = 0.0;
           for (let cr = rStart; cr < rEnd; cr++) {
             for (let cc = cStart; cc < cEnd; cc++) {
               const idx = cr * CELL_COLS + cc;
               if (!cellLitTerrain[idx]) subTerrain = true;
               if (cellSelfShade[idx]) subSelf = true;
-              if (cellCanopyShade[idx]) subCanopy = true;
+              if (cellCanopyShade[idx] > subCanopyLoss) subCanopyLoss = cellCanopyShade[idx];
             }
           }
           if (subTerrain) {
@@ -893,8 +900,8 @@ export class SolarPanel3DLayer {
           } else if (subSelf) {
             selfFrac += subW;
             anySelf = true;
-          } else if (subCanopy) {
-            canopyFrac += subW * (1.0 - tau);
+          } else if (subCanopyLoss > 0.0) {
+            canopyFrac += subW * subCanopyLoss;
             anyCanopy = true;
           }
         }

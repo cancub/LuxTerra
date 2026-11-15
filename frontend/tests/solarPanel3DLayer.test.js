@@ -604,3 +604,58 @@ test('SolarPanel3DLayer: canopy shade levels render green-to-dark gradient match
   assert.deepEqual(c7, cGeo, 'Level 7+ canopy shade must match geological/self-shade color');
 });
 
+test('SolarPanel3DLayer: canopy shade levels scale per-panel treeLossW and acPowerW monotonically', () => {
+  const layer = new SolarPanel3DLayer();
+  const layout = {
+    total_panels: 2,
+    total_tables: 1,
+    row_pitch_m: 10.0,
+    tables: [
+      {
+        table_index: 0,
+        row_index: 0,
+        num_panels: 2,
+        panels_along_width: 1,
+        panels_along_depth: 2,
+        tilt_deg: 25.0,
+        azimuth_deg: 180.0,
+        width_m: 1.5,
+        depth_m: 4.0,
+        slant_height_m: 4.5,
+        elevation_m: 100.0,
+        corners_wgs84: [
+          [-73.500, 45.500],
+          [-73.499, 45.500],
+          [-73.499, 45.501],
+          [-73.500, 45.501],
+        ],
+      },
+    ],
+  };
+  layer.setLayout(layout);
+
+  const bounds = [-73.500, 45.500, -73.499, 45.501];
+  const terrain = new Uint8Array([1]);
+  const canopy = new Uint8Array([0]);
+  const metric = {
+    is_daylight: true,
+    solar_elevation_deg: 45,
+    solar_azimuth_deg: 180,
+    incident_power_kw: 0.4, // 200 W per panel
+    diffuse_power_kw: 0.06, // 30 W per panel
+  };
+
+  layer.updateSunPosition(180, 45, true, null, null, bounds, 1, 1, metric, 0.15, {
+    terrain, canopy, canopyShade: new Uint8Array([2]), rows: 1, cols: 1,
+  });
+  const b2 = layer.computePanelBreakdown(layer.panels[0]);
+
+  layer.updateSunPosition(180, 45, true, null, null, bounds, 1, 1, metric, 0.15, {
+    terrain, canopy, canopyShade: new Uint8Array([7]), rows: 1, cols: 1,
+  });
+  const b7 = layer.computePanelBreakdown(layer.panels[0]);
+
+  assert.ok(b7.treeLossW > b2.treeLossW, `Level 7 loss (${b7.treeLossW}W) must exceed level 2 loss (${b2.treeLossW}W)`);
+  assert.ok(b7.acPowerW < b2.acPowerW, `Level 7 AC (${b7.acPowerW}W) must be less than level 2 AC (${b2.acPowerW}W)`);
+});
+
