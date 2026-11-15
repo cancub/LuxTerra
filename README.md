@@ -1,23 +1,28 @@
 # LuxTerra
 
-**LuxTerra** is a high-performance web-based solar potential and geological terrain-shadow simulator for Quebec. It models how bare-earth topography casts moving shadows across plots of land (up to 100,000 m²) throughout any day of the year at 1-meter spatial resolution.
+**LuxTerra** is a GPU-accelerated solar potential, terrain-shadow, and tree-canopy occlusion simulator for Quebec. It models how bare-earth topography, vegetative tree canopy, and inter-row panel self-shading affect solar output across custom plots of land (up to `100,000 m²`) at 1-meter spatial resolution throughout any day of the year.
+
+![LuxTerra Demo](docs/demo.gif)
 
 ## Key Features
-- **Terrain Occlusion Engine:** GPU-accelerated ray-marching via CuPy targeting local NVIDIA GPUs (RTX 4070 Ti) across a 500m outward perimeter buffer, with a vectorized NumPy CPU fallback.
-- **Solar & PV Modeling:** Clear-sky radiation using `pvlib.clearsky.ineichen`, unobstructed sky view factor ($SVF = 1.0$), optimal seasonal tilt facing due south ($180^\circ$), and configurable **Rooftop ($100\%$ GCR)** vs. **Ground-Mount ($45\%$ GCR)** deployment modes.
-- **High-Resolution Elevation:** Powered by NRCan / Données Québec 1m LiDAR High Resolution Digital Elevation Models (HRDEM) streamed via Cloud-Optimized GeoTIFFs (COGs).
-- **Interactive UI:** MapLibre GL JS map with OSM street and ESRI satellite layers, Nominatim geocoder bounded to Quebec, box drawing tool clamped to $\le 100,000\text{ m}^2$, 24-hour timeline scrubber, and $5\text{ min/s}$ and $15\text{ min/s}$ playback modes.
+- **Terrain & Tree Canopy Occlusion Engine:** GPU-accelerated ray-marching via CuPy targeting local NVIDIA GPUs (with a vectorized NumPy CPU fallback). Combines bare-earth **DTM** geological shadows with **DSM − DTM** tree canopy shadows using Beer-Lambert attenuation, quantized canopy shade levels (`0–7`), and seasonal foliage phenology (`Auto`, `Leaf-On`, `Leaf-Off`).
+- **3D Solar Array & 72-Cell Half-Cut Physics:** Custom WebGL 3D panel layer (`SolarPanel3DLayer`) with terrain-following table tilts, 3D Sky View Factor (`SVF`) diffuse scaling, and **12 × 6 (72-cell) split/half-cut** bypass evaluation (`2 × 3` substrings per module). Hovering any individual panel displays its real-time `Incident Potential`, `Geological`, `Tree Canopy`, `Panel Self-Shade`, `Diffuse`, and `AC Power` breakdown in Watts.
+- **Solar & PV Modeling:** Clear-sky radiation using `pvlib.clearsky.ineichen`, configurable **Rooftop (100% GCR)** vs. **Ground-Mount (45% GCR)** deployment modes, adjustable module efficiency and performance ratio, and interactive **Mark Geology** / **Remove Canopy** polygon overrides.
+- **High-Resolution Elevation:** Powered by NRCan / Données Québec 1m LiDAR High Resolution Digital Terrain and Surface Models (DTM/DSM) indexed via `manifest.json`.
+- **Interactive Desktop & Mobile UI:** MapLibre GL JS with OSM street and ESRI satellite layers, rectangle and free-draw polygon tools (clamped to `≤ 100,000 m²`), optional **Shadow Box** context envelope, saved shapes & camera views, 24-hour power curve & timeline scrubber (`15 min/s` and `30 min/s` playback), and responsive touch-friendly mobile controls.
 
 ## Monorepo Layout
-- `backend/` — FastAPI REST API, solar geometry, PV modeling, and CuPy/NumPy ray-marching engines.
-- `frontend/` — Vite single-page application with MapLibre GL JS, custom canvas shadow projection, and interactive solar telemetry dashboard.
-- `scripts/` — Automated CLI tool (`fetch_test_dtm.py`) to acquire and index test LiDAR GeoTIFFs.
-- `data/dtm/` — Local storage and `manifest.json` index for Quebec LiDAR GeoTIFF tiles.
+- `backend/` — FastAPI REST API, solar geometry, PV layout/self-shading physics, and CuPy/NumPy ray-marching engines.
+- `frontend/` — Vite single-page application with MapLibre GL JS, WebGL 3D panel rendering, offscreen shadow canvas projection, and interactive telemetry dashboard.
+- `k8s/` — Kubernetes Deployment, ClusterIP Service, and Traefik Ingress manifests (`webapps` namespace).
+- `scripts/` — CLI utilities (`fetch_test_dtm.py` for acquiring/indexing LiDAR GeoTIFFs and `deploy.sh` for building and rolling out to k3s).
+- `data/` — Local raster storage and `manifest.json` indices for `dtm/` and `dsm/` GeoTIFF tiles.
+- `docs/` — Documentation media assets (`demo.gif`).
 
 ## Quickstart
 
-### 1. Acquire Test LiDAR DTM Rasters
-Fetch the 1m resolution bare-earth LiDAR DTMs for the benchmark test sites (Montréal — Mount Royal flank & Sainte-Lucie-des-Laurentides):
+### 1. Acquire Test LiDAR Rasters
+Fetch the 1m resolution LiDAR rasters for the benchmark test sites (Montréal — Mount Royal flank & Sainte-Lucie-des-Laurentides):
 ```bash
 .venv/bin/python scripts/fetch_test_dtm.py --preset all
 ```
@@ -50,7 +55,7 @@ npm test
 ```
 
 ## Container & Kubernetes Deployment (`webapps` Namespace)
-Build the multi-stage container image, push it to the local k3s registry (`127.0.0.1:30500`), and deploy to the `webapps` namespace with NVIDIA GPU runtime access, Let's Encrypt TLS (`cert-manager`), and Google OAuth forwardAuth (`oauth2-proxy`):
+Build the multi-stage container image, push it to the local k3s registry (`127.0.0.1:30500`), and roll out to the `webapps` namespace with NVIDIA GPU runtime access, Let's Encrypt TLS (`cert-manager`), and Google OAuth forwardAuth (`oauth2-proxy`):
 ```bash
 ./scripts/deploy.sh
 ```
