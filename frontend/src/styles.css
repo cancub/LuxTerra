@@ -1598,7 +1598,8 @@ input:focus, select:focus {
 /* Mobile Compact Dock & Controls (hidden on desktop) */
 .mobile-dock-header,
 .cal-mobile-close,
-.panels-label-short {
+.panels-label-short,
+.btn-mobile-edit-expand {
   display: none;
 }
 
@@ -1619,7 +1620,7 @@ input:focus, select:focus {
   .top-bar {
     flex-direction: column;
     align-items: stretch;
-    padding: 10px 12px;
+    padding: 10px 10px;
     gap: 8px;
   }
 
@@ -1629,7 +1630,8 @@ input:focus, select:focus {
   }
 
   .top-command-bar {
-    width: 100%;
+    width: 100% !important;
+    max-width: none !important;
     justify-content: space-between;
     padding: 5px 8px;
     gap: 4px;
@@ -1637,21 +1639,41 @@ input:focus, select:focus {
   }
 
   .top-right-controls {
-    align-self: flex-end;
+    position: absolute;
+    top: 62px;
+    right: 10px;
+    z-index: 25;
     flex-direction: column;
     align-items: flex-end;
     gap: 6px;
   }
 
   #panels-toggle-btn {
-    padding: 0 10px;
-    height: 34px;
-    gap: 5px;
+    width: 40px;
+    height: 36px;
+    padding: 0;
+    justify-content: center;
+    gap: 0;
+  }
+
+  #panels-toggle-btn svg {
+    display: none;
+  }
+
+  .layer-toggle-btn {
+    width: 40px;
+    height: 36px;
+    padding: 0 !important;
+    justify-content: center;
+  }
+
+  .layer-toggle-btn span {
+    display: none;
   }
 
   .maplibregl-ctrl-top-right {
-    top: 146px !important;
-    right: 12px !important;
+    top: 148px !important;
+    right: 10px !important;
   }
 
   .maplibregl-ctrl-zoom-in,
@@ -1661,7 +1683,7 @@ input:focus, select:focus {
 
   .maplibregl-ctrl-bottom-left,
   .maplibregl-ctrl-bottom-right {
-    bottom: 132px !important;
+    bottom: 146px !important;
   }
 
   .cal-mobile-close {
@@ -1735,8 +1757,8 @@ input:focus, select:focus {
   .mobile-kpi-group {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 0.78rem;
+    gap: 5px;
+    font-size: 0.72rem;
     color: var(--text-secondary);
     min-width: 0;
   }
@@ -1817,8 +1839,64 @@ input:focus, select:focus {
     font-size: 1.02rem !important;
   }
 
-  .shape-toolbar-card,
-  .shape-edit-card {
+  #shape-toolbar-mount {
     max-width: calc(100vw - 74px);
+  }
+
+  .shape-toolbar-card,
+  .shape-edit-card,
+  .shape-card {
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box;
+  }
+
+  .btn-mobile-edit-expand {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+  }
+
+  .shape-edit-pane:not(.mobile-edit-expanded) {
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 6px !important;
+  }
+
+  .shape-edit-pane:not(.mobile-edit-expanded) .shape-name-row {
+    flex: 1;
+    min-width: 0;
+    margin: 0 !important;
+  }
+
+  .shape-edit-pane:not(.mobile-edit-expanded) .shape-name-input {
+    width: 100%;
+    min-width: 0;
+    font-size: 0.76rem;
+    padding: 4px 8px;
+  }
+
+  .shape-edit-pane:not(.mobile-edit-expanded) .shape-edit-bar {
+    padding: 0;
+    gap: 3px;
+    flex-shrink: 0;
+  }
+
+  .shape-edit-pane:not(.mobile-edit-expanded) .btn-shape-reset,
+  .shape-edit-pane:not(.mobile-edit-expanded) .edit-bar-divider,
+  .shape-edit-pane:not(.mobile-edit-expanded) .save-menu-label,
+  .shape-edit-pane:not(.mobile-edit-expanded) .dropdown-caret,
+  .shape-edit-pane:not(.mobile-edit-expanded) .shape-context-row,
+  .shape-edit-pane:not(.mobile-edit-expanded) .shape-override-row,
+  .shape-edit-pane:not(.mobile-edit-expanded) .override-list,
+  .shape-edit-pane:not(.mobile-edit-expanded) .shape-daily-energy-mount {
+    display: none !important;
+  }
+
+  .shape-edit-pane.mobile-edit-expanded {
+    max-height: 55vh;
+    overflow-y: auto;
   }
 }

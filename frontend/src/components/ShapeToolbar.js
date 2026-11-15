@@ -443,6 +443,7 @@ export class ShapeToolbar {
                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                 </svg>
               </button>
+              <button class="btn btn-sm btn-square-icon btn-mobile-edit-expand" type="button" aria-expanded="false" title="Expand edit tools &amp; array specs">▾</button>
             </div>
             <div class="shape-context-row">
               <button class="btn btn-sm btn-context-toggle" title="Add or modify the extra shadow container box">
@@ -516,6 +517,7 @@ export class ShapeToolbar {
     this.overrideList = this.element.querySelector('.override-list');
     this.btnHistoryBack = this.element.querySelector('.btn-history-back');
     this.btnHistoryForward = this.element.querySelector('.btn-history-forward');
+    this.btnMobileEditExpand = this.element.querySelector('.btn-mobile-edit-expand');
     this.btnSaveMenu = this.element.querySelector('.btn-save-menu');
     this.saveMenu = this.element.querySelector('.save-menu');
     this.saveMenuLabel = this.element.querySelector('.save-menu-label');
@@ -543,6 +545,15 @@ export class ShapeToolbar {
     this.renderOverrideList();
     this.primaryContainer.appendChild(this.primaryElement);
     this.container.appendChild(this.element);
+  }
+
+  collapseMobileEdit() {
+    this.editPane?.classList.remove('mobile-edit-expanded');
+    this.shapeCard?.classList.remove('mobile-edit-expanded');
+    if (this.btnMobileEditExpand) {
+      this.btnMobileEditExpand.setAttribute('aria-expanded', 'false');
+      this.btnMobileEditExpand.textContent = '▾';
+    }
   }
 
   bindEvents() {
@@ -653,7 +664,18 @@ export class ShapeToolbar {
         this.showToast('Added shadow container box', 'info');
       }
       this.refreshModificationState();
+      this.collapseMobileEdit();
     });
+
+    if (this.btnMobileEditExpand) {
+      this.btnMobileEditExpand.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const expanded = this.editPane?.classList.toggle('mobile-edit-expanded');
+        this.shapeCard?.classList.toggle('mobile-edit-expanded', Boolean(expanded));
+        this.btnMobileEditExpand.setAttribute('aria-expanded', String(Boolean(expanded)));
+        this.btnMobileEditExpand.textContent = expanded ? '▴' : '▾';
+      });
+    }
 
     // Save menu toggle
     this.btnSaveMenu.addEventListener('click', (e) => {
@@ -770,12 +792,14 @@ export class ShapeToolbar {
     if (this.btnOverrideGeology) {
       this.btnOverrideGeology.addEventListener('click', (e) => {
         e.stopPropagation();
+        this.collapseMobileEdit();
         this.startOverrideDraw('to_geology');
       });
     }
     if (this.btnOverrideCanopy) {
       this.btnOverrideCanopy.addEventListener('click', (e) => {
         e.stopPropagation();
+        this.collapseMobileEdit();
         this.startOverrideDraw('remove_canopy');
       });
     }
@@ -795,7 +819,18 @@ export class ShapeToolbar {
       this.shapeHistory.reset();
       this.hideSaveNamePopover();
       this.refreshModificationState();
+      this.collapseMobileEdit();
     });
+
+    if (this.btnMobileEditExpand) {
+      this.btnMobileEditExpand.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const expanded = this.editPane?.classList.toggle('mobile-edit-expanded');
+        this.shapeCard?.classList.toggle('mobile-edit-expanded', Boolean(expanded));
+        this.btnMobileEditExpand.setAttribute('aria-expanded', String(Boolean(expanded)));
+        this.btnMobileEditExpand.textContent = expanded ? '▴' : '▾';
+      });
+    }
 
     // Inline save name popover
     this.saveNameConfirm.addEventListener('click', (e) => {
