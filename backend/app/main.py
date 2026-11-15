@@ -2,6 +2,7 @@
 FastAPI application entrypoint for LuxTerra.
 """
 
+from functools import lru_cache
 from pathlib import Path
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,11 +35,9 @@ app.include_router(simulate_router)
 app.include_router(elevation_router)
 
 
-@app.get("/api/health", tags=["System"])
-def health_check(app_cfg: AppConfig = Depends(get_config)):
-    """
-    Health check returning system status, version, and GPU acceleration status.
-    """
+@lru_cache(maxsize=1)
+def _get_gpu_status() -> tuple[bool, str | None]:
+    """Cache static GPU availability and device name across /api/health probes."""
     gpu_active = is_gpu_available()
     device_name = None
     if gpu_active:
@@ -47,6 +46,15 @@ def health_check(app_cfg: AppConfig = Depends(get_config)):
             device_name = cp.cuda.runtime.getDeviceProperties(0)['name'].decode('utf-8')
         except Exception:
             device_name = "NVIDIA CUDA Device"
+    return gpu_active, device_name
+
+
+@app.get("/api/health", tags=["System"])
+def health_check(app_cfg: AppConfig = Depends(get_config)):
+    """
+    Health check returning system status, version, and GPU acceleration status.
+    """
+    gpu_active, device_name = _get_gpu_status()
 
     return {
         "status": "ok",

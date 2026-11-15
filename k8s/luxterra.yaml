@@ -109,6 +109,17 @@ spec:
                 name: luxterra
                 port:
                   number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: luxterra-local-ingress
+  namespace: webapps
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  ingressClassName: traefik
+  rules:
     - host: luxterra.local
       http:
         paths:

@@ -296,6 +296,27 @@ export class ShapeToolbar {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(views));
     } catch (e) {
+      const isQuota = e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014);
+      if (isQuota && Array.isArray(views)) {
+        // Evict base64 preview thumbnails from oldest entries first until storage fits
+        let stripped = 0;
+        for (let i = views.length - 1; i >= 0; i--) {
+          if (views[i] && views[i].thumbnail) {
+            delete views[i].thumbnail;
+            stripped++;
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(views));
+              if (typeof this.showToast === 'function') {
+                this.showToast('Storage full: cleared older preview thumbnails to save shape.', 'warning');
+              }
+              return;
+            } catch (_) {}
+          }
+        }
+        if (stripped > 0 && typeof this.showToast === 'function') {
+          this.showToast('Browser storage quota exceeded; shape could not be persisted.', 'error');
+        }
+      }
       console.warn('Failed to save shapes to localStorage:', e);
     }
   }
