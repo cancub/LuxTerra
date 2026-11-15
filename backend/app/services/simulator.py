@@ -36,7 +36,7 @@ from .pv.self_shading import (
     has_south_rack_obstruction,
     calculate_row_self_shading_fraction,
     calculate_module_rack_sky_view_factor,
-    compute_split_halfcut_module_losses,
+    compute_split_halfcut_modules_batch,
 )
 
 TZ_QUEBEC = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
@@ -701,7 +701,8 @@ class SimulationOrchestrator:
                 is_rooftop=is_rooftop_mode,
                 ground_stand_height_m=1.5,
                 include_tree_canopy=has_canopy,
-                canopy_transmittance=transmittance.diffuse
+                canopy_transmittance=transmittance.diffuse,
+                roi_mask=polygon_mask,
             )
             if isinstance(res_svf, np.ndarray) and res_svf.shape == (patch_h, patch_w):
                 svf_grid = res_svf
@@ -957,8 +958,14 @@ class SimulationOrchestrator:
                 seasonal_tilt = round(total_tilt_weighted / total_mods_weighted, 1)
 
         if use_discrete_panels and discrete_modules:
-            sum_mod_svf = float(sum(m["svf"] for m in discrete_modules))
+            mod_svf_arr = np.array([m["svf"] for m in discrete_modules], dtype=np.float64)
+            sum_mod_svf = float(mod_svf_arr.sum())
             avg_svf = sum_mod_svf / len(discrete_modules)
+            all_cell_rows = np.stack([m["cell_rows"] for m in discrete_modules], axis=0)
+            all_cell_cols = np.stack([m["cell_cols"] for m in discrete_modules], axis=0)
+            mod_is_top_arr = np.array([m["is_top"] for m in discrete_modules], dtype=bool)
+            row_to_pos = {r_idx: pos for pos, r_idx in enumerate(distinct_rows)}
+            mod_row_pos = np.array([row_to_pos[m["table_row_index"]] for m in discrete_modules], dtype=np.intp)
         elif polygon_mask is not None:
             sum_mod_svf = 0.0
             avg_svf = float(np.mean(svf_grid[polygon_mask]))
@@ -999,34 +1006,29 @@ class SimulationOrchestrator:
                 irradiance = daylight_irradiance[daylight_counter]
 
                 if use_discrete_panels:
-                    # Discrete module-level physics simulation (exact sum of physical panels)
+                    # Discrete module-level physics simulation (vectorized across all physical panels)
                     num_mods = len(discrete_modules)
-
-                    num_terrain_shaded = 0
-                    num_canopy_shaded = 0
-                    total_geo_loss_kw = 0.0
-                    total_canopy_loss_kw = 0.0
-                    total_self_loss_kw = 0.0
-                    total_power_kw = 0.0
 
                     az_delta_rad = np.radians(angles.azimuth_deg - 180.0)
                     cos_az_delta = np.cos(az_delta_rad)
                     tan_az_delta = np.tan(az_delta_rad) if cos_az_delta > 0.001 else 0.0
 
                     # Pre-calculate per-row POA irradiance and self-shading fraction
-                    poa_dir_by_row = {}
-                    poa_dif_by_row = {}
-                    rack_self_by_row = {}
+                    n_rows = len(distinct_rows)
+                    poa_dir_vec = np.empty(n_rows, dtype=np.float64)
+                    poa_dif_vec = np.empty(n_rows, dtype=np.float64)
+                    rack_self_vec = np.zeros(n_rows, dtype=np.float64)
                     ref_slant = layout.tables[0].slant_height_m if layout.tables else 4.56
                     ref_az = layout.tables[0].azimuth_deg if layout.tables else 180.0
-                    for r_idx in distinct_rows:
+                    can_self_shade = (cos_az_delta > 0.001) and (angles.elevation_deg > 0.0)
+                    for pos, r_idx in enumerate(distinct_rows):
                         r_tilt = row_tilts.get(r_idx, seasonal_tilt)
                         aoi_val = float(pvlib.irradiance.aoi(r_tilt, ref_az, angles.zenith_deg, angles.azimuth_deg))
                         cos_inc = max(0.0, float(np.cos(np.radians(aoi_val))))
-                        poa_dir_by_row[r_idx] = irradiance.dni_w_m2 * cos_inc
-                        poa_dif_by_row[r_idx] = irradiance.dhi_w_m2 * 0.5 * (1.0 + float(np.cos(np.radians(r_tilt))))
-                        if cos_az_delta > 0.001 and angles.elevation_deg > 0.0:
-                            rack_self_by_row[r_idx] = calculate_row_self_shading_fraction(
+                        poa_dir_vec[pos] = irradiance.dni_w_m2 * cos_inc
+                        poa_dif_vec[pos] = irradiance.dhi_w_m2 * 0.5 * (1.0 + float(np.cos(np.radians(r_tilt))))
+                        if can_self_shade:
+                            rack_self_vec[pos] = calculate_row_self_shading_fraction(
                                 row_pitch_m=layout.row_pitch_m,
                                 slant_height_m=ref_slant,
                                 tilt_deg=r_tilt,
@@ -1035,66 +1037,54 @@ class SimulationOrchestrator:
                                 rack_azimuth_deg=ref_az,
                                 south_tilt_deg=south_tilt_by_row.get(r_idx)
                             )
-                        else:
-                            rack_self_by_row[r_idx] = 0.0
 
-                    incident_total = 0.0
-                    diffuse_total = 0.0
+                    direct_mod_w = poa_dir_vec[mod_row_pos] * module_conv
+                    mod_diffuse_w = poa_dif_vec[mod_row_pos] * module_conv * mod_svf_arr
+                    rack_self_arr = rack_self_vec[mod_row_pos]
 
-                    for mod in discrete_modules:
-                        c_rows = mod["cell_rows"]
-                        c_cols = mod["cell_cols"]
-                        r_idx = mod["table_row_index"]
-                        direct_mod_w = poa_dir_by_row[r_idx] * module_conv
-                        mod_diffuse_w = poa_dif_by_row[r_idx] * module_conv * mod["svf"]
-                        incident_total += direct_mod_w
-                        diffuse_total += mod_diffuse_w
-                        rack_self_frac = rack_self_by_row[r_idx]
+                    terrain_lit_cells = mask[all_cell_rows, all_cell_cols] > 0
+                    if canopy_t_grid is not None:
+                        canopy_tau_cells = canopy_t_grid[all_cell_rows, all_cell_cols]
+                    elif canopy_m is not None:
+                        canopy_tau_cells = np.where(canopy_m[all_cell_rows, all_cell_cols] > 0, 1.0, canopy_transmittance)
+                    else:
+                        canopy_tau_cells = np.ones((num_mods, CELL_ROWS, CELL_COLS), dtype=np.float64)
 
-                        terrain_lit_cells = (mask[c_rows, c_cols] > 0)
-                        if canopy_t_grid is not None:
-                            canopy_tau_cells = canopy_t_grid[c_rows, c_cols]
-                        elif canopy_m is not None:
-                            canopy_tau_cells = np.where(canopy_m[c_rows, c_cols] > 0, 1.0, canopy_transmittance)
-                        else:
-                            canopy_tau_cells = np.ones((CELL_ROWS, CELL_COLS), dtype=np.float64)
-
-                        has_obstruction = (
-                            rack_self_frac > 1e-4
-                            and (not mod["is_front_row"])
-                            and bool(mod["south_tables"])
+                    has_obstruction_arr = np.array(
+                        [
+                            (rack_self_arr[i] > 1e-4)
+                            and (not m["is_front_row"])
+                            and bool(m["south_tables"])
                             and has_south_rack_obstruction(
-                                mod["center_lon"],
-                                mod["center_lat"],
+                                m["center_lon"],
+                                m["center_lat"],
                                 layout.row_pitch_m,
                                 tan_az_delta,
-                                mod["south_tables"],
+                                m["south_tables"],
                             )
-                        )
+                            for i, m in enumerate(discrete_modules)
+                        ],
+                        dtype=bool,
+                    )
 
-                        geo_frac, self_frac, canopy_frac, direct_frac = compute_split_halfcut_module_losses(
-                            terrain_lit_cells=terrain_lit_cells,
-                            canopy_tau_cells=canopy_tau_cells,
-                            rack_self_frac=rack_self_frac,
-                            is_top=mod["is_top"],
-                            has_obstruction=has_obstruction,
-                        )
+                    geo_frac, self_frac, canopy_frac, direct_frac = compute_split_halfcut_modules_batch(
+                        terrain_lit_cells=terrain_lit_cells,
+                        canopy_tau_cells=canopy_tau_cells,
+                        rack_self_frac=rack_self_arr,
+                        is_top=mod_is_top_arr,
+                        has_obstruction=has_obstruction_arr,
+                    )
 
-                        if geo_frac > 0.0:
-                            num_terrain_shaded += geo_frac
-                        if canopy_frac > 0.0:
-                            num_canopy_shaded += min(1.0, canopy_frac / max(1e-6, 1.0 - canopy_transmittance))
-
-                        geo_loss = direct_mod_w * geo_frac
-                        self_loss = direct_mod_w * self_frac
-                        canopy_loss = direct_mod_w * canopy_frac
-                        direct_reaching = direct_mod_w * direct_frac
-                        mod_pwr = max(0.0, direct_reaching + mod_diffuse_w)
-
-                        total_geo_loss_kw += geo_loss
-                        total_canopy_loss_kw += canopy_loss
-                        total_self_loss_kw += self_loss
-                        total_power_kw += mod_pwr
+                    incident_total = float(direct_mod_w.sum())
+                    diffuse_total = float(mod_diffuse_w.sum())
+                    num_terrain_shaded = float(geo_frac.sum())
+                    num_canopy_shaded = float(
+                        np.minimum(1.0, canopy_frac / max(1e-6, 1.0 - canopy_transmittance)).sum()
+                    )
+                    total_geo_loss_kw = float((direct_mod_w * geo_frac).sum())
+                    total_self_loss_kw = float((direct_mod_w * self_frac).sum())
+                    total_canopy_loss_kw = float((direct_mod_w * canopy_frac).sum())
+                    total_power_kw = float(np.maximum(0.0, direct_mod_w * direct_frac + mod_diffuse_w).sum())
 
                     incident_power_kw = round(incident_total, 3)
                     diffuse_power_kw = round(diffuse_total, 3)

@@ -536,7 +536,8 @@ class CuPyOcclusionEngine(OcclusionEngine):
         is_rooftop: bool = False,
         ground_stand_height_m: float = 1.5,
         include_tree_canopy: bool = True,
-        canopy_transmittance: float = 0.15
+        canopy_transmittance: float = 0.15,
+        roi_mask: np.ndarray | None = None,
     ) -> np.ndarray:
         """
         Computes a 2D Sky View Factor (SVF) map in [0.05, 1.0] across the patch on GPU.
@@ -551,6 +552,12 @@ class CuPyOcclusionEngine(OcclusionEngine):
         d_dtm = cp.asarray(dtm_grid, dtype=cp.float32)
         d_dsm = cp.asarray(dsm_grid, dtype=cp.float32)
         d_svf = cp.empty((patch_H, patch_W), dtype=cp.float32)
+        if roi_mask is not None and roi_mask.shape == (patch_H, patch_W):
+            d_roi = cp.asarray(roi_mask, dtype=cp.uint8)
+            has_roi = np.int32(1)
+        else:
+            d_roi = cp.empty((1,), dtype=cp.uint8)
+            has_roi = np.int32(0)
 
         block_dim = (16, 16, 1)
         grid_dim = (
@@ -579,6 +586,8 @@ class CuPyOcclusionEngine(OcclusionEngine):
                 np.float32(ground_stand_height_m),
                 np.int32(1 if include_tree_canopy else 0),
                 np.float32(canopy_transmittance),
+                d_roi,
+                has_roi,
             )
         )
 

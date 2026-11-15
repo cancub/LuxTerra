@@ -96,7 +96,8 @@ class OcclusionEngine(ABC):
         is_rooftop: bool = False,
         ground_stand_height_m: float = 1.5,
         include_tree_canopy: bool = True,
-        canopy_transmittance: float = 0.15
+        canopy_transmittance: float = 0.15,
+        roi_mask: np.ndarray | None = None,
     ) -> np.ndarray:
         """
         Computes a 2D Sky View Factor (SVF) ambient occlusion map in [0.0, 1.0]

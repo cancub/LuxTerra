@@ -267,3 +267,33 @@ def compute_split_halfcut_module_losses(
                 direct_frac += sub_w * min_tau
 
     return geo_frac, self_frac, canopy_frac, direct_frac
+
+
+def compute_split_halfcut_modules_batch(
+    terrain_lit_cells: np.ndarray,
+    canopy_tau_cells: np.ndarray,
+    rack_self_frac: np.ndarray,
+    is_top: np.ndarray,
+    has_obstruction: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Vectorized batch evaluation of 72-cell split/half-cut module direct beam fractions."""
+    n = terrain_lit_cells.shape[0]
+    rack_start = np.where(is_top, 0.5, 0.0)
+    obs = has_obstruction & (rack_self_frac > 1e-4)
+    lower_self = obs & (rack_self_frac > rack_start + 1e-4)
+    upper_self = obs & (rack_self_frac > rack_start + 0.25 + 1e-4)
+    half_self = np.stack([lower_self, upper_self], axis=1)[:, :, None]
+
+    lit_sub = terrain_lit_cells.reshape(n, 2, 6, 3, 2).all(axis=(2, 4))
+    tau_sub = np.clip(canopy_tau_cells.reshape(n, 2, 6, 3, 2).min(axis=(2, 4)), 0.0, 1.0)
+
+    sub_w = 1.0 / 6.0
+    geo_sub = ~lit_sub
+    self_sub = lit_sub & half_self
+    active_sub = lit_sub & (~half_self)
+
+    geo_frac = geo_sub.sum(axis=(1, 2)) * sub_w
+    self_frac = self_sub.sum(axis=(1, 2)) * sub_w
+    canopy_frac = np.where(active_sub, 1.0 - tau_sub, 0.0).sum(axis=(1, 2)) * sub_w
+    direct_frac = np.where(active_sub, tau_sub, 0.0).sum(axis=(1, 2)) * sub_w
+    return geo_frac, self_frac, canopy_frac, direct_frac

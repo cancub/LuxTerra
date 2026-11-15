@@ -269,12 +269,19 @@ void compute_svf_kernel(
     int is_rooftop,
     float ground_stand_height_m,
     int include_tree_canopy,
-    float canopy_transmittance
+    float canopy_transmittance,
+    const unsigned char* __restrict__ roi_mask,
+    int has_roi_mask
 ) {
     int px = blockDim.x * blockIdx.x + threadIdx.x;
     int py = blockDim.y * blockIdx.y + threadIdx.y;
 
     if (px >= patch_W || py >= patch_H) return;
+
+    if (has_roi_mask != 0 && roi_mask[py * patch_W + px] == 0) {
+        svf_out[py * patch_W + px] = 1.0f;
+        return;
+    }
 
     int r0 = patch_y_offset + py;
     int c0 = patch_x_offset + px;

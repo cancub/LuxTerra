@@ -171,7 +171,7 @@ class TileCacheManager:
                 temp_path.unlink(missing_ok=True)
             raise
         logger.info(f"Extracted and saved local {layer.upper()} COG tile: {final_path} ({data.shape[1]}x{data.shape[0]})")
-        self.update_manifest()
+        self.upsert_manifest_tile(final_path, layer=layer)
         return final_path
 
     def get_tile_pair(
@@ -226,64 +226,47 @@ class TileCacheManager:
 
         return (None, None)
 
-    def update_manifest(self) -> Dict[str, Any]:
-        """
-        Scans all GeoTIFF files in cache_dir and dsm_dir, updating manifest.json with paired spatial metadata.
-        """
-        manifest = {"tiles": []}
-        for tif_file in self.cache_dir.glob("*.tif"):
-            try:
-                with rasterio.open(tif_file) as src:
-                    src_crs_str = src.crs.to_string() if hasattr(src.crs, 'to_string') else str(src.crs)
-                    geom_wgs84 = transform_geometry(box(*src.bounds), src_crs_str, "EPSG:4326")
-                    min_lon, min_lat, max_lon, max_lat = geom_wgs84.bounds
+    def _find_paired_dsm(self, dtm_filename: str) -> Optional[str]:
+        possible_dsm_names = [
+            dtm_filename.replace("dtm", "dsm"),
+            dtm_filename.replace("DTM", "DSM"),
+            dtm_filename,
+        ]
+        for dsm_name in possible_dsm_names:
+            candidate_dsm = self.dsm_dir / dsm_name
+            if candidate_dsm.exists() and candidate_dsm.stat().st_size > 0:
+                return candidate_dsm.name
+        return None
 
-                    # Check for paired DSM tile
-                    dsm_filename = None
-                    dsm_path = None
-                    has_dsm = False
+    def _build_tile_info(self, tif_file: Path) -> Dict[str, Any]:
+        with rasterio.open(tif_file) as src:
+            src_crs_str = src.crs.to_string() if hasattr(src.crs, "to_string") else str(src.crs)
+            geom_wgs84 = transform_geometry(box(*src.bounds), src_crs_str, "EPSG:4326")
+            min_lon, min_lat, max_lon, max_lat = geom_wgs84.bounds
 
-                    # Check pattern replacements e.g. dtm_foo -> dsm_foo
-                    possible_dsm_names = [
-                        tif_file.name.replace("dtm", "dsm"),
-                        tif_file.name.replace("DTM", "DSM"),
-                        tif_file.name
-                    ]
-                    for dsm_name in possible_dsm_names:
-                        candidate_dsm = self.dsm_dir / dsm_name
-                        if candidate_dsm.exists() and candidate_dsm.stat().st_size > 0:
-                            dsm_filename = candidate_dsm.name
-                            dsm_path = str(candidate_dsm)
-                            has_dsm = True
-                            break
+            dsm_filename = self._find_paired_dsm(tif_file.name)
+            dsm_rel_path = f"/app/data/dsm/{dsm_filename}" if dsm_filename else None
+            dtm_rel_path = f"/app/data/dtm/{tif_file.name}"
 
-                    dsm_rel_path = f"/app/data/dsm/{dsm_filename}" if dsm_filename else None
-                    dtm_rel_path = f"/app/data/dtm/{tif_file.name}"
+            return {
+                "filename": tif_file.name,
+                "path": dtm_rel_path,
+                "crs": src_crs_str,
+                "width": src.width,
+                "height": src.height,
+                "resolution": list(src.res),
+                "bounds_native": list(src.bounds),
+                "bounds_wgs84": [min_lon, min_lat, max_lon, max_lat],
+                "nodata": src.nodata,
+                "filesize_bytes": tif_file.stat().st_size,
+                "has_dsm": dsm_filename is not None,
+                "dsm_filename": dsm_filename,
+                "dsm_path": dsm_rel_path,
+            }
 
-                    tile_info = {
-                        "filename": tif_file.name,
-                        "path": dtm_rel_path,
-                        "crs": src_crs_str,
-                        "width": src.width,
-                        "height": src.height,
-                        "resolution": list(src.res),
-                        "bounds_native": list(src.bounds),
-                        "bounds_wgs84": [min_lon, min_lat, max_lon, max_lat],
-                        "nodata": src.nodata,
-                        "filesize_bytes": tif_file.stat().st_size,
-                        "has_dsm": has_dsm,
-                        "dsm_filename": dsm_filename,
-                        "dsm_path": dsm_rel_path
-                    }
-                    manifest["tiles"].append(tile_info)
-            except Exception as e:
-                logger.warning(f"Could not read tile {tif_file.name} for manifest: {e}")
-
-        # Ensure deterministic ordering
+    def _write_manifest_if_changed(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
         manifest["tiles"].sort(key=lambda t: t.get("filename", ""))
-
         with self._lock:
-            # Check if identical to existing manifest to avoid dirtying git working tree and redundant I/O
             if self.manifest_path.exists():
                 try:
                     with open(self.manifest_path, "r") as f:
@@ -308,6 +291,50 @@ class TileCacheManager:
             self._manifest_cache = manifest
             self._manifest_mtime = self.manifest_path.stat().st_mtime
             return manifest
+
+    def upsert_manifest_tile(self, filepath: Path, layer: str = "dtm") -> Dict[str, Any]:
+        """Incrementally add or update a single extracted tile in manifest.json without rescanning all .tif files."""
+        if not self.manifest_path.exists():
+            return self.update_manifest()
+
+        manifest = self.load_manifest()
+        tiles = [dict(t) for t in manifest.get("tiles", [])]
+
+        if layer.lower() == "dsm":
+            updated = False
+            for tile in tiles:
+                fn = tile.get("filename", "")
+                if filepath.name in (fn.replace("dtm", "dsm"), fn.replace("DTM", "DSM"), fn):
+                    tile["has_dsm"] = True
+                    tile["dsm_filename"] = filepath.name
+                    tile["dsm_path"] = f"/app/data/dsm/{filepath.name}"
+                    updated = True
+            if not updated:
+                return manifest
+            return self._write_manifest_if_changed({"tiles": tiles})
+
+        try:
+            tile_info = self._build_tile_info(filepath)
+        except Exception as e:
+            logger.warning(f"Could not read tile {filepath.name} for manifest: {e}")
+            return manifest
+
+        tiles = [t for t in tiles if t.get("filename") != filepath.name]
+        tiles.append(tile_info)
+        return self._write_manifest_if_changed({"tiles": tiles})
+
+    def update_manifest(self) -> Dict[str, Any]:
+        """
+        Scans all GeoTIFF files in cache_dir and dsm_dir, updating manifest.json with paired spatial metadata.
+        """
+        manifest = {"tiles": []}
+        for tif_file in self.cache_dir.glob("*.tif"):
+            try:
+                manifest["tiles"].append(self._build_tile_info(tif_file))
+            except Exception as e:
+                logger.warning(f"Could not read tile {tif_file.name} for manifest: {e}")
+
+        return self._write_manifest_if_changed(manifest)
 
     def load_manifest(self) -> Dict[str, Any]:
         """Load manifest.json with in-memory mtime caching, or build it if missing."""
