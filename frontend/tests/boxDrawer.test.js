@@ -16,9 +16,22 @@ if (typeof globalThis.document === 'undefined') {
   };
 }
 if (typeof globalThis.window === 'undefined') {
+  const winListeners = {};
   globalThis.window = {
-    addEventListener: () => {},
-    removeEventListener: () => {}
+    _listeners: winListeners,
+    addEventListener: (evt, fn) => {
+      if (!winListeners[evt]) winListeners[evt] = [];
+      winListeners[evt].push(fn);
+    },
+    removeEventListener: (evt, fn) => {
+      if (!winListeners[evt]) return;
+      winListeners[evt] = winListeners[evt].filter((f) => f !== fn);
+    },
+    dispatchEvent: (evt) => {
+      for (const fn of (winListeners[evt.type] || [])) {
+        fn(evt);
+      }
+    }
   };
 }
 
@@ -544,5 +557,81 @@ test('BoxDrawer: rectangle-created shape can delete a vertex into a triangle and
   const midPt = { x: (v0.x + v1.x) / 2, y: (v0.y + v1.y) / 2 };
   map.trigger('mousemove', { point: midPt, lngLat: map.unproject(midPt), originalEvent: { clientX: midPt.x, clientY: midPt.y } });
   assert.ok(drawer.activeMidpoint !== null, 'Midpoint handle must appear on edge of rectangle-originated shape');
+});
+
+test('BoxDrawer: touch vertex drag moves vertex and re-enables dragPan on touchend/touchcancel', () => {
+  const map = createMockMap(0);
+  let dragPanEnabled = true;
+  map.dragPan = {
+    disable() { dragPanEnabled = false; },
+    enable() { dragPanEnabled = true; }
+  };
+  const drawer = new BoxDrawer(map, null, () => {});
+  drawer.setSelection({
+    bbox: [-73.618, 45.503, -73.617, 45.504],
+    polygon: [
+      [-73.618, 45.503],
+      [-73.617, 45.503],
+      [-73.617, 45.504],
+      [-73.618, 45.504],
+      [-73.618, 45.503]
+    ],
+    shapeType: 'polygon'
+  });
+
+  drawer.startVertexDrag(0, null, 'grab');
+  assert.equal(dragPanEnabled, false);
+  assert.equal(drawer.isResizing, true);
+
+  const moved = { lng: -73.6182, lat: 45.5028 };
+  map.trigger('touchmove', { lngLat: moved });
+  assert.ok(Math.abs(drawer.currentPolygon[0][0] - moved.lng) < 1e-6);
+  assert.ok(Math.abs(drawer.currentPolygon[0][1] - moved.lat) < 1e-6);
+
+  map.trigger('touchcancel', {});
+  assert.equal(drawer.isResizing, false);
+  assert.equal(dragPanEnabled, true);
+});
+
+test('BoxDrawer: setShapeVisibility toggles actual handle and midpoint layer IDs', () => {
+  const map = createMockMap(0);
+  const drawer = new BoxDrawer(map, null, () => {});
+
+  drawer.setShapeVisibility(false);
+  for (const id of ['draw-handles-glow', 'draw-handles-core', 'draw-handles-hit', 'draw-midpoint-core', 'draw-midpoint-hit', 'draw-box-fill']) {
+    assert.equal(map.getLayer(id).layout.visibility, 'none', `Expected ${id} to be none`);
+  }
+
+  drawer.setShapeVisibility(true);
+  for (const id of ['draw-handles-glow', 'draw-handles-core', 'draw-handles-hit', 'draw-midpoint-core', 'draw-midpoint-hit', 'draw-box-fill']) {
+    assert.equal(map.getLayer(id).layout.visibility, 'visible', `Expected ${id} to be visible`);
+  }
+});
+
+test('BoxDrawer: dblclick deduplicates trailing click vertex and Backspace to 0 clears preview', () => {
+  const map = createMockMap(0);
+  let completed = null;
+  const drawer = new BoxDrawer(map, null, (sel) => { completed = sel; });
+
+  drawer.startDrawing('polygon');
+  const pts = [{ x: 100, y: 100 }, { x: 200, y: 100 }, { x: 200, y: 200 }];
+  for (const pt of pts) {
+    map.trigger('click', { point: pt, lngLat: map.unproject(pt) });
+  }
+  // Simulate second click of dblclick at identical pixel before dblclick
+  map.trigger('click', { point: { x: 200, y: 200 }, lngLat: map.unproject({ x: 200, y: 200 }) });
+  assert.equal(drawer.points.length, 4);
+
+  map.trigger('dblclick', { preventDefault() {}, stopPropagation() {} });
+  assert.ok(completed !== null);
+  assert.equal(completed.polygon.length, 4); // 3 unique vertices + closing point
+
+  // Now test Backspace down to 0 vertices clears draw-box-source
+  drawer.startDrawing('polygon');
+  map.trigger('click', { point: { x: 100, y: 100 }, lngLat: map.unproject({ x: 100, y: 100 }) });
+  assert.equal(map.getSource('draw-box-source').data.features.length > 0, true);
+  globalThis.window.dispatchEvent({ type: 'keydown', key: 'Backspace' });
+  assert.equal(drawer.points.length, 0);
+  assert.equal(map.getSource('draw-box-source').data.features.length, 0);
 });
 

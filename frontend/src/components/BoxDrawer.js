@@ -49,7 +49,6 @@ export class BoxDrawer {
     this.currentContextBbox = null; // [minLon, minLat, maxLon, maxLat] enclosing the solar array
     this.currentContextPolygon = null;
     this.isEditingContext = false;
-    this.activeContextCorner = null;
 
     // Multi-point polygon drawing state
     this.points = []; // Array of [lon, lat]
@@ -604,8 +603,13 @@ export class BoxDrawer {
     const layerIds = [
       'draw-box-fill',
       'draw-box-stroke',
-      'draw-handles-dots',
-      'draw-midpoint-dot',
+      'draw-box-stroke-hit',
+      'draw-handles-glow',
+      'draw-handles-core',
+      'draw-handles-hit',
+      'draw-midpoint-glow',
+      'draw-midpoint-core',
+      'draw-midpoint-hit',
       'draw-context-stroke',
       'draw-overrides-fill',
       'draw-overrides-stroke'
@@ -790,7 +794,10 @@ export class BoxDrawer {
       } else if (e.key === 'Backspace' || e.key === 'Delete') {
         if (this.points.length > 0) {
           this.points.pop();
-          if (this.lastMouseLngLat) {
+          if (this.points.length === 0) {
+            this.isSnapToStart = false;
+            this.clearDrawingSources();
+          } else if (this.lastMouseLngLat) {
             this.updateDrawingPreview(this.lastMouseLngLat, this.lastMousePoint);
           }
         }
@@ -1008,7 +1015,11 @@ export class BoxDrawer {
         if (this.rectState === 'dragging') {
           // Click & hold: release to finish!
           this.isRectMouseDown = false;
-          const endPoint = e.point || (e.clientX ? { x: e.clientX, y: e.clientY } : this.lastMousePoint);
+          let endPoint = e.point || this.lastMousePoint;
+          if (!e.point && Number.isFinite(e.clientX) && Number.isFinite(e.clientY) && this.map.getCanvas) {
+            const rect = this.map.getCanvas().getBoundingClientRect();
+            endPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+          }
           const rectData = this.computeScreenRectangle(this.rectStartLngLat, endPoint);
           if (rectData && rectData.areaM2 >= 25) {
             this.finalizeRectangle(rectData);
@@ -1057,6 +1068,11 @@ export class BoxDrawer {
             polygon: null,
             dimensions: dims
           });
+        } else {
+          this.currentBbox = null;
+          this.currentPolygon = null;
+          this.clearDrawingSources();
+          this.notifyState();
         }
       }
     };
@@ -1072,6 +1088,14 @@ export class BoxDrawer {
       if (this.drawMode === 'rectangle') {
         // Double click is strictly ignored in rectangle mode
         return;
+      }
+      // Deduplicate trailing vertex added by the second click event of a dblclick
+      if (this.points.length > 3 && typeof this.map.project === 'function') {
+        const pLast = this.map.project(this.points[this.points.length - 1]);
+        const pPrev = this.map.project(this.points[this.points.length - 2]);
+        if (Math.hypot(pLast.x - pPrev.x, pLast.y - pPrev.y) <= 4) {
+          this.points.pop();
+        }
       }
       if (this.points.length >= 3) {
         this.finalizePolygon(this.points);
@@ -1214,11 +1238,23 @@ export class BoxDrawer {
     });
   }
 
+  clearDrawingSources() {
+    const empty = { type: 'FeatureCollection', features: [] };
+    const boxSource = this.map.getSource('draw-box-source');
+    if (boxSource) boxSource.setData(empty);
+    const handleSource = this.map.getSource('draw-handles-source');
+    if (handleSource) handleSource.setData(empty);
+    const ovPreviewSource = this.map.getSource('draw-override-preview-source');
+    if (ovPreviewSource) ovPreviewSource.setData(empty);
+  }
+
   updateDrawingPreview(curLngLat, screenPoint = null, clientX = null, clientY = null) {
     if (!curLngLat) return;
     const currentCoord = [curLngLat.lng, curLngLat.lat];
 
     if (this.points.length === 0) {
+      this.isSnapToStart = false;
+      this.clearDrawingSources();
       if (clientX !== null && clientY !== null) {
         this.showTooltip(clientX, clientY, 'Click map to place 1st point • Esc to cancel');
       }
@@ -1611,10 +1647,33 @@ export class BoxDrawer {
       this.onVertexDrag(e.lngLat);
     };
 
+    const onTouchMove = (e) => {
+      if (!this.isResizing) return;
+      if (e.lngLat) {
+        if (typeof e.preventDefault === 'function') e.preventDefault();
+        this.onVertexDrag(e.lngLat);
+        return;
+      }
+      if (e.touches && e.touches.length === 1 && this.map.getCanvas) {
+        if (typeof e.preventDefault === 'function') e.preventDefault();
+        const touch = e.touches[0];
+        const rect = this.map.getCanvas().getBoundingClientRect();
+        const lngLat = this.map.unproject([touch.clientX - rect.left, touch.clientY - rect.top]);
+        this.onVertexDrag(lngLat);
+      }
+    };
+
     const onUp = () => {
       this.map.off('mousemove', onMove);
+      this.map.off('touchmove', onTouchMove);
+      this.map.off('touchend', onUp);
+      this.map.off('touchcancel', onUp);
       window.removeEventListener('mousemove', onWindowMove);
       window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onUp);
+      window.removeEventListener('touchcancel', onUp);
+      window.removeEventListener('blur', onUp);
 
       if (this.isResizing) {
         this.isResizing = false;
@@ -1642,8 +1701,15 @@ export class BoxDrawer {
     };
 
     this.map.on('mousemove', onMove);
+    this.map.on('touchmove', onTouchMove);
+    this.map.on('touchend', onUp);
+    this.map.on('touchcancel', onUp);
     window.addEventListener('mousemove', onWindowMove);
     window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onUp);
+    window.addEventListener('touchcancel', onUp);
+    window.addEventListener('blur', onUp);
   }
 
   onVertexDrag(newLngLat) {

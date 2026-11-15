@@ -638,7 +638,7 @@ export class ShapeToolbar {
         this.showToast('Cleared extra shadow container box', 'info');
       } else {
         this.boxDrawer.addDefaultContext(40.0);
-        this.showToast('Added shadow container box — drag corners to adjust', 'info');
+        this.showToast('Added shadow container box', 'info');
       }
       this.refreshModificationState();
     });
