@@ -201,3 +201,52 @@ def calculate_array_self_shading_fraction(
             total_shaded_panel_units += tbl.panel_count * row_shaded_fraction * overlap_frac
 
     return float(total_shaded_panel_units / layout.total_panels)
+
+
+CELL_ROWS = 12
+CELL_COLS = 6
+
+
+def compute_split_halfcut_module_losses(
+    terrain_lit_cells: np.ndarray,
+    canopy_tau_cells: np.ndarray,
+    rack_self_frac: float,
+    is_top: bool,
+    has_obstruction: bool,
+) -> tuple[float, float, float, float]:
+    """
+    Evaluate 72-cell (12 rows x 6 cols) split/half-cut module direct beam fractions:
+    2 parallel halves (rows 0..5 lower, rows 6..11 upper) x 3 two-column substrings (cols 0..1, 2..3, 4..5).
+    If any cell in a 6x2 half-substring is terrain-shaded or self-shaded, that 1/6 substring is bypassed.
+    Otherwise, its direct beam transmission equals the minimum canopy transmittance across its 12 cells.
+
+    Returns:
+        (geo_frac, self_frac, canopy_frac, direct_reaching_frac) summing strictly to 1.0.
+    """
+    rack_start = 0.5 if is_top else 0.0
+    lower_self = has_obstruction and (rack_self_frac > rack_start + 1e-4)
+    upper_self = has_obstruction and (rack_self_frac > rack_start + 0.25 + 1e-4)
+
+    geo_frac = 0.0
+    self_frac = 0.0
+    canopy_frac = 0.0
+    direct_frac = 0.0
+    sub_w = 1.0 / 6.0
+
+    for h_idx, r0 in enumerate((0, 6)):
+        r1 = r0 + 6
+        h_self = upper_self if h_idx == 1 else lower_self
+        for c0 in (0, 2, 4):
+            c1 = c0 + 2
+            sub_lit = terrain_lit_cells[r0:r1, c0:c1]
+            if not np.all(sub_lit):
+                geo_frac += sub_w
+            elif h_self:
+                self_frac += sub_w
+            else:
+                min_tau = float(np.min(canopy_tau_cells[r0:r1, c0:c1]))
+                min_tau = max(0.0, min(1.0, min_tau))
+                canopy_frac += sub_w * (1.0 - min_tau)
+                direct_frac += sub_w * min_tau
+
+    return geo_frac, self_frac, canopy_frac, direct_frac

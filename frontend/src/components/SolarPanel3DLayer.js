@@ -566,51 +566,147 @@ export class SolarPanel3DLayer {
           ? tbl.module_svf[2 * k + 1]
           : this.calculateModuleRackSvf(rowPitchM, slantH, tblTiltDeg, true, hasSouthRack);
 
-        const shade_B = this.sampleShadowAtPoint(centerLon_B, centerLat_B, maskData);
-        const shade_T = this.sampleShadowAtPoint(centerLon_T, centerLat_T, maskData);
+        // Render 12x6 (72-cell) split/half-cut cell grid for each module
+        const CELL_ROWS = 12;
+        const CELL_COLS = 6;
+        const COL_CELL_GRID = [0.22, 0.28, 0.36, 0.35];
+        const COL_HALF_SPLIT = [0.75, 0.80, 0.86, 0.70];
 
-        // Independent color for bottom panel module
-        let colB_top = COL_SUNLIT_TOP;
-        let colB_bot = COL_SUNLIT_BOT;
-        if (!currentSun.isDaylight || shade_B.inTerrainShade || isSelfShaded_B) {
-          colB_top = COL_GEOLOGICAL_SHADE;
-          colB_bot = COL_GEOLOGICAL_SHADE;
-        } else if (shade_B.inCanopyShade) {
-          colB_top = COL_CANOPY_SHADE;
-          colB_bot = COL_CANOPY_SHADE;
-        }
+        const lerpPt3 = (a, b, t) => [
+          (1 - t) * a[0] + t * b[0],
+          (1 - t) * a[1] + t * b[1],
+          (1 - t) * a[2] + t * b[2]
+        ];
+        const lerpColor4 = (cA, cB, t) => [
+          (1 - t) * cA[0] + t * cB[0],
+          (1 - t) * cA[1] + t * cB[1],
+          (1 - t) * cA[2] + t * cB[2],
+          (1 - t) * cA[3] + t * cB[3]
+        ];
 
-        // Independent color for top panel module
-        let colT_top = COL_SUNLIT_TOP;
-        let colT_bot = COL_SUNLIT_BOT;
-        if (!currentSun.isDaylight || shade_T.inTerrainShade || isSelfShaded_T) {
-          colT_top = COL_GEOLOGICAL_SHADE;
-          colT_bot = COL_GEOLOGICAL_SHADE;
-        } else if (shade_T.inCanopyShade) {
-          colT_top = COL_CANOPY_SHADE;
-          colT_bot = COL_CANOPY_SHADE;
-        }
+        const renderModuleCells = (ptSW, ptSE, ptNE, ptNW, vBase, rackStart) => {
+          const cellLitTerrain = [];
+          const cellCanopyShade = [];
+          const cellSelfShade = [];
 
-        // --- Bottom Panel Quad (SW, SE, midE, midW) ---
-        this.pushVertex(faceData, b0, colB_bot);
-        this.pushVertex(faceData, b1, colB_bot);
-        this.pushVertex(faceData, m1, colB_top);
+          for (let cr = 0; cr < CELL_ROWS; cr++) {
+            const rv0 = cr / CELL_ROWS;
+            const rv1 = (cr + 1) / CELL_ROWS;
+            const rvMid = (cr + 0.5) / CELL_ROWS;
+            const vRackMid = vBase + 0.5 * rvMid;
 
-        this.pushVertex(faceData, b0, colB_bot);
-        this.pushVertex(faceData, m1, colB_top);
-        this.pushVertex(faceData, m0, colB_top);
+            const isRowSelfShaded = hasSouthObstruction && (selfShadeFrac > rackStart + (cr / 24.0) + 1e-4);
 
-        // --- Top Panel Quad (midW, midE, ne, nw) ---
-        this.pushVertex(faceData, m0, colT_bot);
-        this.pushVertex(faceData, m1, colT_bot);
-        this.pushVertex(faceData, t1_pt, colT_top);
+            for (let cc = 0; cc < CELL_COLS; cc++) {
+              const cu0 = cc / CELL_COLS;
+              const cu1 = (cc + 1) / CELL_COLS;
+              const cuMid = (cc + 0.5) / CELL_COLS;
+              const uTableMid = t0 + cuMid * (t1 - t0);
 
-        this.pushVertex(faceData, m0, colT_bot);
-        this.pushVertex(faceData, t1_pt, colT_top);
-        this.pushVertex(faceData, t0_pt, colT_top);
+              const lonS = (1 - uTableMid) * c0[0] + uTableMid * c1[0];
+              const latS = (1 - uTableMid) * c0[1] + uTableMid * c1[1];
+              const lonN = (1 - uTableMid) * c3[0] + uTableMid * c2[0];
+              const latN = (1 - uTableMid) * c3[1] + uTableMid * c2[1];
+              const cellLon = (1 - vRackMid) * lonS + vRackMid * lonN;
+              const cellLat = (1 - vRackMid) * latS + vRackMid * latN;
 
-        const modSelfFrac_B = Math.min(1.0, Math.max(0.0, selfShadeFrac * 2.0));
-        const modSelfFrac_T = Math.min(1.0, Math.max(0.0, (selfShadeFrac - 0.5) * 2.0));
+              const cellShade = this.sampleShadowAtPoint(cellLon, cellLat, maskData);
+              const inTerrain = !currentSun.isDaylight || cellShade.inTerrainShade;
+              const inCanopy = !inTerrain && !isRowSelfShaded && cellShade.inCanopyShade;
+
+              cellLitTerrain.push(!inTerrain);
+              cellCanopyShade.push(inCanopy);
+              cellSelfShade.push(isRowSelfShaded);
+
+              let colCellBot, colCellTop;
+              if (inTerrain || isRowSelfShaded) {
+                colCellBot = COL_GEOLOGICAL_SHADE;
+                colCellTop = COL_GEOLOGICAL_SHADE;
+              } else if (inCanopy) {
+                colCellBot = COL_CANOPY_SHADE;
+                colCellTop = COL_CANOPY_SHADE;
+              } else {
+                colCellBot = lerpColor4(COL_SUNLIT_BOT, COL_SUNLIT_TOP, rv0);
+                colCellTop = lerpColor4(COL_SUNLIT_BOT, COL_SUNLIT_TOP, rv1);
+              }
+
+              const p00 = lerpPt3(lerpPt3(ptSW, ptSE, cu0), lerpPt3(ptNW, ptNE, cu0), rv0);
+              const p10 = lerpPt3(lerpPt3(ptSW, ptSE, cu1), lerpPt3(ptNW, ptNE, cu1), rv0);
+              const p11 = lerpPt3(lerpPt3(ptSW, ptSE, cu1), lerpPt3(ptNW, ptNE, cu1), rv1);
+              const p01 = lerpPt3(lerpPt3(ptSW, ptSE, cu0), lerpPt3(ptNW, ptNE, cu0), rv1);
+
+              this.pushVertex(faceData, p00, colCellBot);
+              this.pushVertex(faceData, p10, colCellBot);
+              this.pushVertex(faceData, p11, colCellTop);
+
+              this.pushVertex(faceData, p00, colCellBot);
+              this.pushVertex(faceData, p11, colCellTop);
+              this.pushVertex(faceData, p01, colCellTop);
+            }
+          }
+
+          // Subtle 12x6 cell grid lines + center half-cut split seam
+          for (let cr = 1; cr < CELL_ROWS; cr++) {
+            const rv = cr / CELL_ROWS;
+            const lw = lerpPt3(ptSW, ptNW, rv);
+            const le = lerpPt3(ptSE, ptNE, rv);
+            this.pushLine(lineData, lw, le, cr === 6 ? COL_HALF_SPLIT : COL_CELL_GRID);
+          }
+          for (let cc = 1; cc < CELL_COLS; cc++) {
+            const cu = cc / CELL_COLS;
+            const lb = lerpPt3(ptSW, ptSE, cu);
+            const lt = lerpPt3(ptNW, ptNE, cu);
+            this.pushLine(lineData, lb, lt, COL_CELL_GRID);
+          }
+
+          // Compute split/half-cut 6-substring loss fractions matching backend physics
+          let geoFrac = 0.0;
+          let selfFrac = 0.0;
+          let canopyFrac = 0.0;
+          let anyTerrain = false;
+          let anyCanopy = false;
+          let anySelf = false;
+          const subW = 1.0 / 6.0;
+          const tau = this.canopyTransmittance !== undefined ? this.canopyTransmittance : 0.15;
+
+          for (let h = 0; h < 2; h++) {
+            const rStart = h * 6;
+            const rEnd = rStart + 6;
+            for (let s = 0; s < 3; s++) {
+              const cStart = s * 2;
+              const cEnd = cStart + 2;
+              let subTerrain = false;
+              let subSelf = false;
+              let subCanopy = false;
+              for (let cr = rStart; cr < rEnd; cr++) {
+                for (let cc = cStart; cc < cEnd; cc++) {
+                  const idx = cr * CELL_COLS + cc;
+                  if (!cellLitTerrain[idx]) subTerrain = true;
+                  if (cellSelfShade[idx]) subSelf = true;
+                  if (cellCanopyShade[idx]) subCanopy = true;
+                }
+              }
+              if (subTerrain) {
+                geoFrac += subW;
+                anyTerrain = true;
+              } else if (subSelf) {
+                selfFrac += subW;
+                anySelf = true;
+              } else if (subCanopy) {
+                canopyFrac += subW * (1.0 - tau);
+                anyCanopy = true;
+              }
+            }
+          }
+
+          return { geoFrac, selfFrac, canopyFrac, anyTerrain, anySelf, anyCanopy };
+        };
+
+        const resB = renderModuleCells(b0, b1, m1, m0, 0.0, 0.0);
+        const resT = renderModuleCells(m0, m1, t1_pt, t0_pt, 0.5, 0.5);
+
+        const modSelfFrac_B = resB.selfFrac;
+        const modSelfFrac_T = resT.selfFrac;
 
         // Record discrete panel modules for interactive ray-casting and per-panel power hover
         this.panels.push({
@@ -624,11 +720,14 @@ export class SolarPanel3DLayer {
           rtcVertices: [b0, b1, m1, m0],
           selfShadeFrac: selfShadeFrac,
           moduleSelfShadeFrac: modSelfFrac_B,
+          geoFrac: resB.geoFrac,
+          selfFrac: resB.selfFrac,
+          canopyFrac: resB.canopyFrac,
           svf: svf_B,
           shadeState: {
-            inTerrainShade: Boolean(!currentSun.isDaylight || shade_B.inTerrainShade),
-            inCanopyShade: Boolean(shade_B.inCanopyShade),
-            isSelfShaded: Boolean(isSelfShaded_B)
+            inTerrainShade: Boolean(!currentSun.isDaylight || resB.anyTerrain),
+            inCanopyShade: Boolean(resB.anyCanopy),
+            isSelfShaded: Boolean(resB.anySelf)
           }
         });
 
@@ -643,11 +742,14 @@ export class SolarPanel3DLayer {
           rtcVertices: [m0, m1, t1_pt, t0_pt],
           selfShadeFrac: selfShadeFrac,
           moduleSelfShadeFrac: modSelfFrac_T,
+          geoFrac: resT.geoFrac,
+          selfFrac: resT.selfFrac,
+          canopyFrac: resT.canopyFrac,
           svf: svf_T,
           shadeState: {
-            inTerrainShade: Boolean(!currentSun.isDaylight || shade_T.inTerrainShade),
-            inCanopyShade: Boolean(shade_T.inCanopyShade),
-            isSelfShaded: Boolean(isSelfShaded_T)
+            inTerrainShade: Boolean(!currentSun.isDaylight || resT.anyTerrain),
+            inCanopyShade: Boolean(resT.anyCanopy),
+            isSelfShaded: Boolean(resT.anySelf)
           }
         });
       }
@@ -1011,23 +1113,29 @@ export class SolarPanel3DLayer {
     let treeLossW = 0.0;
     let selfLossW = 0.0;
 
-    const shade = panel.shadeState;
-    if (shade.inTerrainShade) {
-      // In geological terrain shadow: 100% opaque geological barrier blocks all direct beam
-      geoLossW = incidentW;
+    if (panel.geoFrac !== undefined && panel.selfFrac !== undefined && panel.canopyFrac !== undefined) {
+      geoLossW = incidentW * panel.geoFrac;
+      selfLossW = incidentW * panel.selfFrac;
+      treeLossW = incidentW * panel.canopyFrac;
     } else {
-      // Solid panel self-shading takes physical precedence over semi-transparent tree canopy
-      const modFrac = shade.isSelfShaded
-        ? (panel.moduleSelfShadeFrac !== undefined ? panel.moduleSelfShadeFrac : Math.min(1.0, (panel.selfShadeFrac || 0.0) * 2.0))
-        : 0.0;
-      selfLossW = incidentW * modFrac;
+      const shade = panel.shadeState;
+      if (shade.inTerrainShade) {
+        // In geological terrain shadow: 100% opaque geological barrier blocks all direct beam
+        geoLossW = incidentW;
+      } else {
+        // Solid panel self-shading takes physical precedence over semi-transparent tree canopy
+        const modFrac = shade.isSelfShaded
+          ? (panel.moduleSelfShadeFrac !== undefined ? panel.moduleSelfShadeFrac : Math.min(1.0, (panel.selfShadeFrac || 0.0) * 2.0))
+          : 0.0;
+        selfLossW = incidentW * modFrac;
 
-      const unblockedDirectW = Math.max(0.0, incidentW - selfLossW);
+        const unblockedDirectW = Math.max(0.0, incidentW - selfLossW);
 
-      if (shade.inCanopyShade && unblockedDirectW > 0.0) {
-        // Vegetative tree canopy attenuates only the remaining unblocked direct beam
-        const tau = this.canopyTransmittance !== undefined ? this.canopyTransmittance : 0.15;
-        treeLossW = unblockedDirectW * (1.0 - tau);
+        if (shade.inCanopyShade && unblockedDirectW > 0.0) {
+          // Vegetative tree canopy attenuates only the remaining unblocked direct beam
+          const tau = this.canopyTransmittance !== undefined ? this.canopyTransmittance : 0.15;
+          treeLossW = unblockedDirectW * (1.0 - tau);
+        }
       }
     }
 

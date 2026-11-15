@@ -74,10 +74,10 @@ test('SolarPanel3DLayer buildGeometry converts layout tables into independent pe
   assert.equal(layer.getTotalPanels(), 16);
   assert.equal(layer.getTotalTables(), 2);
 
-  // 16 individual panels * 2 triangles * 3 vertices = 96 face vertices
-  assert.equal(layer.faceVertexCount, 96);
+  // 16 individual panels * 72 cells * 2 triangles * 3 vertices = 6912 face vertices
+  assert.equal(layer.faceVertexCount, 6912);
   assert.ok(layer.faceVertices instanceof Float32Array);
-  assert.equal(layer.faceVertices.length, 96 * 7);
+  assert.equal(layer.faceVertices.length, 6912 * 7);
 
   // Line vertices must include perimeter + mid seam + pair vertical seams + 4 posts per table
   assert.ok(layer.lineVertexCount > 0);
@@ -129,8 +129,8 @@ test('SolarPanel3DLayer: each individual panel is independently shaded (not all-
 
   layer.updateSunPosition(180.0, 45.0, true, terrainB64, canopyB64, patchBounds, 1, 4);
 
-  // Total panels = 8 -> 8 panels * 6 vertices = 48 vertices
-  assert.equal(layer.faceVertexCount, 48);
+  // Total panels = 8 -> 8 panels * 72 cells * 6 vertices = 3456 vertices
+  assert.equal(layer.faceVertexCount, 3456);
 
   // Panel 0 (left column bottom): under canopy -> forest green (G > R and G > B)
   const p0_r = layer.faceVertices[3];
@@ -139,9 +139,9 @@ test('SolarPanel3DLayer: each individual panel is independently shaded (not all-
   assert.ok(p0_g > p0_r && p0_g > p0_b, 'Left panel under canopy must be green');
 
   // Pair column 3 (right column bottom): in sun -> architectural white (R, G, B > 0.85)
-  // Each pair column has 2 panels (12 vertices total: 6 for bottom panel, 6 for top panel)
-  // Column 3 bottom panel starts at vertex 3 * 12 = 36 -> float index 36 * 7 + 3
-  const p3_vertex = 3 * 12;
+  // Each pair column has 2 panels * 72 cells * 6 vertices = 864 vertices
+  // Column 3 bottom panel starts at vertex 3 * 864 = 2592 -> float index 2592 * 7 + 3
+  const p3_vertex = 3 * 864;
   const p3_r = layer.faceVertices[p3_vertex * 7 + 3];
   const p3_g = layer.faceVertices[p3_vertex * 7 + 4];
   const p3_b = layer.faceVertices[p3_vertex * 7 + 5];

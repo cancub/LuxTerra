@@ -31,9 +31,12 @@ from .solar.phenology import calculate_canopy_transmittance
 from .occlusion.ray_math import compute_canopy_transmittance_grid, quantize_canopy_shade_levels
 from .pv.packing_engine import PVPackingEngine
 from .pv.self_shading import (
+    CELL_ROWS,
+    CELL_COLS,
     calculate_array_self_shading_fraction,
     calculate_row_self_shading_fraction,
-    calculate_module_rack_sky_view_factor
+    calculate_module_rack_sky_view_factor,
+    compute_split_halfcut_module_losses,
 )
 
 TZ_QUEBEC = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
@@ -164,22 +167,32 @@ def _optimize_row_tilts(
         0.0
     )
 
-    # Precompute per-module terrain + canopy direct transmission tau_tc[m, t]
+    # Precompute per-module split/half-cut terrain + canopy direct transmission tau_lo[m, t], tau_hi[m, t]
+    # Each half (lower 6 rows, upper 6 rows) has 3 two-column substrings; each substring's direct
+    # transmission is 0 if any cell is terrain-shaded, else min(canopy_tau) across its 12 cells.
     n_mods = len(discrete_modules)
-    mod_rows = np.array([m["row_idx"] for m in discrete_modules], dtype=np.intp)
-    mod_cols = np.array([m["col_idx"] for m in discrete_modules], dtype=np.intp)
-    tau_tc = np.ones((n_mods, n_t), dtype=np.float64)
+    all_cell_rows = np.stack([m["cell_rows"] for m in discrete_modules], axis=0)  # (n_mods, 12, 6)
+    all_cell_cols = np.stack([m["cell_cols"] for m in discrete_modules], axis=0)  # (n_mods, 12, 6)
+    tau_lo = np.ones((n_mods, n_t), dtype=np.float64)
+    tau_hi = np.ones((n_mods, n_t), dtype=np.float64)
 
     for t_idx in range(n_t):
-        t_lit = daylight_masks[t_idx][mod_rows, mod_cols] > 0
+        t_lit = (daylight_masks[t_idx][all_cell_rows, all_cell_cols] > 0)  # (n_mods, 12, 6)
         if has_canopy and daylight_canopy_transmittance and t_idx < len(daylight_canopy_transmittance):
-            c_tau = daylight_canopy_transmittance[t_idx][mod_rows, mod_cols]
+            c_tau = daylight_canopy_transmittance[t_idx][all_cell_rows, all_cell_cols]
         elif has_canopy and daylight_canopy_masks and t_idx < len(daylight_canopy_masks):
-            c_lit = daylight_canopy_masks[t_idx][mod_rows, mod_cols] > 0
+            c_lit = daylight_canopy_masks[t_idx][all_cell_rows, all_cell_cols] > 0
             c_tau = np.where(c_lit, 1.0, canopy_transmittance)
         else:
-            c_tau = 1.0
-        tau_tc[:, t_idx] = np.where(t_lit, c_tau, 0.0)
+            c_tau = np.ones((n_mods, CELL_ROWS, CELL_COLS), dtype=np.float64)
+
+        # Reshape (n_mods, 2 halves, 6 rows, 3 substrings, 2 cols)
+        lit_sub = t_lit.reshape(n_mods, 2, 6, 3, 2).all(axis=(2, 4))  # (n_mods, 2, 3)
+        tau_sub = c_tau.reshape(n_mods, 2, 6, 3, 2).min(axis=(2, 4))  # (n_mods, 2, 3)
+        eff_sub = np.where(lit_sub, tau_sub, 0.0)
+        # Half-module receives mean of its 3 substrings (each substring = 1/6 of module -> * 0.5 below)
+        tau_lo[:, t_idx] = eff_sub[:, 0, :].mean(axis=1)
+        tau_hi[:, t_idx] = eff_sub[:, 1, :].mean(axis=1)
 
     # Precompute for each module whether it has a south obstruction at each timestep
     south_obs_mat = np.zeros((n_mods, n_t), dtype=bool)
@@ -219,10 +232,15 @@ def _optimize_row_tilts(
         bot_all = bot_obs_idxs + bot_free_idxs
         top_all = top_obs_idxs + top_free_idxs
 
-        tau_bot_all = np.sum(tau_tc[bot_all], axis=0) if bot_all else np.zeros(n_t)
-        tau_bot_obs = np.sum(np.where(south_obs_mat[bot_all], tau_tc[bot_all], 0.0), axis=0) if bot_all else np.zeros(n_t)
-        tau_top_all = np.sum(tau_tc[top_all], axis=0) if top_all else np.zeros(n_t)
-        tau_top_obs = np.sum(np.where(south_obs_mat[top_all], tau_tc[top_all], 0.0), axis=0) if top_all else np.zeros(n_t)
+        tau_bot_lo_all = 0.5 * np.sum(tau_lo[bot_all], axis=0) if bot_all else np.zeros(n_t)
+        tau_bot_lo_obs = 0.5 * np.sum(np.where(south_obs_mat[bot_all], tau_lo[bot_all], 0.0), axis=0) if bot_all else np.zeros(n_t)
+        tau_bot_hi_all = 0.5 * np.sum(tau_hi[bot_all], axis=0) if bot_all else np.zeros(n_t)
+        tau_bot_hi_obs = 0.5 * np.sum(np.where(south_obs_mat[bot_all], tau_hi[bot_all], 0.0), axis=0) if bot_all else np.zeros(n_t)
+
+        tau_top_lo_all = 0.5 * np.sum(tau_lo[top_all], axis=0) if top_all else np.zeros(n_t)
+        tau_top_lo_obs = 0.5 * np.sum(np.where(south_obs_mat[top_all], tau_lo[top_all], 0.0), axis=0) if top_all else np.zeros(n_t)
+        tau_top_hi_all = 0.5 * np.sum(tau_hi[top_all], axis=0) if top_all else np.zeros(n_t)
+        tau_top_hi_obs = 0.5 * np.sum(np.where(south_obs_mat[top_all], tau_hi[top_all], 0.0), axis=0) if top_all else np.zeros(n_t)
 
         def _svf_arr(idxs):
             if not idxs:
@@ -230,10 +248,14 @@ def _optimize_row_tilts(
             return np.array([float(svf_grid[discrete_modules[m]["row_idx"], discrete_modules[m]["col_idx"]]) for m in idxs], dtype=np.float64)
 
         row_agg[r_idx] = {
-            "tau_bot_all": tau_bot_all,
-            "tau_bot_obs": tau_bot_obs,
-            "tau_top_all": tau_top_all,
-            "tau_top_obs": tau_top_obs,
+            "tau_bot_lo_all": tau_bot_lo_all,
+            "tau_bot_lo_obs": tau_bot_lo_obs,
+            "tau_bot_hi_all": tau_bot_hi_all,
+            "tau_bot_hi_obs": tau_bot_hi_obs,
+            "tau_top_lo_all": tau_top_lo_all,
+            "tau_top_lo_obs": tau_top_lo_obs,
+            "tau_top_hi_all": tau_top_hi_all,
+            "tau_top_hi_obs": tau_top_hi_obs,
             "svf_bot_obs": _svf_arr(bot_obs_idxs),
             "svf_bot_free": _svf_arr(bot_free_idxs),
             "svf_top_obs": _svf_arr(top_obs_idxs),
@@ -265,14 +287,25 @@ def _optimize_row_tilts(
                 np.clip(((s_y - d_gap) / np.maximum(denom, 1e-6)) / slant_h, 0.0, 1.0),
                 0.0
             )
-            bot_f = np.clip(rack_f * 2.0, 0.0, 1.0)
-            top_f = np.clip((rack_f - 0.5) * 2.0, 0.0, 1.0)
+            bot_lo_f = np.where(rack_f > 1e-4, 1.0, 0.0)
+            bot_hi_f = np.where(rack_f > 0.25 + 1e-4, 1.0, 0.0)
+            top_lo_f = np.where(rack_f > 0.50 + 1e-4, 1.0, 0.0)
+            top_hi_f = np.where(rack_f > 0.75 + 1e-4, 1.0, 0.0)
         else:
-            bot_f = 0.0
-            top_f = 0.0
+            bot_lo_f = 0.0
+            bot_hi_f = 0.0
+            top_lo_f = 0.0
+            top_hi_f = 0.0
 
         dir_e = float(
-            np.sum(poa_dir * (agg["tau_bot_all"] - bot_f * agg["tau_bot_obs"] + agg["tau_top_all"] - top_f * agg["tau_top_obs"]))
+            np.sum(
+                poa_dir * (
+                    agg["tau_bot_lo_all"] - bot_lo_f * agg["tau_bot_lo_obs"]
+                    + agg["tau_bot_hi_all"] - bot_hi_f * agg["tau_bot_hi_obs"]
+                    + agg["tau_top_lo_all"] - top_lo_f * agg["tau_top_lo_obs"]
+                    + agg["tau_top_hi_all"] - top_hi_f * agg["tau_top_hi_obs"]
+                )
+            )
         )
 
         dif_e = 0.0
@@ -701,6 +734,8 @@ class SimulationOrchestrator:
                 table_svfs = []
 
                 for k in range(num_pairs):
+                    t0 = k / float(num_pairs)
+                    t1 = (k + 1) / float(num_pairs)
                     t_mid = (k + 0.5) / float(num_pairs)
 
                     lon_bot = (1.0 - t_mid) * c0[0] + t_mid * c1[0]
@@ -712,6 +747,33 @@ class SimulationOrchestrator:
                     c_lat_b = 0.75 * lat_bot + 0.25 * lat_top
                     c_lon_t = 0.25 * lon_bot + 0.75 * lon_top
                     c_lat_t = 0.25 * lat_bot + 0.75 * lat_top
+
+                    # Precompute 12x6 (72-cell) grid indices for bottom and top modules
+                    u_cells = t0 + ((np.arange(CELL_COLS) + 0.5) / float(CELL_COLS)) * (t1 - t0)
+                    v_cells_b = 0.5 * ((np.arange(CELL_ROWS) + 0.5) / float(CELL_ROWS))
+                    v_cells_t = 0.5 + 0.5 * ((np.arange(CELL_ROWS) + 0.5) / float(CELL_ROWS))
+
+                    def _cell_grid_indices(v_vec):
+                        uu = u_cells[None, :]  # (1, 6)
+                        vv = v_vec[:, None]    # (12, 1)
+                        lon_s = (1.0 - uu) * c0[0] + uu * c1[0]
+                        lat_s = (1.0 - uu) * c0[1] + uu * c1[1]
+                        lon_n = (1.0 - uu) * c3[0] + uu * c2[0]
+                        lat_n = (1.0 - uu) * c3[1] + uu * c2[1]
+                        c_lon = (1.0 - vv) * lon_s + vv * lon_n
+                        c_lat = (1.0 - vv) * lat_s + vv * lat_n
+                        if lon_span > 0:
+                            cc = np.clip((((c_lon - min_lon) / lon_span) * patch_w).astype(np.intp), 0, patch_w - 1)
+                        else:
+                            cc = np.zeros((CELL_ROWS, CELL_COLS), dtype=np.intp)
+                        if lat_span > 0:
+                            rr = np.clip((((max_lat - c_lat) / lat_span) * patch_h).astype(np.intp), 0, patch_h - 1)
+                        else:
+                            rr = np.zeros((CELL_ROWS, CELL_COLS), dtype=np.intp)
+                        return rr, cc
+
+                    cell_rows_b, cell_cols_b = _cell_grid_indices(v_cells_b)
+                    cell_rows_t, cell_cols_t = _cell_grid_indices(v_cells_t)
 
                     col_b = min(patch_w - 1, max(0, int(((c_lon_b - min_lon) / lon_span) * patch_w))) if lon_span > 0 else 0
                     row_b = min(patch_h - 1, max(0, int(((max_lat - c_lat_b) / lat_span) * patch_h))) if lat_span > 0 else 0
@@ -756,6 +818,8 @@ class SimulationOrchestrator:
                         discrete_modules.append({
                             "row_idx": row_b,
                             "col_idx": col_b,
+                            "cell_rows": cell_rows_b,
+                            "cell_cols": cell_cols_b,
                             "table_row_index": tbl.row_index,
                             "is_front_row": is_front_row,
                             "is_top": False,
@@ -768,6 +832,8 @@ class SimulationOrchestrator:
                         discrete_modules.append({
                             "row_idx": row_t,
                             "col_idx": col_t,
+                            "cell_rows": cell_rows_t,
+                            "cell_cols": cell_cols_t,
                             "table_row_index": tbl.row_index,
                             "is_front_row": is_front_row,
                             "is_top": True,
@@ -930,8 +996,8 @@ class SimulationOrchestrator:
                     diffuse_total = 0.0
 
                     for mod in discrete_modules:
-                        r = mod["row_idx"]
-                        c = mod["col_idx"]
+                        c_rows = mod["cell_rows"]
+                        c_cols = mod["cell_cols"]
                         r_idx = mod["table_row_index"]
                         direct_mod_w = poa_dir_by_row[r_idx] * module_conv
                         mod_diffuse_w = poa_dif_by_row[r_idx] * module_conv * mod["svf"]
@@ -939,64 +1005,49 @@ class SimulationOrchestrator:
                         diffuse_total += mod_diffuse_w
                         rack_self_frac = rack_self_by_row[r_idx]
 
-                        terrain_lit = bool(mask[r, c] > 0)
-                        canopy_lit = bool(canopy_m[r, c] > 0) if canopy_m is not None else True
-
-                        if not terrain_lit:
-                            num_terrain_shaded += 1
-                            geo_loss = direct_mod_w
-                            canopy_loss = 0.0
-                            self_loss = 0.0
-                            mod_pwr = mod_diffuse_w
+                        terrain_lit_cells = (mask[c_rows, c_cols] > 0)
+                        if canopy_t_grid is not None:
+                            canopy_tau_cells = canopy_t_grid[c_rows, c_cols]
+                        elif canopy_m is not None:
+                            canopy_tau_cells = np.where(canopy_m[c_rows, c_cols] > 0, 1.0, canopy_transmittance)
                         else:
-                            geo_loss = 0.0
-                            # Solid panel self-shading takes physical precedence over semi-transparent tree canopy shade
-                            self_loss = 0.0
-                            mod_frac = 0.0
-                            if rack_self_frac > 0.0 and (not mod["is_front_row"]) and mod["south_tables"]:
-                                delta_x_m = layout.row_pitch_m * tan_az_delta
-                                m_per_deg_lon = 111320.0 * np.cos(np.radians(mod["center_lat"]))
-                                delta_lon = delta_x_m / m_per_deg_lon if m_per_deg_lon > 0 else 0.0
-                                lon_source = mod["center_lon"] - delta_lon
+                            canopy_tau_cells = np.ones((CELL_ROWS, CELL_COLS), dtype=np.float64)
 
-                                has_obstruction = False
-                                for st in mod["south_tables"]:
-                                    sc = st.corners_wgs84
-                                    if not sc or len(sc) < 4:
-                                        continue
-                                    st_min = min(sc[0][0], sc[3][0])
-                                    st_max = max(sc[1][0], sc[2][0])
-                                    if st_min <= lon_source <= st_max:
-                                        has_obstruction = True
-                                        break
+                        has_obstruction = False
+                        if rack_self_frac > 1e-4 and (not mod["is_front_row"]) and mod["south_tables"]:
+                            delta_x_m = layout.row_pitch_m * tan_az_delta
+                            m_per_deg_lon = 111320.0 * np.cos(np.radians(mod["center_lat"]))
+                            delta_lon = delta_x_m / m_per_deg_lon if m_per_deg_lon > 0 else 0.0
+                            lon_source = mod["center_lon"] - delta_lon
 
-                                if has_obstruction:
-                                    if not mod["is_top"]:
-                                        mod_frac = float(np.clip(rack_self_frac * 2.0, 0.0, 1.0))
-                                    else:
-                                        mod_frac = float(np.clip((rack_self_frac - 0.5) * 2.0, 0.0, 1.0))
-                                    self_loss = direct_mod_w * mod_frac
+                            for st in mod["south_tables"]:
+                                sc = st.corners_wgs84
+                                if not sc or len(sc) < 4:
+                                    continue
+                                st_min = min(sc[0][0], sc[3][0])
+                                st_max = max(sc[1][0], sc[2][0])
+                                if st_min <= lon_source <= st_max:
+                                    has_obstruction = True
+                                    break
 
-                            unblocked_direct = max(0.0, direct_mod_w - self_loss)
+                        geo_frac, self_frac, canopy_frac, direct_frac = compute_split_halfcut_module_losses(
+                            terrain_lit_cells=terrain_lit_cells,
+                            canopy_tau_cells=canopy_tau_cells,
+                            rack_self_frac=rack_self_frac,
+                            is_top=mod["is_top"],
+                            has_obstruction=has_obstruction,
+                        )
 
-                            if canopy_t_grid is not None:
-                                local_tau = float(canopy_t_grid[r, c])
-                                if local_tau < 0.999 and unblocked_direct > 0.0:
-                                    num_canopy_shaded += 1
-                                    canopy_loss = unblocked_direct * (1.0 - local_tau)
-                                    direct_reaching = unblocked_direct * local_tau
-                                else:
-                                    canopy_loss = 0.0
-                                    direct_reaching = unblocked_direct
-                            elif not canopy_lit and unblocked_direct > 0.0:
-                                num_canopy_shaded += 1
-                                canopy_loss = unblocked_direct * (1.0 - canopy_transmittance)
-                                direct_reaching = unblocked_direct * canopy_transmittance
-                            else:
-                                canopy_loss = 0.0
-                                direct_reaching = unblocked_direct
+                        if geo_frac > 0.0:
+                            num_terrain_shaded += geo_frac
+                        if canopy_frac > 0.0:
+                            num_canopy_shaded += (canopy_frac / max(1e-6, 1.0 - canopy_transmittance))
 
-                            mod_pwr = max(0.0, direct_reaching + mod_diffuse_w)
+                        geo_loss = direct_mod_w * geo_frac
+                        self_loss = direct_mod_w * self_frac
+                        canopy_loss = direct_mod_w * canopy_frac
+                        direct_reaching = direct_mod_w * direct_frac
+                        mod_pwr = max(0.0, direct_reaching + mod_diffuse_w)
 
                         total_geo_loss_kw += geo_loss
                         total_canopy_loss_kw += canopy_loss
