@@ -71,7 +71,7 @@ export function decodeBitmask(base64Str, rows, cols) {
  * If panelShadowBytes is provided, panel shadows are merged as TERRAIN_SHADOW_WORD
  * without double-darkening on intersection.
  */
-export function decodeBitmaskToImageData(base64Str, rows, cols, ctx, panelShadowBytes = null) {
+export function decodeBitmaskToImageData(base64Str, rows, cols, ctx, panelShadowBytes = null, outTerrain = null) {
   const totalPixels = rows * cols;
   const imgData = ctx ? ctx.createImageData(cols, rows) : { data: new Uint8ClampedArray(totalPixels * 4) };
   const data32 = new Uint32Array(imgData.data.buffer);
@@ -85,6 +85,7 @@ export function decodeBitmaskToImageData(base64Str, rows, cols, ctx, panelShadow
     const byte = packed[i];
     for (let b = 7; b >= 0 && pixelIdx < totalPixels; b--) {
       const isTerrainSun = (byte >> b) & 1;
+      if (outTerrain) outTerrain[pixelIdx] = isTerrainSun;
       const inPanelShadow = panelShadowBytes ? (panelShadowBytes[pixelIdx] !== 0) : false;
       data32[pixelIdx++] = (isTerrainSun && !inPanelShadow) ? SUN_PIXEL_WORD : TERRAIN_SHADOW_WORD;
     }
@@ -107,15 +108,21 @@ export function decodeBitmaskToImageData(base64Str, rows, cols, ctx, panelShadow
  *   - panel shadow = TERRAIN_SHADOW_WORD
  *   - geological + panel shadow = TERRAIN_SHADOW_WORD (no darkening)
  */
-export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols, ctx, panelShadowBytes = null, canopyShadeB64 = null) {
+export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols, ctx, panelShadowBytes = null, canopyShadeB64 = null, outMasks = null) {
   const totalPixels = rows * cols;
+  const packedCanopy = canopyB64 ? base64ToBytes(canopyB64) : null;
+  if (!packedCanopy) {
+    return decodeBitmaskToImageData(terrainB64, rows, cols, ctx, panelShadowBytes, outMasks ? outMasks.terrain : null);
+  }
+
   const imgData = ctx ? ctx.createImageData(cols, rows) : { data: new Uint8ClampedArray(totalPixels * 4) };
   const data32 = new Uint32Array(imgData.data.buffer);
 
   if (totalPixels === 0 || (!terrainB64 && !canopyB64)) return imgData;
 
   const packedTerrain = terrainB64 ? base64ToBytes(terrainB64) : null;
-  const packedCanopy = canopyB64 ? base64ToBytes(canopyB64) : null;
+  const outTerrain = outMasks ? outMasks.terrain : null;
+  const outCanopy = outMasks ? outMasks.canopy : null;
   const canopyShadeBytes = canopyShadeB64
     ? (typeof canopyShadeB64 === 'string' ? base64ToBytes(canopyShadeB64) : canopyShadeB64)
     : null;
@@ -124,10 +131,6 @@ export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols,
     canopyShadeBytes.length < totalPixels &&
     canopyShadeBytes.length === ((totalPixels + 1) >> 1)
   );
-
-  if (!packedCanopy) {
-    return decodeBitmaskToImageData(terrainB64, rows, cols, ctx, panelShadowBytes);
-  }
 
   let pixelIdx = 0;
   const byteCount = Math.max(
@@ -142,6 +145,8 @@ export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols,
     for (let b = 7; b >= 0 && pixelIdx < totalPixels; b--) {
       const isTerrainSun = (tByte >> b) & 1;
       const isCanopySun = (cByte >> b) & 1;
+      if (outTerrain) outTerrain[pixelIdx] = isTerrainSun;
+      if (outCanopy) outCanopy[pixelIdx] = isCanopySun;
       const inPanelShadow = panelShadowBytes ? (panelShadowBytes[pixelIdx] !== 0) : false;
 
       if (!isTerrainSun || inPanelShadow) {

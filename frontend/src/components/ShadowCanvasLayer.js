@@ -158,4 +158,8 @@ export class ShadowCanvasLayer {
   getRenderer() {
     return this.shadowRenderer;
   }
+
+  getLastDecodedMasks() {
+    return this.shadowRenderer ? this.shadowRenderer.lastDecodedMasks : null;
+  }
 }

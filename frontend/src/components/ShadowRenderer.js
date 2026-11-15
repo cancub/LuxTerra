@@ -17,6 +17,9 @@ export class ShadowRenderer {
     this.currentCanopyBase64 = null;
     this.rows = 0;
     this.cols = 0;
+    this._decodedTerrain = null;
+    this._decodedCanopy = null;
+    this.lastDecodedMasks = null;
   }
 
   /**
@@ -39,15 +42,33 @@ export class ShadowRenderer {
       }
     }
 
+    const totalPixels = rows * cols;
+    if (!this._decodedTerrain || this._decodedTerrain.length !== totalPixels) {
+      this._decodedTerrain = new Uint8Array(totalPixels);
+    }
+    if (canopyBase64Str && (!this._decodedCanopy || this._decodedCanopy.length !== totalPixels)) {
+      this._decodedCanopy = new Uint8Array(totalPixels);
+    }
+    const outMasks = {
+      terrain: this._decodedTerrain,
+      canopy: canopyBase64Str ? this._decodedCanopy : null
+    };
+
     const imgData = canopyBase64Str
-      ? decodeDualBitmasksToImageData(base64Str, canopyBase64Str, rows, cols, this.ctx, panelShadowBytes, canopyShadeBase64Str)
-      : decodeBitmaskToImageData(base64Str, rows, cols, this.ctx, panelShadowBytes);
+      ? decodeDualBitmasksToImageData(base64Str, canopyBase64Str, rows, cols, this.ctx, panelShadowBytes, canopyShadeBase64Str, outMasks)
+      : decodeBitmaskToImageData(base64Str, rows, cols, this.ctx, panelShadowBytes, this._decodedTerrain);
 
     if (this.ctx) {
       this.ctx.putImageData(imgData, 0, 0);
     }
     this.currentMaskBase64 = base64Str;
     this.currentCanopyBase64 = canopyBase64Str;
+    this.lastDecodedMasks = {
+      terrain: outMasks.terrain,
+      canopy: outMasks.canopy,
+      rows,
+      cols
+    };
 
     return this.canvas || imgData;
   }

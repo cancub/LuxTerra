@@ -3,6 +3,13 @@
  * 24-hour timeline scrubber slider with sunrise/sunset markers and instantaneous solar geometry readout.
  */
 
+const TORONTO_TIME_FMT = new Intl.DateTimeFormat('fr-CA', {
+  timeZone: 'America/Toronto',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false
+});
+
 export class TimeScrubber {
   constructor(container, onTimeChange = () => {}) {
     this.container = container;
@@ -161,11 +168,6 @@ export class TimeScrubber {
     if (!item) return;
 
     const dt = new Date(item.timestamp);
-    this.timeReadout.textContent = new Intl.DateTimeFormat('fr-CA', {
-      timeZone: 'America/Toronto',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }).format(dt);
+    this.timeReadout.textContent = TORONTO_TIME_FMT.format(dt);
   }
 }

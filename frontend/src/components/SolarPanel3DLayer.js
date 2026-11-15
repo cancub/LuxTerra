@@ -191,6 +191,10 @@ export class SolarPanel3DLayer {
     }
 
     if (!layout || !layout.tables || layout.tables.length === 0) {
+      this._cachedLayout = null;
+      this._panelRenderSpecs = [];
+      this.panels = [];
+      this.hoveredPanel = null;
       this.faceVertexCount = 0;
       this.lineVertexCount = 0;
       this.faceVertices = null;
@@ -201,7 +205,14 @@ export class SolarPanel3DLayer {
       return;
     }
 
-    this.rebuildBuffers();
+    this.buildStaticLayoutCache(layout);
+    this.updateFaceColors(this.currentSun, this.currentMasks);
+    if (this.gl && this.faceBuffer && this.lineBuffer) {
+      this.uploadBuffers();
+    }
+    if (this.map && typeof this.map.triggerRepaint === 'function') {
+      this.map.triggerRepaint();
+    }
   }
 
   getLayout() {
@@ -235,7 +246,7 @@ export class SolarPanel3DLayer {
    * Updates sun angle and current raster shadow masks for dynamic per-panel face darkening
    * (canopy green vs geological dark slate vs direct sunlit white).
    */
-  updateSunPosition(azimuthDeg, elevationDeg, isDaylight, maskStr = null, canopyMaskStr = null, patchBounds = null, rows = 0, cols = 0, metric = null, canopyTransmittance = 0.15) {
+  updateSunPosition(azimuthDeg, elevationDeg, isDaylight, maskStr = null, canopyMaskStr = null, patchBounds = null, rows = 0, cols = 0, metric = null, canopyTransmittance = 0.15, predecodedMasks = null) {
     this.latestMetric = metric;
     this.canopyTransmittance = canopyTransmittance;
     this.currentSun = {
@@ -244,7 +255,15 @@ export class SolarPanel3DLayer {
       isDaylight: Boolean(isDaylight)
     };
 
-    if (maskStr && patchBounds && rows > 0 && cols > 0) {
+    if (predecodedMasks && predecodedMasks.terrain && patchBounds && predecodedMasks.rows === rows && predecodedMasks.cols === cols && rows > 0 && cols > 0) {
+      this.currentMasks = {
+        terrain: predecodedMasks.terrain,
+        canopy: predecodedMasks.canopy || null,
+        bounds: patchBounds,
+        rows,
+        cols
+      };
+    } else if (maskStr && patchBounds && rows > 0 && cols > 0) {
       this.currentMasks = {
         terrain: decodeBitmask(maskStr, rows, cols),
         canopy: canopyMaskStr ? decodeBitmask(canopyMaskStr, rows, cols) : null,
@@ -257,7 +276,19 @@ export class SolarPanel3DLayer {
     }
 
     if (this.layout && this.layout.tables && this.layout.tables.length > 0) {
-      this.rebuildBuffers();
+      if (this._cachedLayout !== this.layout) {
+        this.buildStaticLayoutCache(this.layout);
+        if (this.gl && this.lineBuffer) {
+          this.uploadLineBuffer();
+        }
+      }
+      this.updateFaceColors(this.currentSun, this.currentMasks);
+      if (this.gl && this.faceBuffer) {
+        this.uploadFaceBuffer();
+      }
+      if (this.map && typeof this.map.triggerRepaint === 'function') {
+        this.map.triggerRepaint();
+      }
     }
 
     if (this.hoveredPanel && this.onHoverCallback) {
@@ -267,10 +298,19 @@ export class SolarPanel3DLayer {
   }
 
   rebuildBuffers() {
-    this.buildGeometry(this.layout, this.currentSun, this.currentMasks);
+    if (!this.layout || !this.layout.tables || this.layout.tables.length === 0) {
+      return;
+    }
+    if (this._cachedLayout !== this.layout) {
+      this.buildStaticLayoutCache(this.layout);
+      if (this.gl && this.lineBuffer) {
+        this.uploadLineBuffer();
+      }
+    }
+    this.updateFaceColors(this.currentSun, this.currentMasks);
 
-    if (this.gl && this.faceBuffer && this.lineBuffer) {
-      this.uploadBuffers();
+    if (this.gl && this.faceBuffer) {
+      this.uploadFaceBuffer();
     }
 
     if (this.map && typeof this.map.triggerRepaint === 'function') {
@@ -362,24 +402,34 @@ export class SolarPanel3DLayer {
    * Every individual solar panel is shaded independently based on its exact geographic position.
    */
   buildGeometry(layout, sun = null, maskData = null) {
-    const tables = layout.tables;
+    this.buildStaticLayoutCache(layout);
+    this.updateFaceColors(sun || this.currentSun, maskData !== undefined ? maskData : this.currentMasks);
+  }
+
+  /**
+   * Builds and caches all sun-independent static WebGL geometry:
+   * - Frame, seam, cell-grid, and mounting-post line vertices (STATIC_DRAW)
+   * - Pre-sized Float32Array for 72-cell panel face vertices with static XYZ positions
+   * - Precomputed per-cell geographic coordinates for fast per-frame color updates
+   */
+  buildStaticLayoutCache(layout) {
+    const tables = layout && layout.tables;
     if (!tables || tables.length === 0) {
+      this._cachedLayout = null;
+      this._panelRenderSpecs = [];
       this.faceVertexCount = 0;
       this.lineVertexCount = 0;
+      this.faceVertices = null;
+      this.lineVertices = null;
       this.panels = [];
       this.hoveredPanel = null;
       return;
     }
 
     this.panels = [];
+    this._panelRenderSpecs = [];
     const minRowIndex = tables.reduce((min, t) => Math.min(min, t.row_index !== undefined ? t.row_index : 0), Infinity);
 
-    const currentSun = sun || this.currentSun;
-    const solarAz = currentSun.azimuth;
-    const solarEl = currentSun.elevation;
-    const isDaylight = currentSun.isDaylight && solarEl > 0.0;
-
-    // Set anchor point using center of first table for RTC coordinate stabilization
     const firstTable = tables[0];
     const anchorLngLat = firstTable.center_wgs84 || firstTable.corners_wgs84[0];
     const anchor = MercatorCoordinate.fromLngLat(anchorLngLat, 0);
@@ -389,9 +439,29 @@ export class SolarPanel3DLayer {
     const dy = this.anchorMerc.y;
     const dz = this.anchorMerc.z;
 
-    const faceData = []; // Elevated panel faces: 2 quads per module pair (bottom & top modules)
-    const lineData = []; // Perimeter frames, module seams, and mounting legs
+    const CELL_ROWS = 12;
+    const CELL_COLS = 6;
+    const CELLS_PER_MOD = CELL_ROWS * CELL_COLS;
+    const FLOATS_PER_CELL = 6 * 7; // 2 triangles * 3 vertices * (x,y,z,r,g,b,a)
+    const COL_CELL_GRID = [0.22, 0.28, 0.36, 0.35];
+    const COL_HALF_SPLIT = [0.75, 0.80, 0.86, 0.70];
 
+    const lerpPt3 = (a, b, t) => [
+      (1 - t) * a[0] + t * b[0],
+      (1 - t) * a[1] + t * b[1],
+      (1 - t) * a[2] + t * b[2]
+    ];
+
+    let totalModules = 0;
+    for (let t = 0; t < tables.length; t++) {
+      const tbl = tables[t];
+      if (!tbl.corners_wgs84 || tbl.corners_wgs84.length < 4) continue;
+      const numPairs = Math.max(1, Math.floor((tbl.panel_count || 4) / 2));
+      totalModules += numPairs * 2;
+    }
+
+    const faceVertices = new Float32Array(totalModules * CELLS_PER_MOD * FLOATS_PER_CELL);
+    const lineData = [];
     const rowPitchM = layout.row_pitch_m || 10.57;
 
     const tablesByRow = new Map();
@@ -401,96 +471,67 @@ export class SolarPanel3DLayer {
       tablesByRow.get(rIdx).push(tables[i]);
     }
 
+    let faceFloatCursor = 0;
+
     for (let t = 0; t < tables.length; t++) {
       const tbl = tables[t];
       const corners = tbl.corners_wgs84;
       if (!corners || corners.length < 4) continue;
 
-      const tiltRad = ((tbl.tilt_deg !== undefined ? tbl.tilt_deg : 30.0) * Math.PI) / 180.0;
+      const tblTiltDeg = tbl.tilt_deg !== undefined ? tbl.tilt_deg : 30.0;
+      const tiltRad = (tblTiltDeg * Math.PI) / 180.0;
       const hBottom = tbl.stand_height_m !== undefined ? tbl.stand_height_m : 1.0;
       const slantH = tbl.slant_height_m !== undefined ? tbl.slant_height_m : 4.56;
       const hTop = hBottom + slantH * Math.sin(tiltRad);
 
-      // Elevated 3D rack corners: SW, SE, NE, NW
       const swM = MercatorCoordinate.fromLngLat(corners[0], hBottom);
       const seM = MercatorCoordinate.fromLngLat(corners[1], hBottom);
       const neM = MercatorCoordinate.fromLngLat(corners[2], hTop);
       const nwM = MercatorCoordinate.fromLngLat(corners[3], hTop);
 
-      // Ground corners for mounting legs (z = 0)
       const swGM = MercatorCoordinate.fromLngLat(corners[0], 0);
       const seGM = MercatorCoordinate.fromLngLat(corners[1], 0);
       const neGM = MercatorCoordinate.fromLngLat(corners[2], 0);
       const nwGM = MercatorCoordinate.fromLngLat(corners[3], 0);
 
-      // Local RTC coordinates (Elevated rack)
       const sw = [swM.x - dx, swM.y - dy, swM.z - dz];
       const se = [seM.x - dx, seM.y - dy, seM.z - dz];
       const ne = [neM.x - dx, neM.y - dy, neM.z - dz];
       const nw = [nwM.x - dx, nwM.y - dy, nwM.z - dz];
 
-      // Local RTC coordinates (Ground post bases on z = 0)
       const swG = [swGM.x - dx, swGM.y - dy, swGM.z - dz];
       const seG = [seGM.x - dx, seGM.y - dy, seGM.z - dz];
       const neG = [neGM.x - dx, neGM.y - dy, neGM.z - dz];
       const nwG = [nwGM.x - dx, nwGM.y - dy, nwGM.z - dz];
 
-      // Mid-seam elevated 3D points
       const midW = [0.5 * (sw[0] + nw[0]), 0.5 * (sw[1] + nw[1]), 0.5 * (sw[2] + nw[2])];
       const midE = [0.5 * (se[0] + ne[0]), 0.5 * (se[1] + ne[1]), 0.5 * (se[2] + ne[2])];
 
-      // Find tables in the row immediately to the south for precise ray obstruction checks
       const southTables = tablesByRow.get(tbl.row_index - 1) || [];
+      const southRackTiltDeg = (southTables.length > 0 && southTables[0].tilt_deg !== undefined)
+        ? southTables[0].tilt_deg
+        : tblTiltDeg;
 
-      const c0 = corners[0]; // SW
-      const c1 = corners[1]; // SE
-      const c2 = corners[2]; // NE
-      const c3 = corners[3]; // NW
+      const c0 = corners[0];
+      const c1 = corners[1];
+      const c2 = corners[2];
+      const c3 = corners[3];
 
       const panelCount = tbl.panel_count || 4;
       const numPairs = Math.max(1, Math.floor(panelCount / 2));
 
-      // --- Render EACH individual solar panel independently! ---
       for (let k = 0; k < numPairs; k++) {
         const t0 = k / numPairs;
         const t1 = (k + 1) / numPairs;
         const tMid = (k + 0.5) / numPairs;
 
-        // 3D elevated points for this panel column
-        const b0 = [
-          (1 - t0) * sw[0] + t0 * se[0],
-          (1 - t0) * sw[1] + t0 * se[1],
-          (1 - t0) * sw[2] + t0 * se[2]
-        ];
-        const b1 = [
-          (1 - t1) * sw[0] + t1 * se[0],
-          (1 - t1) * sw[1] + t1 * se[1],
-          (1 - t1) * sw[2] + t1 * se[2]
-        ];
+        const b0 = lerpPt3(sw, se, t0);
+        const b1 = lerpPt3(sw, se, t1);
+        const m0 = lerpPt3(midW, midE, t0);
+        const m1 = lerpPt3(midW, midE, t1);
+        const t0_pt = lerpPt3(nw, ne, t0);
+        const t1_pt = lerpPt3(nw, ne, t1);
 
-        const m0 = [
-          (1 - t0) * midW[0] + t0 * midE[0],
-          (1 - t0) * midW[1] + t0 * midE[1],
-          (1 - t0) * midW[2] + t0 * midE[2]
-        ];
-        const m1 = [
-          (1 - t1) * midW[0] + t1 * midE[0],
-          (1 - t1) * midW[1] + t1 * midE[1],
-          (1 - t1) * midW[2] + t1 * midE[2]
-        ];
-
-        const t0_pt = [
-          (1 - t0) * nw[0] + t0 * ne[0],
-          (1 - t0) * nw[1] + t0 * ne[1],
-          (1 - t0) * nw[2] + t0 * ne[2]
-        ];
-        const t1_pt = [
-          (1 - t1) * nw[0] + t1 * ne[0],
-          (1 - t1) * nw[1] + t1 * ne[1],
-          (1 - t1) * nw[2] + t1 * ne[2]
-        ];
-
-        // Specific geographic coordinates for this individual panel module
         const lonBot = (1 - tMid) * c0[0] + tMid * c1[0];
         const latBot = (1 - tMid) * c0[1] + tMid * c1[1];
         const lonTop = (1 - tMid) * c3[0] + tMid * c2[0];
@@ -501,9 +542,6 @@ export class SolarPanel3DLayer {
         const centerLon_T = 0.25 * lonBot + 0.75 * lonTop;
         const centerLat_T = 0.25 * latBot + 0.75 * latTop;
 
-        const tblTiltDeg = tbl.tilt_deg !== undefined ? tbl.tilt_deg : 30.0;
-
-        // Check if there is a physical table directly south of this module column (for diffuse SVF)
         let hasSouthRack = false;
         if (tbl.row_index > minRowIndex && southTables.length > 0) {
           for (const st of southTables) {
@@ -518,52 +556,6 @@ export class SolarPanel3DLayer {
           }
         }
 
-        // Check if there is an actual physical table directly to the south along the solar vector
-        let hasSouthObstruction = false;
-        let selfShadeFrac = 0.0;
-        if (tbl.row_index > minRowIndex && isDaylight && southTables.length > 0) {
-          const azDeltaRad = ((solarAz - 180.0) * Math.PI) / 180.0;
-          const cosAzDelta = Math.cos(azDeltaRad);
-          if (cosAzDelta > 0.001) {
-            const deltaXM = rowPitchM * Math.tan(azDeltaRad);
-            const mPerDegLon = metersPerDegLon(centerLat_B);
-            const deltaLon = mPerDegLon > 0 ? deltaXM / mPerDegLon : 0.0;
-            const lonShadowSource = centerLon_B - deltaLon;
-
-            let matchedSouthTable = null;
-            for (const st of southTables) {
-              const sc = st.corners_wgs84;
-              if (!sc || sc.length < 4) continue;
-              const stMinLon = Math.min(sc[0][0], sc[3][0]);
-              const stMaxLon = Math.max(sc[1][0], sc[2][0]);
-              if (lonShadowSource >= stMinLon && lonShadowSource <= stMaxLon) {
-                hasSouthObstruction = true;
-                matchedSouthTable = st;
-                break;
-              }
-            }
-
-            if (hasSouthObstruction) {
-              const southTiltDeg = matchedSouthTable && matchedSouthTable.tilt_deg !== undefined
-                ? matchedSouthTable.tilt_deg
-                : tblTiltDeg;
-              selfShadeFrac = this.calculateRowSelfShadeFraction(
-                rowPitchM,
-                slantH,
-                tblTiltDeg,
-                solarAz,
-                solarEl,
-                southTiltDeg
-              );
-            }
-          }
-        }
-        const isSelfShaded_B = selfShadeFrac > 0.0;
-        const isSelfShaded_T = selfShadeFrac >= 0.5;
-
-        const southRackTiltDeg = (southTables.length > 0 && southTables[0].tilt_deg !== undefined)
-          ? southTables[0].tilt_deg
-          : tblTiltDeg;
         const svf_B = (tbl.module_svf && tbl.module_svf[2 * k] !== undefined)
           ? tbl.module_svf[2 * k]
           : this.calculateModuleRackSvf(rowPitchM, slantH, tblTiltDeg, false, hasSouthRack, southRackTiltDeg);
@@ -571,36 +563,20 @@ export class SolarPanel3DLayer {
           ? tbl.module_svf[2 * k + 1]
           : this.calculateModuleRackSvf(rowPitchM, slantH, tblTiltDeg, true, hasSouthRack, southRackTiltDeg);
 
-        // Render 12x6 (72-cell) split/half-cut cell grid for each module
-        const CELL_ROWS = 12;
-        const CELL_COLS = 6;
-        const COL_CELL_GRID = [0.22, 0.28, 0.36, 0.35];
-        const COL_HALF_SPLIT = [0.75, 0.80, 0.86, 0.70];
+        const cacheModuleStatic = (ptSW, ptSE, ptNE, ptNW, vBase, rackStart, panelObj) => {
+          const panelIdx = this.panels.length;
+          this.panels.push(panelObj);
 
-        const lerpPt3 = (a, b, t) => [
-          (1 - t) * a[0] + t * b[0],
-          (1 - t) * a[1] + t * b[1],
-          (1 - t) * a[2] + t * b[2]
-        ];
-        const lerpColor4 = (cA, cB, t) => [
-          (1 - t) * cA[0] + t * cB[0],
-          (1 - t) * cA[1] + t * cB[1],
-          (1 - t) * cA[2] + t * cB[2],
-          (1 - t) * cA[3] + t * cB[3]
-        ];
+          const startOffset = faceFloatCursor;
+          const cellsLon = new Float64Array(CELLS_PER_MOD);
+          const cellsLat = new Float64Array(CELLS_PER_MOD);
 
-        const renderModuleCells = (ptSW, ptSE, ptNE, ptNW, vBase, rackStart) => {
-          const cellLitTerrain = [];
-          const cellCanopyShade = [];
-          const cellSelfShade = [];
-
+          let cIdx = 0;
           for (let cr = 0; cr < CELL_ROWS; cr++) {
             const rv0 = cr / CELL_ROWS;
             const rv1 = (cr + 1) / CELL_ROWS;
             const rvMid = (cr + 0.5) / CELL_ROWS;
             const vRackMid = vBase + 0.5 * rvMid;
-
-            const isRowSelfShaded = hasSouthObstruction && (selfShadeFrac > rackStart + (cr / 24.0) + 1e-4);
 
             for (let cc = 0; cc < CELL_COLS; cc++) {
               const cu0 = cc / CELL_COLS;
@@ -612,109 +588,52 @@ export class SolarPanel3DLayer {
               const latS = (1 - uTableMid) * c0[1] + uTableMid * c1[1];
               const lonN = (1 - uTableMid) * c3[0] + uTableMid * c2[0];
               const latN = (1 - uTableMid) * c3[1] + uTableMid * c2[1];
-              const cellLon = (1 - vRackMid) * lonS + vRackMid * lonN;
-              const cellLat = (1 - vRackMid) * latS + vRackMid * latN;
-
-              const cellShade = this.sampleShadowAtPoint(cellLon, cellLat, maskData);
-              const inTerrain = !currentSun.isDaylight || cellShade.inTerrainShade;
-              const inCanopy = !inTerrain && !isRowSelfShaded && cellShade.inCanopyShade;
-
-              cellLitTerrain.push(!inTerrain);
-              cellCanopyShade.push(inCanopy);
-              cellSelfShade.push(isRowSelfShaded);
-
-              let colCellBot, colCellTop;
-              if (inTerrain || isRowSelfShaded) {
-                colCellBot = COL_GEOLOGICAL_SHADE;
-                colCellTop = COL_GEOLOGICAL_SHADE;
-              } else if (inCanopy) {
-                colCellBot = COL_CANOPY_SHADE;
-                colCellTop = COL_CANOPY_SHADE;
-              } else {
-                colCellBot = lerpColor4(COL_SUNLIT_BOT, COL_SUNLIT_TOP, rv0);
-                colCellTop = lerpColor4(COL_SUNLIT_BOT, COL_SUNLIT_TOP, rv1);
-              }
+              cellsLon[cIdx] = (1 - vRackMid) * lonS + vRackMid * lonN;
+              cellsLat[cIdx] = (1 - vRackMid) * latS + vRackMid * latN;
+              cIdx++;
 
               const p00 = lerpPt3(lerpPt3(ptSW, ptSE, cu0), lerpPt3(ptNW, ptNE, cu0), rv0);
               const p10 = lerpPt3(lerpPt3(ptSW, ptSE, cu1), lerpPt3(ptNW, ptNE, cu1), rv0);
               const p11 = lerpPt3(lerpPt3(ptSW, ptSE, cu1), lerpPt3(ptNW, ptNE, cu1), rv1);
               const p01 = lerpPt3(lerpPt3(ptSW, ptSE, cu0), lerpPt3(ptNW, ptNE, cu0), rv1);
 
-              this.pushVertex(faceData, p00, colCellBot);
-              this.pushVertex(faceData, p10, colCellBot);
-              this.pushVertex(faceData, p11, colCellTop);
-
-              this.pushVertex(faceData, p00, colCellBot);
-              this.pushVertex(faceData, p11, colCellTop);
-              this.pushVertex(faceData, p01, colCellTop);
+              const verts = [p00, p10, p11, p00, p11, p01];
+              for (let vi = 0; vi < 6; vi++) {
+                faceVertices[faceFloatCursor] = verts[vi][0];
+                faceVertices[faceFloatCursor + 1] = verts[vi][1];
+                faceVertices[faceFloatCursor + 2] = verts[vi][2];
+                faceFloatCursor += 7;
+              }
             }
           }
 
-          // Subtle 12x6 cell grid lines + center half-cut split seam
           for (let cr = 1; cr < CELL_ROWS; cr++) {
             const rv = cr / CELL_ROWS;
-            const lw = lerpPt3(ptSW, ptNW, rv);
-            const le = lerpPt3(ptSE, ptNE, rv);
-            this.pushLine(lineData, lw, le, cr === 6 ? COL_HALF_SPLIT : COL_CELL_GRID);
+            this.pushLine(lineData, lerpPt3(ptSW, ptNW, rv), lerpPt3(ptSE, ptNE, rv), cr === 6 ? COL_HALF_SPLIT : COL_CELL_GRID);
           }
           for (let cc = 1; cc < CELL_COLS; cc++) {
             const cu = cc / CELL_COLS;
-            const lb = lerpPt3(ptSW, ptSE, cu);
-            const lt = lerpPt3(ptNW, ptNE, cu);
-            this.pushLine(lineData, lb, lt, COL_CELL_GRID);
+            this.pushLine(lineData, lerpPt3(ptSW, ptSE, cu), lerpPt3(ptNW, ptNE, cu), COL_CELL_GRID);
           }
 
-          // Compute split/half-cut 6-substring loss fractions matching backend physics
-          let geoFrac = 0.0;
-          let selfFrac = 0.0;
-          let canopyFrac = 0.0;
-          let anyTerrain = false;
-          let anyCanopy = false;
-          let anySelf = false;
-          const subW = 1.0 / 6.0;
-          const tau = this.canopyTransmittance !== undefined ? this.canopyTransmittance : 0.15;
-
-          for (let h = 0; h < 2; h++) {
-            const rStart = h * 6;
-            const rEnd = rStart + 6;
-            for (let s = 0; s < 3; s++) {
-              const cStart = s * 2;
-              const cEnd = cStart + 2;
-              let subTerrain = false;
-              let subSelf = false;
-              let subCanopy = false;
-              for (let cr = rStart; cr < rEnd; cr++) {
-                for (let cc = cStart; cc < cEnd; cc++) {
-                  const idx = cr * CELL_COLS + cc;
-                  if (!cellLitTerrain[idx]) subTerrain = true;
-                  if (cellSelfShade[idx]) subSelf = true;
-                  if (cellCanopyShade[idx]) subCanopy = true;
-                }
-              }
-              if (subTerrain) {
-                geoFrac += subW;
-                anyTerrain = true;
-              } else if (subSelf) {
-                selfFrac += subW;
-                anySelf = true;
-              } else if (subCanopy) {
-                canopyFrac += subW * (1.0 - tau);
-                anyCanopy = true;
-              }
-            }
-          }
-
-          return { geoFrac, selfFrac, canopyFrac, anyTerrain, anySelf, anyCanopy };
+          this._panelRenderSpecs.push({
+            panelIdx,
+            faceFloatOffset: startOffset,
+            tableRowIndex: tbl.row_index,
+            minRowIndex,
+            southTables,
+            centerLonB: centerLon_B,
+            centerLatB: centerLat_B,
+            tblTiltDeg,
+            slantH,
+            rowPitchM,
+            rackStart,
+            cellsLon,
+            cellsLat
+          });
         };
 
-        const resB = renderModuleCells(b0, b1, m1, m0, 0.0, 0.0);
-        const resT = renderModuleCells(m0, m1, t1_pt, t0_pt, 0.5, 0.5);
-
-        const modSelfFrac_B = resB.selfFrac;
-        const modSelfFrac_T = resT.selfFrac;
-
-        // Record discrete panel modules for interactive ray-casting and per-panel power hover
-        this.panels.push({
+        cacheModuleStatic(b0, b1, m1, m0, 0.0, 0.0, {
           id: `t${tbl.table_id}_c${k}_B`,
           tableId: tbl.table_id,
           rowIndex: tbl.row_index,
@@ -723,20 +642,16 @@ export class SolarPanel3DLayer {
           label: `Table ${tbl.table_id + 1} · Row ${tbl.row_index + 1} · Module ${k * 2 + 1} (Bottom)`,
           centerLngLat: [centerLon_B, centerLat_B],
           rtcVertices: [b0, b1, m1, m0],
-          selfShadeFrac: selfShadeFrac,
-          moduleSelfShadeFrac: modSelfFrac_B,
-          geoFrac: resB.geoFrac,
-          selfFrac: resB.selfFrac,
-          canopyFrac: resB.canopyFrac,
+          selfShadeFrac: 0.0,
+          moduleSelfShadeFrac: 0.0,
+          geoFrac: 0.0,
+          selfFrac: 0.0,
+          canopyFrac: 0.0,
           svf: svf_B,
-          shadeState: {
-            inTerrainShade: Boolean(!currentSun.isDaylight || resB.anyTerrain),
-            inCanopyShade: Boolean(resB.anyCanopy),
-            isSelfShaded: Boolean(resB.anySelf)
-          }
+          shadeState: { inTerrainShade: false, inCanopyShade: false, isSelfShaded: false }
         });
 
-        this.panels.push({
+        cacheModuleStatic(m0, m1, t1_pt, t0_pt, 0.5, 0.5, {
           id: `t${tbl.table_id}_c${k}_T`,
           tableId: tbl.table_id,
           rowIndex: tbl.row_index,
@@ -745,62 +660,36 @@ export class SolarPanel3DLayer {
           label: `Table ${tbl.table_id + 1} · Row ${tbl.row_index + 1} · Module ${k * 2 + 2} (Top)`,
           centerLngLat: [centerLon_T, centerLat_T],
           rtcVertices: [m0, m1, t1_pt, t0_pt],
-          selfShadeFrac: selfShadeFrac,
-          moduleSelfShadeFrac: modSelfFrac_T,
-          geoFrac: resT.geoFrac,
-          selfFrac: resT.selfFrac,
-          canopyFrac: resT.canopyFrac,
+          selfShadeFrac: 0.0,
+          moduleSelfShadeFrac: 0.0,
+          geoFrac: 0.0,
+          selfFrac: 0.0,
+          canopyFrac: 0.0,
           svf: svf_T,
-          shadeState: {
-            inTerrainShade: Boolean(!currentSun.isDaylight || resT.anyTerrain),
-            inCanopyShade: Boolean(resT.anyCanopy),
-            isSelfShaded: Boolean(resT.anySelf)
-          }
+          shadeState: { inTerrainShade: false, inCanopyShade: false, isSelfShaded: false }
         });
       }
 
-      // --- Aluminum Framing Lines (Perimeter) ---
       this.pushLine(lineData, sw, se, COL_FRAME);
       this.pushLine(lineData, se, ne, COL_FRAME);
       this.pushLine(lineData, ne, nw, COL_FRAME);
       this.pushLine(lineData, nw, sw, COL_FRAME);
-
-      // --- 2P Horizontal Mid-Seam ---
       this.pushLine(lineData, midW, midE, COL_MID_SEAM);
 
-      // --- Vertical Seams Dividing Module Pairs ---
       for (let k = 1; k < numPairs; k++) {
         const tRatio = k / numPairs;
-        const bK = [
-          (1 - tRatio) * sw[0] + tRatio * se[0],
-          (1 - tRatio) * sw[1] + tRatio * se[1],
-          (1 - tRatio) * sw[2] + tRatio * se[2]
-        ];
-        const tK = [
-          (1 - tRatio) * nw[0] + tRatio * ne[0],
-          (1 - tRatio) * nw[1] + tRatio * ne[1],
-          (1 - tRatio) * nw[2] + tRatio * ne[2]
-        ];
+        const bK = lerpPt3(sw, se, tRatio);
+        const tK = lerpPt3(nw, ne, tRatio);
         this.pushLine(lineData, bK, tK, COL_MODULE_SEAM);
 
-        // Intermediate ground mounting posts for wide tables
         if (numPairs >= 4 && k % 2 === 0) {
-          const bgK = [
-            (1 - tRatio) * swG[0] + tRatio * seG[0],
-            (1 - tRatio) * swG[1] + tRatio * seG[1],
-            (1 - tRatio) * swG[2] + tRatio * seG[2]
-          ];
-          const tgK = [
-            (1 - tRatio) * nwG[0] + tRatio * neG[0],
-            (1 - tRatio) * nwG[1] + tRatio * neG[1],
-            (1 - tRatio) * nwG[2] + tRatio * neG[2]
-          ];
+          const bgK = lerpPt3(swG, seG, tRatio);
+          const tgK = lerpPt3(nwG, neG, tRatio);
           this.pushLine(lineData, bgK, bK, COL_POST);
           this.pushLine(lineData, tgK, tK, COL_POST);
         }
       }
 
-      // --- Four Corner Vertical Mounting Posts (Ground to Rack) ---
       this.pushLine(lineData, swG, sw, COL_POST);
       this.pushLine(lineData, seG, se, COL_POST);
       this.pushLine(lineData, nwG, nw, COL_POST);
@@ -814,11 +703,191 @@ export class SolarPanel3DLayer {
       this.avgSvf = 1.0;
     }
 
-    this.faceVertices = new Float32Array(faceData);
+    this.faceVertices = faceVertices;
     this.lineVertices = new Float32Array(lineData);
-
-    this.faceVertexCount = faceData.length / 7;
+    this.faceVertexCount = faceVertices.length / 7;
     this.lineVertexCount = lineData.length / 7;
+    this._cachedLayout = layout;
+  }
+
+  /**
+   * Updates only per-cell RGBA colors and panel shade breakdown metadata using the cached static geometry.
+   */
+  updateFaceColors(sun = null, maskData = null) {
+    if (!this.faceVertices || !this._panelRenderSpecs || this._panelRenderSpecs.length === 0) {
+      return;
+    }
+
+    const currentSun = sun || this.currentSun;
+    const solarAz = currentSun.azimuth;
+    const solarEl = currentSun.elevation;
+    const isDaylight = currentSun.isDaylight && solarEl > 0.0;
+
+    const azDeltaRad = ((solarAz - 180.0) * Math.PI) / 180.0;
+    const cosAzDelta = Math.cos(azDeltaRad);
+    const tanAzDelta = cosAzDelta > 0.001 ? Math.tan(azDeltaRad) : 0.0;
+    const canCheckSelfShade = isDaylight && cosAzDelta > 0.001;
+
+    const CELL_ROWS = 12;
+    const CELL_COLS = 6;
+    const tau = this.canopyTransmittance !== undefined ? this.canopyTransmittance : 0.15;
+    const subW = 1.0 / 6.0;
+    const faceVertices = this.faceVertices;
+
+    // Precompute sunlit row gradient colors for rows 0..11
+    if (!this._sunlitRowBot) {
+      this._sunlitRowBot = [];
+      this._sunlitRowTop = [];
+      for (let cr = 0; cr < CELL_ROWS; cr++) {
+        const rv0 = cr / CELL_ROWS;
+        const rv1 = (cr + 1) / CELL_ROWS;
+        this._sunlitRowBot.push([
+          (1 - rv0) * COL_SUNLIT_BOT[0] + rv0 * COL_SUNLIT_TOP[0],
+          (1 - rv0) * COL_SUNLIT_BOT[1] + rv0 * COL_SUNLIT_TOP[1],
+          (1 - rv0) * COL_SUNLIT_BOT[2] + rv0 * COL_SUNLIT_TOP[2],
+          (1 - rv0) * COL_SUNLIT_BOT[3] + rv0 * COL_SUNLIT_TOP[3]
+        ]);
+        this._sunlitRowTop.push([
+          (1 - rv1) * COL_SUNLIT_BOT[0] + rv1 * COL_SUNLIT_TOP[0],
+          (1 - rv1) * COL_SUNLIT_BOT[1] + rv1 * COL_SUNLIT_TOP[1],
+          (1 - rv1) * COL_SUNLIT_BOT[2] + rv1 * COL_SUNLIT_TOP[2],
+          (1 - rv1) * COL_SUNLIT_BOT[3] + rv1 * COL_SUNLIT_TOP[3]
+        ]);
+      }
+    }
+
+    const cellLitTerrain = new Uint8Array(CELL_ROWS * CELL_COLS);
+    const cellSelfShade = new Uint8Array(CELL_ROWS * CELL_COLS);
+    const cellCanopyShade = new Uint8Array(CELL_ROWS * CELL_COLS);
+
+    for (let sIdx = 0; sIdx < this._panelRenderSpecs.length; sIdx++) {
+      const spec = this._panelRenderSpecs[sIdx];
+      const panel = this.panels[spec.panelIdx];
+
+      let hasSouthObstruction = false;
+      let selfShadeFrac = 0.0;
+      if (canCheckSelfShade && spec.tableRowIndex > spec.minRowIndex && spec.southTables.length > 0) {
+        const deltaXM = spec.rowPitchM * tanAzDelta;
+        const mPerDegLon = metersPerDegLon(spec.centerLatB);
+        const deltaLon = mPerDegLon > 0 ? deltaXM / mPerDegLon : 0.0;
+        const lonShadowSource = spec.centerLonB - deltaLon;
+
+        let matchedSouthTable = null;
+        for (const st of spec.southTables) {
+          const sc = st.corners_wgs84;
+          if (!sc || sc.length < 4) continue;
+          const stMinLon = Math.min(sc[0][0], sc[3][0]);
+          const stMaxLon = Math.max(sc[1][0], sc[2][0]);
+          if (lonShadowSource >= stMinLon && lonShadowSource <= stMaxLon) {
+            hasSouthObstruction = true;
+            matchedSouthTable = st;
+            break;
+          }
+        }
+
+        if (hasSouthObstruction) {
+          const southTiltDeg = matchedSouthTable && matchedSouthTable.tilt_deg !== undefined
+            ? matchedSouthTable.tilt_deg
+            : spec.tblTiltDeg;
+          selfShadeFrac = this.calculateRowSelfShadeFraction(
+            spec.rowPitchM,
+            spec.slantH,
+            spec.tblTiltDeg,
+            solarAz,
+            solarEl,
+            southTiltDeg
+          );
+        }
+      }
+
+      let cursor = spec.faceFloatOffset;
+      let cellIdx = 0;
+
+      for (let cr = 0; cr < CELL_ROWS; cr++) {
+        const isRowSelfShaded = hasSouthObstruction && (selfShadeFrac > spec.rackStart + (cr / 24.0) + 1e-4);
+        const litBot = this._sunlitRowBot[cr];
+        const litTop = this._sunlitRowTop[cr];
+
+        for (let cc = 0; cc < CELL_COLS; cc++) {
+          const cellShade = this.sampleShadowAtPoint(spec.cellsLon[cellIdx], spec.cellsLat[cellIdx], maskData);
+          const inTerrain = !isDaylight || cellShade.inTerrainShade;
+          const inCanopy = !inTerrain && !isRowSelfShaded && cellShade.inCanopyShade;
+
+          cellLitTerrain[cellIdx] = inTerrain ? 0 : 1;
+          cellSelfShade[cellIdx] = isRowSelfShaded ? 1 : 0;
+          cellCanopyShade[cellIdx] = inCanopy ? 1 : 0;
+          cellIdx++;
+
+          let colBot, colTop;
+          if (inTerrain || isRowSelfShaded) {
+            colBot = COL_GEOLOGICAL_SHADE;
+            colTop = COL_GEOLOGICAL_SHADE;
+          } else if (inCanopy) {
+            colBot = COL_CANOPY_SHADE;
+            colTop = COL_CANOPY_SHADE;
+          } else {
+            colBot = litBot;
+            colTop = litTop;
+          }
+
+          // Vertex colors for 6 vertices: p00(bot), p10(bot), p11(top), p00(bot), p11(top), p01(top)
+          // Each vertex has stride 7; color starts at +3
+          faceVertices[cursor + 3] = colBot[0]; faceVertices[cursor + 4] = colBot[1]; faceVertices[cursor + 5] = colBot[2]; faceVertices[cursor + 6] = colBot[3];
+          faceVertices[cursor + 10] = colBot[0]; faceVertices[cursor + 11] = colBot[1]; faceVertices[cursor + 12] = colBot[2]; faceVertices[cursor + 13] = colBot[3];
+          faceVertices[cursor + 17] = colTop[0]; faceVertices[cursor + 18] = colTop[1]; faceVertices[cursor + 19] = colTop[2]; faceVertices[cursor + 20] = colTop[3];
+          faceVertices[cursor + 24] = colBot[0]; faceVertices[cursor + 25] = colBot[1]; faceVertices[cursor + 26] = colBot[2]; faceVertices[cursor + 27] = colBot[3];
+          faceVertices[cursor + 31] = colTop[0]; faceVertices[cursor + 32] = colTop[1]; faceVertices[cursor + 33] = colTop[2]; faceVertices[cursor + 34] = colTop[3];
+          faceVertices[cursor + 38] = colTop[0]; faceVertices[cursor + 39] = colTop[1]; faceVertices[cursor + 40] = colTop[2]; faceVertices[cursor + 41] = colTop[3];
+          cursor += 42;
+        }
+      }
+
+      let geoFrac = 0.0;
+      let selfFrac = 0.0;
+      let canopyFrac = 0.0;
+      let anyTerrain = false;
+      let anyCanopy = false;
+      let anySelf = false;
+
+      for (let h = 0; h < 2; h++) {
+        const rStart = h * 6;
+        const rEnd = rStart + 6;
+        for (let s = 0; s < 3; s++) {
+          const cStart = s * 2;
+          const cEnd = cStart + 2;
+          let subTerrain = false;
+          let subSelf = false;
+          let subCanopy = false;
+          for (let cr = rStart; cr < rEnd; cr++) {
+            for (let cc = cStart; cc < cEnd; cc++) {
+              const idx = cr * CELL_COLS + cc;
+              if (!cellLitTerrain[idx]) subTerrain = true;
+              if (cellSelfShade[idx]) subSelf = true;
+              if (cellCanopyShade[idx]) subCanopy = true;
+            }
+          }
+          if (subTerrain) {
+            geoFrac += subW;
+            anyTerrain = true;
+          } else if (subSelf) {
+            selfFrac += subW;
+            anySelf = true;
+          } else if (subCanopy) {
+            canopyFrac += subW * (1.0 - tau);
+            anyCanopy = true;
+          }
+        }
+      }
+
+      panel.selfShadeFrac = selfShadeFrac;
+      panel.moduleSelfShadeFrac = selfFrac;
+      panel.geoFrac = geoFrac;
+      panel.selfFrac = selfFrac;
+      panel.canopyFrac = canopyFrac;
+      panel.shadeState.inTerrainShade = Boolean(!currentSun.isDaylight || anyTerrain);
+      panel.shadeState.inCanopyShade = Boolean(anyCanopy);
+      panel.shadeState.isSelfShaded = Boolean(anySelf);
+    }
   }
 
   pushVertex(arr, pos, color) {
@@ -830,19 +899,23 @@ export class SolarPanel3DLayer {
     arr.push(p2[0], p2[1], p2[2], color[0], color[1], color[2], color[3]);
   }
 
-  uploadBuffers() {
+  uploadFaceBuffer() {
     const gl = this.gl;
-    if (!gl) return;
+    if (!gl || !this.faceBuffer || !this.faceVertices) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.faceBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, this.faceVertices, gl.DYNAMIC_DRAW);
+  }
 
-    if (this.faceBuffer && this.faceVertices) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.faceBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, this.faceVertices, gl.DYNAMIC_DRAW);
-    }
+  uploadLineBuffer() {
+    const gl = this.gl;
+    if (!gl || !this.lineBuffer || !this.lineVertices) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.lineBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, this.lineVertices, gl.STATIC_DRAW);
+  }
 
-    if (this.lineBuffer && this.lineVertices) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.lineBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, this.lineVertices, gl.DYNAMIC_DRAW);
-    }
+  uploadBuffers() {
+    this.uploadFaceBuffer();
+    this.uploadLineBuffer();
   }
 
   render(gl, matrix) {
