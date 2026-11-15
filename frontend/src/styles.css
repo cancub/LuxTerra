@@ -1636,9 +1636,35 @@ input:focus, select:focus {
     width: 100% !important;
     max-width: none !important;
     justify-content: space-between;
-    padding: 5px 8px;
-    gap: 4px;
+    padding: 5px 10px;
+    gap: 6px;
     box-sizing: border-box;
+    border-radius: 14px;
+  }
+
+  .top-command-bar .brand-badge-inline svg {
+    color: #fbbf24;
+  }
+
+  .top-command-bar .command-divider {
+    display: none;
+  }
+
+  .top-command-bar .toolbar-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    height: 28px;
+    padding: 0 12px;
+    font-size: 0.78rem;
+  }
+
+  .top-command-bar .command-icon-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    width: 30px;
+    height: 28px;
   }
 
   .top-right-controls {
@@ -1647,16 +1673,35 @@ input:focus, select:focus {
     right: 0;
     z-index: 25;
     flex-direction: column;
-    align-items: flex-end;
-    gap: 6px;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-card);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-card);
+    border-radius: 12px;
+    padding: 4px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   }
 
   #panels-toggle-btn {
-    width: 40px;
-    height: 36px;
+    width: 34px;
+    height: 32px;
     padding: 0;
     justify-content: center;
     gap: 0;
+    border-radius: 8px;
+    font-size: 0.78rem;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-secondary);
+  }
+
+  #panels-toggle-btn.active {
+    background: rgba(15, 23, 42, 0.9) !important;
+    border: 1.5px solid #38bdf8 !important;
+    color: #38bdf8 !important;
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
   }
 
   #panels-toggle-btn svg {
@@ -1664,10 +1709,14 @@ input:focus, select:focus {
   }
 
   .layer-toggle-btn {
-    width: 40px;
-    height: 36px;
+    width: 34px;
+    height: 32px;
     padding: 0 !important;
     justify-content: center;
+    border-radius: 8px;
+    background: transparent !important;
+    border-color: transparent !important;
+    color: #38bdf8 !important;
   }
 
   .layer-toggle-btn span {
@@ -1675,7 +1724,7 @@ input:focus, select:focus {
   }
 
   .maplibregl-ctrl-top-right {
-    top: 148px !important;
+    top: 146px !important;
     right: 10px !important;
   }
 
@@ -1686,7 +1735,7 @@ input:focus, select:focus {
 
   .maplibregl-ctrl-bottom-left,
   .maplibregl-ctrl-bottom-right {
-    bottom: 146px !important;
+    bottom: 118px !important;
   }
 
   .maplibregl-ctrl-attrib:not(.maplibregl-compact-show) .maplibregl-ctrl-attrib-inner {
@@ -1833,6 +1882,36 @@ input:focus, select:focus {
     display: none !important;
   }
 
+  .bottom-dock:not(.mobile-expanded) .timeline-panel {
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 10px !important;
+  }
+
+  .bottom-dock:not(.mobile-expanded) .timeline-header {
+    flex: 0 0 auto;
+    gap: 8px !important;
+    justify-content: flex-start !important;
+  }
+
+  .bottom-dock:not(.mobile-expanded) .speed-btn:not(.active) {
+    display: none !important;
+  }
+
+  .bottom-dock:not(.mobile-expanded) .speed-btn.active {
+    height: 24px !important;
+    padding: 0 6px !important;
+    font-size: 0.72rem !important;
+    background: transparent !important;
+    border: none !important;
+    color: var(--text-secondary) !important;
+  }
+
+  .bottom-dock:not(.mobile-expanded) .slider-container {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
   .timeline-panel {
     background: rgba(15, 23, 42, 0.55) !important;
     border: 1px solid rgba(255, 255, 255, 0.08) !important;
@@ -1848,7 +1927,8 @@ input:focus, select:focus {
   }
 
   .time-readout {
-    font-size: 1.02rem !important;
+    font-size: 0.95rem !important;
+    white-space: nowrap;
   }
 
   #shape-toolbar-mount {
@@ -1912,6 +1992,24 @@ input:focus, select:focus {
     width: 30px !important;
     min-width: 30px;
     padding: 0 !important;
+  }
+
+  .shape-edit-pane:not(.mobile-edit-expanded) .btn-save-menu.modified {
+    background: #2563eb !important;
+    border-color: #3b82f6 !important;
+    color: #ffffff !important;
+    border-radius: 8px;
+  }
+
+  .shape-edit-pane:not(.mobile-edit-expanded) .btn-history-back,
+  .shape-edit-pane:not(.mobile-edit-expanded) .btn-history-forward,
+  .shape-edit-pane:not(.mobile-edit-expanded) .btn-shape-clear,
+  .shape-edit-pane:not(.mobile-edit-expanded) .btn-mobile-edit-expand {
+    background: transparent;
+    border-color: transparent;
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
   }
 
   .shape-edit-pane:not(.mobile-edit-expanded) .btn-shape-reset,

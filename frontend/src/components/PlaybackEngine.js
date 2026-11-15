@@ -57,7 +57,11 @@ export class PlaybackEngine {
 
     this.speedBtns.forEach(btn => {
       btn.addEventListener('click', (e) => {
-        const speed = parseInt(e.currentTarget.dataset.speed, 10);
+        const clickedSpeed = parseInt(e.currentTarget.dataset.speed, 10);
+        const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+        const speed = (isMobile && e.currentTarget.classList.contains('active'))
+          ? (clickedSpeed === 15 ? 30 : 15)
+          : clickedSpeed;
         this.setSpeed(speed);
       });
     });

@@ -823,8 +823,17 @@ export class BoxDrawer {
   }
 
   bindMapEvents() {
-    // 1. Mouse down: can start a drag-rectangle or finalize click-to-start rectangle
-    this.map.on('mousedown', (e) => {
+    const getClientXY = (e) => {
+      const oe = e?.originalEvent;
+      const touch = oe?.touches?.[0] || oe?.changedTouches?.[0];
+      return {
+        clientX: touch?.clientX ?? oe?.clientX ?? e?.point?.x ?? 0,
+        clientY: touch?.clientY ?? oe?.clientY ?? e?.point?.y ?? 0,
+      };
+    };
+
+    // 1. Pointer down: can start a drag-rectangle or finalize click-to-start rectangle
+    const onDrawDown = (e) => {
       if (!this.isDrawingActive) return;
 
       if (this.drawMode === 'rectangle') {
@@ -850,12 +859,22 @@ export class BoxDrawer {
       this.startLngLat = e.lngLat;
       this.startPoint = e.point;
       this.isPotentialDrag = true;
+    };
+
+    this.map.on('mousedown', onDrawDown);
+    this.map.on('touchstart', (e) => {
+      if (!this.isDrawingActive) return;
+      if (e.originalEvent?.touches && e.originalEvent.touches.length > 1) return;
+      e.preventDefault?.();
+      e.originalEvent?.preventDefault?.();
+      onDrawDown(e);
     });
 
-    // 2. Mouse move: updates preview for screen-parallel rectangle or polygon line
-    this.map.on('mousemove', (e) => {
+    // 2. Pointer move: updates preview for screen-parallel rectangle or polygon line
+    const onDrawMove = (e) => {
       this.lastMousePoint = e.point;
       this.lastMouseLngLat = e.lngLat;
+      const { clientX, clientY } = getClientXY(e);
 
       if (!this.isDrawingActive) {
         if (!this.isResizing) {
@@ -884,7 +903,7 @@ export class BoxDrawer {
             if (rectData) {
               this.renderPreviewShape(rectData.coordinates, rectData.isClamped);
               const msg = `${rectData.widthM.toFixed(0)}m × ${rectData.heightM.toFixed(0)}m · ${rectData.areaM2.toLocaleString('en-US', { maximumFractionDigits: 0 })} m² • Release to finish${rectData.isClamped ? ' (Max 100,000 m² reached)' : ''}`;
-              this.showTooltip(e.originalEvent.clientX, e.originalEvent.clientY, msg, rectData.isClamped);
+              this.showTooltip(clientX, clientY, msg, rectData.isClamped);
             }
           }
         } else if (this.rectState === 'expanding') {
@@ -892,7 +911,7 @@ export class BoxDrawer {
           if (rectData) {
             this.renderPreviewShape(rectData.coordinates, rectData.isClamped);
             const msg = `${rectData.widthM.toFixed(0)}m × ${rectData.heightM.toFixed(0)}m · ${rectData.areaM2.toLocaleString('en-US', { maximumFractionDigits: 0 })} m² • Click to finish • Esc to cancel${rectData.isClamped ? ' (Max 100,000 m² reached)' : ''}`;
-            this.showTooltip(e.originalEvent.clientX, e.originalEvent.clientY, msg, rectData.isClamped);
+            this.showTooltip(clientX, clientY, msg, rectData.isClamped);
           }
         }
         return;
@@ -937,7 +956,7 @@ export class BoxDrawer {
               });
             }
             const msg = `${rectData.widthM.toFixed(0)}m × ${rectData.heightM.toFixed(0)}m · ${rectData.areaM2.toLocaleString('en-US', { maximumFractionDigits: 0 })} m² • Release to finish`;
-            this.showTooltip(e.originalEvent.clientX, e.originalEvent.clientY, msg, rectData.isClamped);
+            this.showTooltip(clientX, clientY, msg, rectData.isClamped);
           }
           return;
         }
@@ -961,12 +980,21 @@ export class BoxDrawer {
         this.renderFinalBbox(bbox, clamped.isClamped);
 
         const msg = `${clamped.widthM.toFixed(0)}m × ${clamped.heightM.toFixed(0)}m · ${clamped.areaM2.toLocaleString('en-US', { maximumFractionDigits: 0 })} m²${clamped.isClamped ? ' (Max 100,000 m² reached)' : ''}`;
-        this.showTooltip(e.originalEvent.clientX, e.originalEvent.clientY, msg, clamped.isClamped);
+        this.showTooltip(clientX, clientY, msg, clamped.isClamped);
         return;
       }
 
       // Multi-point polygon drawing mode
-      this.updateDrawingPreview(e.lngLat, e.point, e.originalEvent.clientX, e.originalEvent.clientY);
+      this.updateDrawingPreview(e.lngLat, e.point, clientX, clientY);
+    };
+
+    this.map.on('mousemove', onDrawMove);
+    this.map.on('touchmove', (e) => {
+      if (!this.isDrawingActive) return;
+      if (e.originalEvent?.touches && e.originalEvent.touches.length > 1) return;
+      e.preventDefault?.();
+      e.originalEvent?.preventDefault?.();
+      onDrawMove(e);
     });
 
     // 3. Click: places vertices or closes polygon (or absorbs rectangle drag finish)
@@ -1080,6 +1108,10 @@ export class BoxDrawer {
     };
 
     this.map.on('mouseup', finalizeMouseUp);
+    this.map.on('touchend', (e) => {
+      if (!this.isDrawingActive) return;
+      finalizeMouseUp(e);
+    });
     window.addEventListener('mouseup', finalizeMouseUp);
 
     // 5. Double-click: ignored in rectangle mode; finishes polygon in polygon mode
@@ -2296,7 +2328,16 @@ export class BoxDrawer {
   }
 
   showTooltip(x, y, textOrHtml, isClamped = false) {
-    this.tooltip.style.left = `${x}px`;
+    const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+    if (isMobile) {
+      this.tooltip.style.left = `${Math.max(10, Math.min(x, window.innerWidth - 220))}px`;
+      this.tooltip.style.maxWidth = 'calc(100vw - 24px)';
+      this.tooltip.style.whiteSpace = 'normal';
+    } else {
+      this.tooltip.style.left = `${x}px`;
+      this.tooltip.style.maxWidth = '';
+      this.tooltip.style.whiteSpace = '';
+    }
     this.tooltip.style.top = `${y}px`;
     this.tooltip.style.display = 'block';
     this.tooltip.style.borderColor = isClamped ? 'var(--accent-danger)' : 'var(--border-card)';

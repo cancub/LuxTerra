@@ -62,12 +62,19 @@ export function initMap(containerId = 'map', options = {}) {
     zoom: zoom,
     maxPitch: 85,
     pitch: pitch,
-    bearing: bearing
+    bearing: bearing,
+    attributionControl: false
   });
 
   // Controls
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
   map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
+  map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+  map.once('load', () => {
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+      document.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
+    }
+  });
 
   return map;
 }
