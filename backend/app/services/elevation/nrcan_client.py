@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 # Official Geo.ca / CanElevation STAC API endpoint
 NRCAN_STAC_URL = "https://datacube.services.geo.ca/stac/api/collections/hrdem-lidar/items"
-NRCAN_WCS_URL = "https://maps-cartes.services.geo.ca/server_serveur/rest/services/NRCan/can_elevation_wcs/MapServer/WCSServer"
 
 
 class NRCanClient:

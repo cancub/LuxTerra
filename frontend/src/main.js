@@ -306,7 +306,6 @@ if (appContainer) {
   }, { isModal: true });
 
   const toastContainer = document.getElementById('toast-container');
-  const statusPill = document.querySelector('.brand-badge .pill');
 
   function showToast(message, type = 'warning', durationMs = 5000) {
     if (!toastContainer) return;
@@ -363,9 +362,6 @@ if (appContainer) {
     const loadingPill = document.getElementById('sim-loading-pill');
     if (loadingPill) {
       loadingPill.remove();
-    }
-    if (statusPill) {
-      statusPill.textContent = 'QC Solar 1m';
     }
   }
 
@@ -449,10 +445,6 @@ if (appContainer) {
 
     const abortController = new AbortController();
     activeSimulationAbort = abortController;
-
-    if (statusPill) {
-      statusPill.innerHTML = `<span class="spinner" style="display: inline-block; vertical-align: middle; margin-right: 4px;"></span> Ray-marching...`;
-    }
 
     let loadingPill = document.getElementById('sim-loading-pill');
     if (!loadingPill) {

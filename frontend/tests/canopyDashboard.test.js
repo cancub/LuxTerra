@@ -353,15 +353,6 @@ test('SparklineChart: correctly builds clear-sky potential curve and canopy loss
   chart.toggleCurveCollapse();
   assert.equal(chart.isCollapsed, false);
   assert.equal(chart.curveBody.style.display, 'flex');
-
-  // Verify legend collapsible toggle
-  assert.equal(chart.isLegendCollapsed, false);
-  chart.toggleLegendCollapse();
-  assert.equal(chart.isLegendCollapsed, true);
-  assert.equal(chart.legendItems.style.display, 'none');
-  chart.toggleLegendCollapse();
-  assert.equal(chart.isLegendCollapsed, false);
-  assert.equal(chart.legendItems.style.display, 'flex');
 });
 
 test('PVConfigPanel: modal mode opens body expanded with hidden inner header', () => {

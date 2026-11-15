@@ -10,26 +10,6 @@ import numpy as np
 from ...schemas.domain import PVLayoutResult
 
 
-def calculate_profile_angle_rad(solar_azimuth_deg: float, solar_elevation_deg: float, rack_azimuth_deg: float = 180.0) -> float:
-    """
-    Calculates the solar profile angle (alpha_p) in radians along the row-normal (North-South) axis.
-    Returns 0.0 if the sun is below the horizon or behind the array.
-    """
-    if solar_elevation_deg <= 0.0:
-        return 0.0
-
-    az_delta_rad = np.radians(solar_azimuth_deg - rack_azimuth_deg)
-    cos_az_delta = np.cos(az_delta_rad)
-
-    # If cos_az_delta <= 0, the sun is behind the front-facing plane of the panels (e.g. northern sky)
-    if cos_az_delta <= 0.001:
-        return 0.0
-
-    tan_alpha = np.tan(np.radians(solar_elevation_deg))
-    tan_alpha_p = tan_alpha / cos_az_delta
-    return float(np.arctan(tan_alpha_p))
-
-
 def calculate_row_self_shading_fraction(
     row_pitch_m: float,
     slant_height_m: float,

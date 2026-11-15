@@ -9,13 +9,11 @@ from ..schemas.simulate import SimulateRequest, SimulateResponse
 from ..interfaces.elevation_source import ElevationProvider
 from ..interfaces.solar_engine import SolarEngine
 from ..interfaces.occlusion_engine import OcclusionEngine
-from ..interfaces.pv_model import PVSystemModel
 
 from ..dependencies import (
     get_elevation_provider,
     get_solar_engine,
     get_occlusion_engine,
-    get_pv_model
 )
 from ..services.simulator import SimulationOrchestrator
 
@@ -39,7 +37,6 @@ def simulate(
     elevation_provider: ElevationProvider = Depends(get_elevation_provider),
     solar_engine: SolarEngine = Depends(get_solar_engine),
     occlusion_engine: OcclusionEngine = Depends(get_occlusion_engine),
-    pv_model: PVSystemModel = Depends(get_pv_model)
 ) -> SimulateResponse:
     """
     Executes full-day batch simulation.
@@ -48,7 +45,6 @@ def simulate(
         elevation_provider=elevation_provider,
         solar_engine=solar_engine,
         occlusion_engine=occlusion_engine,
-        pv_model=pv_model
     )
 
     try:

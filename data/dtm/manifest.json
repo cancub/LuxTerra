@@ -169,6 +169,34 @@
       "dsm_path": "/app/data/dsm/dsm_auto_45.757_-71.949.tif"
     },
     {
+      "filename": "dtm_auto_45.780_-72.010_b1000.tif",
+      "path": "/app/data/dtm/dtm_auto_45.780_-72.010_b1000.tif",
+      "crs": "EPSG:3979",
+      "width": 3315,
+      "height": 3314,
+      "resolution": [
+        1.0,
+        1.0
+      ],
+      "bounds_native": [
+        1771589.7119156066,
+        -38040.63982714634,
+        1774904.7119156066,
+        -34726.63982714634
+      ],
+      "bounds_wgs84": [
+        -72.03738698502501,
+        45.761038981527236,
+        -71.98319057663633,
+        45.798955125090295
+      ],
+      "nodata": -32767.0,
+      "filesize_bytes": 1272985,
+      "has_dsm": true,
+      "dsm_filename": "dsm_auto_45.780_-72.010_b1000.tif",
+      "dsm_path": "/app/data/dsm/dsm_auto_45.780_-72.010_b1000.tif"
+    },
+    {
       "filename": "dtm_auto_46.038_-74.153.tif",
       "path": "/app/data/dtm/dtm_auto_46.038_-74.153.tif",
       "crs": "EPSG:3979",
@@ -248,9 +276,9 @@
       ],
       "nodata": -32767.0,
       "filesize_bytes": 41594786,
-      "has_dsm": false,
-      "dsm_filename": null,
-      "dsm_path": null
+      "has_dsm": true,
+      "dsm_filename": "dsm_auto_46.121_-74.151.tif",
+      "dsm_path": "/app/data/dsm/dsm_auto_46.121_-74.151.tif"
     },
     {
       "filename": "dtm_auto_46.122_-73.594.tif",

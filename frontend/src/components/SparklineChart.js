@@ -111,23 +111,9 @@ export class SparklineChart {
     this.playheadPotentialDot = this.element.querySelector('.playhead-potential-dot');
     this.playheadDropLine = this.element.querySelector('.playhead-drop-line');
 
-    this.legendHeader = this.element.querySelector('.legend-header');
-    this.legendItems = this.element.querySelector('.legend-items');
-    this.legendChevron = this.element.querySelector('.legend-chevron');
-    this.legendCanopy = this.element.querySelector('.legend-canopy');
-    this.legendSelfShade = this.element.querySelector('.legend-selfshade');
-    this.legendPotential = this.element.querySelector('.legend-potential');
-
     this.curveHeader.addEventListener('click', () => {
       this.toggleCurveCollapse();
     });
-
-    if (this.legendHeader) {
-      this.legendHeader.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.toggleLegendCollapse();
-      });
-    }
 
     this.svg.addEventListener('click', (e) => {
       if (this.timeseries.length === 0) return;
@@ -149,16 +135,6 @@ export class SparklineChart {
     }
     if (this.curveChevron) {
       this.curveChevron.style.transform = this.isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)';
-    }
-  }
-
-  toggleLegendCollapse() {
-    this.isLegendCollapsed = !this.isLegendCollapsed;
-    if (this.legendItems) {
-      this.legendItems.style.display = this.isLegendCollapsed ? 'none' : 'flex';
-    }
-    if (this.legendChevron) {
-      this.legendChevron.style.transform = this.isLegendCollapsed ? 'rotate(180deg)' : 'rotate(0deg)';
     }
   }
 
@@ -245,16 +221,6 @@ export class SparklineChart {
       } else {
         this.canopyLossArea.style.display = 'none';
       }
-    }
-
-    if (this.legendCanopy) {
-      this.legendCanopy.style.display = this.hasCanopyLoss ? 'flex' : 'none';
-    }
-    if (this.legendSelfShade) {
-      this.legendSelfShade.style.display = this.hasSelfShadeLoss ? 'flex' : 'none';
-    }
-    if (this.legendPotential) {
-      this.legendPotential.style.display = hasAnyLoss ? 'flex' : 'none';
     }
 
     this.playheadLine.style.display = 'block';

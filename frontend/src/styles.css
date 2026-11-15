@@ -793,7 +793,7 @@ input:focus, select:focus {
 .glaze-nav-btn {
   background: transparent;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   color: var(--text-secondary);
   cursor: pointer;
   display: inline-flex;
@@ -802,7 +802,7 @@ input:focus, select:focus {
   font-family: inherit;
   font-weight: 500;
   padding: 4px 8px;
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .glaze-nav-btn:hover {
@@ -813,20 +813,7 @@ input:focus, select:focus {
 .speed-btn.active {
   background: rgba(56, 189, 248, 0.16);
   border-color: rgba(56, 189, 248, 0.35);
-  color: var(--accent-blue);
-}
-
-.date-step-btn {
-  padding: 4px 6px;
-}
-
-.date-display-btn {
-  transition: all 0.15s ease;
-}
-
-.date-display-btn:hover {
-  border-color: var(--accent-sun) !important;
-  box-shadow: 0 0 10px var(--accent-sun-glow) !important;
+  color: var(--accent-solar);
 }
 
 .cal-day-btn:hover:not(.active) {
@@ -1545,18 +1532,12 @@ input:focus, select:focus {
 }
 
 .override-view-btn.active {
-  background: var(--accent-primary, #3b82f6);
+  background: var(--accent-solar);
   color: #ffffff;
 }
 
 .save-menu {
   min-width: 185px;
-}
-
-.save-menu-divider {
-  height: 1px;
-  background: rgba(255, 255, 255, 0.1);
-  margin: 3px 4px;
 }
 
 .toolbar-menu-item:disabled {

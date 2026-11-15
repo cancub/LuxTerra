@@ -17,14 +17,6 @@ class AppConfig(BaseModel):
     # Geographic and DTM limits
     max_patch_area_m2: float = 100000.0
     default_buffer_meters: float = 1000.0
-    default_resolution_m: float = 1.0
-    default_time_step_minutes: int = 1
-    
-    # PV Conversion defaults
-    default_module_efficiency: float = 0.20
-    default_system_derate: float = 0.80
-    default_rooftop_gcr: float = 1.0
-    default_ground_gcr: float = 0.45
 
     # CORS
     cors_origins: List[str] = [

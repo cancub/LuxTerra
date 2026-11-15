@@ -6,30 +6,11 @@ import numpy as np
 import pytest
 
 from backend.app.services.pv.self_shading import (
-    calculate_profile_angle_rad,
     calculate_row_self_shading_fraction,
     calculate_array_self_shading_fraction,
     calculate_module_rack_sky_view_factor
 )
 from backend.app.schemas.domain import PVTableGeometry, PVLayoutResult
-
-
-def test_calculate_profile_angle_rad():
-    # Sun below horizon
-    assert calculate_profile_angle_rad(180.0, -5.0) == 0.0
-    assert calculate_profile_angle_rad(180.0, 0.0) == 0.0
-
-    # Sun in northern sky (azimuth < 90 or > 270)
-    assert calculate_profile_angle_rad(60.0, 20.0) == 0.0
-    assert calculate_profile_angle_rad(300.0, 20.0) == 0.0
-
-    # Solar noon from True South (azimuth = 180.0)
-    alpha_p = calculate_profile_angle_rad(180.0, 45.0)
-    assert np.isclose(np.degrees(alpha_p), 45.0, atol=1e-3)
-
-    # Oblique southern angle (azimuth = 150.0) -> profile angle steeper than elevation
-    alpha_p_obl = calculate_profile_angle_rad(150.0, 30.0)
-    assert np.degrees(alpha_p_obl) > 30.0
 
 
 def test_calculate_row_self_shading_fraction_design_cutoff():

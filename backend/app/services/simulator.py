@@ -24,7 +24,6 @@ from ..constants import DEFAULT_TIMEZONE
 from ..interfaces.elevation_source import ElevationProvider
 from ..interfaces.solar_engine import SolarEngine
 from ..interfaces.occlusion_engine import OcclusionEngine
-from ..interfaces.pv_model import PVSystemModel
 from .elevation.geo_utils import transform_geometry, get_transformer
 from .serializer import encode_masks_batch, encode_mask_bitmask
 from .solar.phenology import calculate_canopy_transmittance
@@ -408,13 +407,11 @@ class SimulationOrchestrator:
         elevation_provider: ElevationProvider,
         solar_engine: SolarEngine,
         occlusion_engine: OcclusionEngine,
-        pv_model: PVSystemModel,
         packing_engine: Optional[PVPackingEngine] = None
     ):
         self.elevation_provider = elevation_provider
         self.solar_engine = solar_engine
         self.occlusion_engine = occlusion_engine
-        self.pv_model = pv_model
         self.packing_engine = packing_engine or PVPackingEngine()
 
     def run_simulation(self, request: SimulateRequest) -> SimulateResponse:

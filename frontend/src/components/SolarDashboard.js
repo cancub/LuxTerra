@@ -212,7 +212,6 @@ export class SolarDashboard {
         </div>
       </div>
       <div class="internal-chart-mount" style="display: none;"></div>
-      <div class="pv-config-internal-mount" style="display: none;"></div>
     `;
 
     if (this.dailyEnergyContainer) {
@@ -302,7 +301,6 @@ export class SolarDashboard {
     this.instantaneousTitle = this.element.querySelector('.instantaneous-title');
     this.isHoveringPanel = false;
 
-    this.pvConfigMount = this.element.querySelector('.pv-config-internal-mount');
     const targetChartMount = this.chartContainer || this.element.querySelector('.internal-chart-mount');
 
     this.chart = new SparklineChart(targetChartMount, (idx) => {
@@ -332,10 +330,6 @@ export class SolarDashboard {
     }
   }
 
-  getPVConfigMount() {
-    return this.pvConfigMount;
-  }
-
   setSimulationData(data, scaleFactor = 1.0) {
     if (!data) {
       this.timeseries = [];
@@ -343,8 +337,6 @@ export class SolarDashboard {
       this.currentMetric = null;
       this.currentIndex = 0;
       this.isHoveringPanel = false;
-      if (this.panelHoverBanner) this.panelHoverBanner.style.display = 'none';
-      if (this.hoveredPanelIndicator) this.hoveredPanelIndicator.style.display = 'none';
       if (this.instantaneousTitle) this.instantaneousTitle.textContent = 'Instantaneous AC Power';
       if (this.kwhTotal) this.kwhTotal.textContent = '0.0';
       if (this.tiltVal) this.tiltVal.textContent = '--°';
