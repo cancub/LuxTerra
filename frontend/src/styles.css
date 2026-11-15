@@ -1650,16 +1650,28 @@ input:focus, select:focus {
     display: none;
   }
 
+  .top-command-bar .shape-toolbar-primary {
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
   .top-command-bar .command-nav-btn,
   .top-command-bar .toolbar-btn {
+    flex: 0 0 auto;
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 999px;
     height: 28px;
-    padding: 0 12px;
+    padding: 0 14px;
     font-size: 0.78rem;
     font-weight: 500;
     color: var(--text-primary);
+  }
+
+  .toast-container {
+    top: auto;
+    bottom: 136px;
+    width: min(360px, calc(100vw - 24px));
   }
 
   .top-command-bar .command-icon-btn {
