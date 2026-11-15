@@ -26,10 +26,9 @@ WORKDIR /app
 COPY backend/requirements.txt ./backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
 
-COPY backend/ ./backend/
+COPY backend/app/ ./backend/app/
 COPY scripts/ ./scripts/
-COPY data/dtm/ ./data/dtm/
-COPY data/dsm/ ./data/dsm/
+RUN mkdir -p data/dtm data/dsm
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 EXPOSE 8000
