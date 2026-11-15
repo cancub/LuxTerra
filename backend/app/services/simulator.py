@@ -343,16 +343,24 @@ def _optimize_row_tilts(
 
     for k in range(1, n_r):
         rk = distinct_rows[k]
-        for j, th in enumerate(coarse_grid):
-            best_val = -1.0
-            best_i = 0
-            for i, s_th in enumerate(coarse_grid):
-                val = dp[k - 1, i] + eval_row_energy(rk, th, s_th)
-                if val > best_val:
-                    best_val = val
-                    best_i = i
-            dp[k, j] = best_val
-            back[k, j] = best_i
+        is_adjacent_south = (rk - distinct_rows[k - 1] == 1)
+        if not is_adjacent_south:
+            best_i = int(np.argmax(dp[k - 1]))
+            prev_best = float(dp[k - 1, best_i])
+            for j, th in enumerate(coarse_grid):
+                dp[k, j] = prev_best + eval_row_energy(rk, th, None)
+                back[k, j] = best_i
+        else:
+            for j, th in enumerate(coarse_grid):
+                best_val = -1.0
+                best_i = 0
+                for i, s_th in enumerate(coarse_grid):
+                    val = dp[k - 1, i] + eval_row_energy(rk, th, s_th)
+                    if val > best_val:
+                        best_val = val
+                        best_i = i
+                dp[k, j] = best_val
+                back[k, j] = best_i
 
     best_idx = int(np.argmax(dp[n_r - 1]))
     opt_tilts = [0.0] * n_r
@@ -365,9 +373,10 @@ def _optimize_row_tilts(
     for _ in range(2):
         for k in range(n_r):
             rk = distinct_rows[k]
-            s_th = opt_tilts[k - 1] if k > 0 else None
-            n_th = opt_tilts[k + 1] if k + 1 < n_r else None
-            rk_next = distinct_rows[k + 1] if k + 1 < n_r else None
+            s_th = opt_tilts[k - 1] if (k > 0 and rk - distinct_rows[k - 1] == 1) else None
+            has_adj_north = (k + 1 < n_r and distinct_rows[k + 1] - rk == 1)
+            n_th = opt_tilts[k + 1] if has_adj_north else None
+            rk_next = distinct_rows[k + 1] if has_adj_north else None
 
             fine_lo = max(0.0, opt_tilts[k] - 2.0)
             fine_hi = min(85.0, opt_tilts[k] + 2.0)
@@ -661,14 +670,17 @@ class SimulationOrchestrator:
             daylight_irradiance = []
 
         # 4b. Synthesize maximal ground-mount solar panel layout (fixed civil layout with seasonal table tilt)
-        # Always pack panels strictly inside the active solar array boundary (polygon or solar_bbox)
-        boundary_target = request.polygon if (request.polygon and len(request.polygon) >= 3) else solar_bbox
-        layout = self.packing_engine.generate_layout(
-            boundary=boundary_target,
-            latitude=center_lat,
-            design_tilt_deg=30.0,
-            current_tilt_deg=seasonal_tilt
-        )
+        # Only generate ground-rack rows for GROUND_MOUNT mode; ROOFTOP has no inter-row racks.
+        if request.deployment_mode == DeploymentMode.GROUND_MOUNT:
+            boundary_target = request.polygon if (request.polygon and len(request.polygon) >= 3) else solar_bbox
+            layout = self.packing_engine.generate_layout(
+                boundary=boundary_target,
+                latitude=center_lat,
+                design_tilt_deg=30.0,
+                current_tilt_deg=seasonal_tilt
+            )
+        else:
+            layout = None
 
         # 5. PV System Configuration (incorporating overrides without duplicating schema defaults)
         pv_kwargs = {"deployment_mode": request.deployment_mode}
@@ -877,8 +889,8 @@ class SimulationOrchestrator:
                 has_canopy=has_canopy,
                 canopy_transmittance=transmittance.direct,
             )
-            for pos, r_idx in enumerate(distinct_rows):
-                south_tilt_by_row[r_idx] = row_tilts[distinct_rows[pos - 1]] if pos > 0 else None
+            for r_idx in distinct_rows:
+                south_tilt_by_row[r_idx] = row_tilts.get(r_idx - 1)
 
             # Update layout table tilts, center-pivoted footprints, cell grids & per-module SVF
             utm_to_wgs84 = get_transformer(target_crs, "EPSG:4326")
@@ -1081,7 +1093,7 @@ class SimulationOrchestrator:
                         if geo_frac > 0.0:
                             num_terrain_shaded += geo_frac
                         if canopy_frac > 0.0:
-                            num_canopy_shaded += (canopy_frac / max(1e-6, 1.0 - canopy_transmittance))
+                            num_canopy_shaded += min(1.0, canopy_frac / max(1e-6, 1.0 - canopy_transmittance))
 
                         geo_loss = direct_mod_w * geo_frac
                         self_loss = direct_mod_w * self_frac
@@ -1131,8 +1143,11 @@ class SimulationOrchestrator:
 
                     direct_terrain_unshaded_kw = t_unshaded_cells * irradiance.poa_direct_w_m2 * conv_factor
 
-                    # Calculate array self-shading fraction from 3D layout geometry
-                    f_self = calculate_array_self_shading_fraction(layout, angles.azimuth_deg, angles.elevation_deg)
+                    # Calculate array self-shading fraction from 3D layout geometry (ground-mount racks only)
+                    if request.deployment_mode == DeploymentMode.GROUND_MOUNT and layout is not None:
+                        f_self = calculate_array_self_shading_fraction(layout, angles.azimuth_deg, angles.elevation_deg)
+                    else:
+                        f_self = 0.0
 
                     # Self-shading blocks f_self of direct beam on terrain-unshaded cells (opaque solid shade)
                     if f_self > 0.0 and irradiance.poa_direct_w_m2 > 0.001:

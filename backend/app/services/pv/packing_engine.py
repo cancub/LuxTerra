@@ -243,12 +243,13 @@ class PVPackingEngine:
             y += pitch_m
             row_index += 1
 
-        # Re-index row_index consecutively from 0 (southernmost front row) upwards
+        # Shift row_index so the southernmost populated row starts at 0,
+        # preserving integer pitch gaps across concave / U-shaped polygons
         if tables:
-            distinct_rows = sorted(list({t.row_index for t in tables}))
-            row_map = {old_idx: new_idx for new_idx, old_idx in enumerate(distinct_rows)}
-            for t in tables:
-                t.row_index = row_map[t.row_index]
+            min_row_idx = min(t.row_index for t in tables)
+            if min_row_idx != 0:
+                for t in tables:
+                    t.row_index -= min_row_idx
 
         total_panels = sum(t.panel_count for t in tables)
         total_tables = len(tables)

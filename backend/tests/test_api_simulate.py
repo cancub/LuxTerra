@@ -611,6 +611,30 @@ async def test_simulate_with_visual_context_boundary():
             assert solar_bbox["min_lat"] - 0.0005 <= c_lat <= solar_bbox["max_lat"] + 0.0005
 
 
+@pytest.mark.asyncio
+async def test_simulate_rooftop_has_zero_self_shading_and_canopy_pct_capped():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Winter solstice rooftop: must never report synthetic rack self-shading
+        res_roof = await client.post("/api/simulate", json={
+            "bbox": {
+                "min_lon": -73.618,
+                "min_lat": 45.503,
+                "max_lon": -73.6168,
+                "max_lat": 45.504,
+            },
+            "date": "2026-12-21",
+            "time_step_minutes": 60,
+            "deployment_mode": "rooftop",
+        })
+        assert res_roof.status_code == 200
+        roof_data = res_roof.json()
+        assert roof_data["layout"] is None
+        for t in roof_data["timeseries"]:
+            assert t["self_shading_loss_kw"] == 0.0
+            assert t["canopy_shaded_pct"] <= 100.0
+
+
 
 
 

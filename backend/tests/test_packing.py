@@ -180,3 +180,31 @@ def test_packing_engine_preserves_panel_quantity_and_locations_across_seasons():
         assert t_w.tilt_deg == 69.6
         assert t_s.depth_m != t_w.depth_m
 
+
+def test_packing_engine_concave_c_shape_preserves_row_pitch_gaps():
+    """
+    A C-shaped concave polygon rotated 90 degrees (opening to the East) that omits
+    a middle row must preserve the physical pitch gap in row_index rather than
+    compacting non-adjacent rows to consecutive row_index values.
+    """
+    engine = PVPackingEngine()
+    # C-shape with a deep central notch on the East side (~50m wide, ~40m tall)
+    # Bottom arm: lat 45.50300..45.50312, Top arm: lat 45.50328..45.50340
+    # Left spine: lon -73.6180..-73.61795 (too narrow < min table width, so middle row has 0 tables)
+    c_shape = [
+        [-73.61800, 45.50300],
+        [-73.61730, 45.50300],
+        [-73.61730, 45.50312],
+        [-73.61796, 45.50312],
+        [-73.61796, 45.50328],
+        [-73.61730, 45.50328],
+        [-73.61730, 45.50340],
+        [-73.61800, 45.50340],
+    ]
+    layout = engine.generate_layout(boundary=c_shape, latitude=45.5032, design_tilt_deg=30.0, current_tilt_deg=30.0)
+    distinct_rows = sorted({t.row_index for t in layout.tables})
+    assert len(distinct_rows) >= 2
+    assert distinct_rows[0] == 0
+    # There must be a gap > 1 between the bottom arm and top arm row indices
+    assert any((distinct_rows[i + 1] - distinct_rows[i]) > 1 for i in range(len(distinct_rows) - 1))
+
