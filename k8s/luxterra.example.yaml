@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: luxterra
-  namespace: webapps
+  namespace: <your-namespace>
   labels:
     app: luxterra
 spec:
@@ -17,9 +17,10 @@ spec:
       labels:
         app: luxterra
     spec:
-      nodeSelector:
-        kubernetes.io/hostname: <your-gpu-node>
-      runtimeClassName: nvidia
+      # Optional: target a GPU node and runtime if available
+      # nodeSelector:
+      #   kubernetes.io/hostname: <your-gpu-node>
+      # runtimeClassName: nvidia
       containers:
         - name: luxterra
           image: <your-registry>/luxterra:latest
@@ -70,7 +71,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: luxterra
-  namespace: webapps
+  namespace: <your-namespace>
   labels:
     app: luxterra
 spec:
@@ -87,20 +88,15 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: luxterra-ingress
-  namespace: webapps
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
-    # Optional: attach forwardAuth middleware (e.g., oauth2-proxy)
-    # traefik.ingress.kubernetes.io/router.middlewares: <namespace>-oauth-errors@kubernetescrd,<namespace>-oauth-auth@kubernetescrd
+  namespace: <your-namespace>
 spec:
-  ingressClassName: traefik
+  ingressClassName: <your-ingress-class>
   tls:
     - hosts:
-        - luxterra.example.com
+        - <your-domain>
       secretName: luxterra-tls
   rules:
-    - host: luxterra.example.com
+    - host: <your-domain>
       http:
         paths:
           - path: /

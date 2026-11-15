@@ -14,8 +14,8 @@
 ## Monorepo Layout
 - `backend/` — FastAPI REST API, solar geometry, PV layout/self-shading physics, and CuPy/NumPy ray-marching engines.
 - `frontend/` — Vite single-page application with MapLibre GL JS, WebGL 3D panel rendering, offscreen shadow canvas projection, and interactive telemetry dashboard.
-- `k8s/` — Kubernetes Deployment, ClusterIP Service, and Traefik Ingress manifests (`webapps` namespace).
-- `scripts/` — CLI utilities (`fetch_test_dtm.py` for acquiring/indexing LiDAR GeoTIFFs and `deploy.sh` for building and rolling out to k3s).
+- `k8s/` — Example Kubernetes Deployment, Service, and Ingress manifest (`luxterra.example.yaml`).
+- `scripts/` — CLI utilities (`fetch_test_dtm.py` for acquiring/indexing LiDAR GeoTIFFs and `deploy.example.sh` for building and deploying to Kubernetes).
 - `data/` — Local raster storage and `manifest.json` indices for `dtm/` and `dsm/` GeoTIFF tiles.
 - `docs/` — Documentation media assets (`demo.gif`).
 
