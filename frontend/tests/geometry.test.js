@@ -43,7 +43,7 @@ test('clampBboxToMaxArea strictly clamps area exceeding 100,000 m²', () => {
   const res = clampBboxToMaxArea(-73.62, 45.50, -73.60, 45.51, MAX_PATCH_AREA_M2);
   assert.equal(res.isClamped, true);
   assert.ok(res.areaM2 <= MAX_PATCH_AREA_M2);
-  assert.ok(res.areaM2 > 99900); // Very close to 100,000 m²
+  assert.ok(res.areaM2 > 99500); // Very close to 100,000 m² with WGS84 safety margin
 });
 
 test('bboxToGeoJSON generates valid Polygon GeoJSON', () => {

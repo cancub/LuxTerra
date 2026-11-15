@@ -14,6 +14,7 @@
 import {
   computePolygonDimensions,
   circleToPolygonAndBbox,
+  roundCoord5 as roundCoord,
   normalizeBboxCoords as normalizeBbox,
   normalizePolygonCoords as normalizePolygon,
 } from '../utils/geometry.js';

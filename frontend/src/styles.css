@@ -276,10 +276,48 @@ body, html {
   border-radius: 0 0 4px 4px !important;
 }
 
+.maplibregl-ctrl-bottom-left {
+  bottom: 6px !important;
+  left: 16px !important;
+}
+
+.maplibregl-ctrl-bottom-right {
+  bottom: 6px !important;
+  right: 16px !important;
+}
+
+.maplibregl-ctrl-bottom-left .maplibregl-ctrl,
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl {
+  margin: 0 !important;
+}
+
+.maplibregl-ctrl-attrib.maplibregl-compact {
+  background: rgba(15, 23, 42, 0.78) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-radius: 8px !important;
+  backdrop-filter: blur(8px);
+  color: var(--text-primary) !important;
+}
+
+.maplibregl-ctrl-attrib.maplibregl-compact .maplibregl-ctrl-attrib-button {
+  background-color: transparent !important;
+  filter: invert(1);
+  opacity: 0.85;
+}
+
+.maplibregl-ctrl-attrib:not(.maplibregl-compact-show) .maplibregl-ctrl-attrib-inner {
+  display: none !important;
+}
+
+.maplibregl-ctrl-attrib-inner,
+.maplibregl-ctrl-attrib-inner a {
+  color: rgba(241, 245, 249, 0.92) !important;
+}
+
 /* Bottom Timeline Dock */
 .bottom-dock {
   position: absolute;
-  bottom: 24px;
+  bottom: 36px;
   left: 16px;
   right: 16px;
   z-index: 10;
@@ -1110,7 +1148,8 @@ input:focus, select:focus {
 }
 
 .shape-card.mode-load {
-  height: 290px;
+  height: auto;
+  max-height: 290px;
 }
 
 .shape-card.mode-new,
@@ -1628,6 +1667,8 @@ input:focus, select:focus {
   }
 
   .top-left-column {
+    position: relative;
+    z-index: 30;
     width: 100%;
     max-width: 100%;
   }
@@ -1668,10 +1709,18 @@ input:focus, select:focus {
     color: var(--text-primary);
   }
 
+  .top-command-bar .command-nav-btn.active,
+  .top-command-bar .command-icon-btn.active {
+    background: rgba(56, 189, 248, 0.2);
+    border-color: rgba(56, 189, 248, 0.7);
+    color: #38bdf8;
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+  }
+
   .toast-container,
   .sim-loading-pill {
     top: auto !important;
-    bottom: 136px !important;
+    bottom: 146px !important;
     width: min(360px, calc(100vw - 24px));
   }
 
@@ -1793,6 +1842,11 @@ input:focus, select:focus {
     display: none !important;
   }
 
+  .maplibregl-ctrl-attrib-inner,
+  .maplibregl-ctrl-attrib-inner a {
+    color: rgba(241, 245, 249, 0.92) !important;
+  }
+
   .cal-mobile-close {
     display: inline-flex;
     align-items: center;
@@ -1807,11 +1861,13 @@ input:focus, select:focus {
     display: flex !important;
     position: fixed;
     left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
+    top: auto;
+    bottom: 124px;
+    transform: translateX(-50%);
     z-index: 1600;
     width: min(300px, calc(100vw - 24px)) !important;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.78);
+    background: rgba(15, 23, 42, 0.95) !important;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85);
   }
 
   .bottom-dock {
@@ -1908,6 +1964,12 @@ input:focus, select:focus {
     background: rgba(30, 41, 59, 0.85);
     border: 1px solid rgba(148, 163, 184, 0.25);
     color: var(--text-primary);
+  }
+
+  .mobile-date-pill.active {
+    background: rgba(56, 189, 248, 0.2);
+    border-color: rgba(56, 189, 248, 0.7);
+    color: #38bdf8;
   }
 
   .mobile-dock-expand-btn {
@@ -2097,5 +2159,28 @@ input:focus, select:focus {
   .shape-edit-pane.mobile-edit-expanded {
     max-height: 55vh;
     overflow-y: auto;
+  }
+
+  .save-menu {
+    left: auto;
+    right: 0;
+  }
+
+  .draw-tooltip {
+    align-items: center;
+    gap: 10px;
+  }
+
+  .draw-tooltip-cancel {
+    pointer-events: auto;
+    background: rgba(239, 68, 68, 0.18);
+    border: 1px solid rgba(248, 113, 113, 0.45);
+    color: #fca5a5;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    flex-shrink: 0;
   }
 }

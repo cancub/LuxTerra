@@ -111,11 +111,25 @@ export class DateSelector {
   }
 
   toggleMobilePopover() {
-    this.wrapper.classList.toggle('mobile-open');
+    const isOpen = this.wrapper.classList.contains('mobile-open');
+    if (isOpen) {
+      this.closeMobilePopover();
+    } else {
+      // Teleport to body while open so .bottom-dock's backdrop-filter doesn't trap fixed positioning
+      if (this.wrapper.parentElement !== document.body) {
+        document.body.appendChild(this.wrapper);
+      }
+      this.wrapper.classList.add('mobile-open');
+      this.mobilePillBtn?.classList.add('active');
+    }
   }
 
   closeMobilePopover() {
     this.wrapper.classList.remove('mobile-open');
+    this.mobilePillBtn?.classList.remove('active');
+    if (this.container && this.wrapper.parentElement !== this.container) {
+      this.container.appendChild(this.wrapper);
+    }
   }
 
   shiftMonth(delta) {

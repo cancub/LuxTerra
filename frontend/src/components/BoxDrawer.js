@@ -158,7 +158,7 @@ export class BoxDrawer {
         source: 'draw-context-source',
         paint: {
           'line-color': '#f59e0b', // Subtle amber/gold dashed context envelope
-          'line-width': 2,
+          'line-width': 5,
           'line-dasharray': [4, 3],
           'line-opacity': 0.85
         }
@@ -439,6 +439,18 @@ export class BoxDrawer {
     this.tooltip.style.whiteSpace = 'nowrap';
     this.tooltip.style.borderRadius = '8px';
     this.tooltip.style.backdropFilter = 'blur(12px)';
+    this.tooltip.addEventListener('touchstart', (e) => {
+      if (e.target.closest('.draw-tooltip-cancel')) {
+        e.stopPropagation();
+      }
+    }, { passive: true });
+    this.tooltip.addEventListener('click', (e) => {
+      if (e.target.closest('.draw-tooltip-cancel')) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.stopDrawing();
+      }
+    });
     document.body.appendChild(this.tooltip);
   }
 
@@ -523,10 +535,23 @@ export class BoxDrawer {
     this.setHandlesVisible(true);
     this.setFillVisible(true);
 
+    const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
     if (mode === 'rectangle') {
-      this.showTooltip(0, 0, 'Click & drag, or click to start rectangle • Esc to cancel');
+      this.showTooltip(
+        0,
+        0,
+        isMobile
+          ? '<span>Tap &amp; drag, or tap corners to draw</span><button type="button" class="draw-tooltip-cancel">Cancel</button>'
+          : 'Click & drag, or click to start rectangle • Esc to cancel'
+      );
     } else {
-      this.showTooltip(0, 0, 'Click map to place 1st point • Esc to cancel');
+      this.showTooltip(
+        0,
+        0,
+        isMobile
+          ? '<span>Tap map to place 1st point</span><button type="button" class="draw-tooltip-cancel">Cancel</button>'
+          : 'Click map to place 1st point • Esc to cancel'
+      );
     }
 
     this.notifyState();
@@ -2330,16 +2355,20 @@ export class BoxDrawer {
   showTooltip(x, y, textOrHtml, isClamped = false) {
     const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
     if (isMobile) {
-      this.tooltip.style.left = `${Math.max(10, Math.min(x, window.innerWidth - 220))}px`;
-      this.tooltip.style.maxWidth = 'calc(100vw - 24px)';
+      const isBannerPos = x === 0 && y === 0;
+      this.tooltip.style.left = isBannerPos ? '10px' : `${Math.max(10, Math.min(x, window.innerWidth - 220))}px`;
+      this.tooltip.style.top = isBannerPos ? '58px' : `${Math.max(58, y)}px`;
+      this.tooltip.style.transform = isBannerPos ? 'none' : 'translate(14px, 14px)';
+      this.tooltip.style.maxWidth = isBannerPos ? 'calc(100vw - 74px)' : 'calc(100vw - 24px)';
       this.tooltip.style.whiteSpace = 'normal';
     } else {
       this.tooltip.style.left = `${x}px`;
+      this.tooltip.style.top = `${y}px`;
+      this.tooltip.style.transform = 'translate(14px, 14px)';
       this.tooltip.style.maxWidth = '';
       this.tooltip.style.whiteSpace = '';
     }
-    this.tooltip.style.top = `${y}px`;
-    this.tooltip.style.display = 'block';
+    this.tooltip.style.display = isMobile && x === 0 && y === 0 ? 'flex' : 'block';
     this.tooltip.style.borderColor = isClamped ? 'var(--accent-danger)' : 'var(--border-card)';
     this.tooltip.style.color = isClamped ? '#fca5a5' : 'var(--text-primary)';
     this.tooltip.innerHTML = textOrHtml;

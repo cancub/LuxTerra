@@ -63,8 +63,9 @@ export function clampBboxToMaxArea(startLon, startLat, curLon, curLat, maxAreaM2
     };
   }
 
-  // Scale factor preserving aspect ratio: Area' = Area * scale^2 = maxAreaM2 => scale = sqrt(maxAreaM2 / Area)
-  const scale = Math.sqrt(maxAreaM2 / dims.areaM2);
+  // Scale factor preserving aspect ratio with 0.2% linear margin (~0.4% area)
+  // so WGS84 ellipsoid area on backend never exceeds maxAreaM2
+  const scale = Math.sqrt(maxAreaM2 / dims.areaM2) * 0.998;
   const clampedLon = startLon + (curLon - startLon) * scale;
   const clampedLat = startLat + (curLat - startLat) * scale;
 

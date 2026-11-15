@@ -71,9 +71,7 @@ export function initMap(containerId = 'map', options = {}) {
   map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
   map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
   map.once('load', () => {
-    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
-      document.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
-    }
+    document.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
   });
 
   return map;
