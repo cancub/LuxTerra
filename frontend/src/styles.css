@@ -1651,12 +1651,14 @@ input:focus, select:focus {
   }
 
   .top-command-bar .toolbar-btn {
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 999px;
     height: 28px;
     padding: 0 12px;
     font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-primary);
   }
 
   .top-command-bar .command-icon-btn {
@@ -1724,8 +1726,17 @@ input:focus, select:focus {
   }
 
   .maplibregl-ctrl-top-right {
-    top: 146px !important;
-    right: 10px !important;
+    top: 148px !important;
+    right: 13px !important;
+  }
+
+  .maplibregl-ctrl-top-right .maplibregl-ctrl-group {
+    background: var(--bg-card) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-card) !important;
+    border-radius: 10px !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
   }
 
   .maplibregl-ctrl-zoom-in,
@@ -1736,6 +1747,30 @@ input:focus, select:focus {
   .maplibregl-ctrl-bottom-left,
   .maplibregl-ctrl-bottom-right {
     bottom: 118px !important;
+  }
+
+  .maplibregl-ctrl-scale {
+    background: transparent !important;
+    border: 1.5px solid rgba(255, 255, 255, 0.85) !important;
+    border-top: none !important;
+    color: #f8fafc !important;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+    padding: 0 6px !important;
+    font-weight: 500;
+  }
+
+  .maplibregl-ctrl-attrib.maplibregl-compact {
+    background: rgba(15, 23, 42, 0.78) !important;
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
+    border-radius: 8px !important;
+    backdrop-filter: blur(8px);
+    color: var(--text-primary) !important;
+  }
+
+  .maplibregl-ctrl-attrib.maplibregl-compact .maplibregl-ctrl-attrib-button {
+    background-color: transparent !important;
+    filter: invert(1);
+    opacity: 0.85;
   }
 
   .maplibregl-ctrl-attrib:not(.maplibregl-compact-show) .maplibregl-ctrl-attrib-inner {
@@ -1894,6 +1929,14 @@ input:focus, select:focus {
     justify-content: flex-start !important;
   }
 
+  .bottom-dock:not(.mobile-expanded) .play-btn {
+    background: transparent !important;
+    border: none !important;
+    width: 24px !important;
+    height: 24px !important;
+    padding: 0 !important;
+  }
+
   .bottom-dock:not(.mobile-expanded) .speed-btn:not(.active) {
     display: none !important;
   }
@@ -1972,9 +2015,12 @@ input:focus, select:focus {
   .shape-edit-pane:not(.mobile-edit-expanded) .shape-name-input {
     width: 100%;
     min-width: 0;
+    height: 28px;
     font-size: 0.76rem;
     padding: 4px 8px;
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(10, 15, 28, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
   }
 
   .shape-edit-pane:not(.mobile-edit-expanded) .shape-edit-bar {

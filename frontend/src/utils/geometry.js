@@ -207,7 +207,8 @@ export function clampPolygonToMaxArea(coordinates, maxAreaM2 = MAX_PATCH_AREA_M2
     };
   }
 
-  const scale = Math.sqrt(maxAreaM2 / dims.areaM2);
+  // 0.2% linear margin (~0.4% area) ensures WGS84 ellipsoid area on backend never exceeds maxAreaM2
+  const scale = Math.sqrt(maxAreaM2 / dims.areaM2) * 0.998;
   const [cLon, cLat] = dims.centroid;
 
   // Scale each vertex around centroid
