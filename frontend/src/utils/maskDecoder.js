@@ -66,6 +66,24 @@ export function decodeBitmask(base64Str, rows, cols) {
 }
 
 /**
+ * Decodes nibble-packed (or 1-byte-per-pixel) Base64 canopy shade levels (0..15) into a flat Uint8Array.
+ */
+export function decodeCanopyShadeLevels(base64Str, totalPixels) {
+  const result = new Uint8Array(totalPixels);
+  if (totalPixels === 0 || !base64Str) return result;
+  const bytes = typeof base64Str === 'string' ? base64ToBytes(base64Str) : base64Str;
+  const isNibblePacked = bytes.length < totalPixels && bytes.length === ((totalPixels + 1) >> 1);
+  for (let i = 0; i < totalPixels; i++) {
+    if (isNibblePacked) {
+      result[i] = (i & 1) === 0 ? (bytes[i >> 1] >> 4) & 0x0F : bytes[i >> 1] & 0x0F;
+    } else if (i < bytes.length) {
+      result[i] = bytes[i];
+    }
+  }
+  return result;
+}
+
+/**
  * Decodes a bit-packed Base64 string directly into an HTML5 Canvas ImageData.
  * Directly writes 32-bit pixel words for maximum rendering throughput.
  * If panelShadowBytes is provided, panel shadows are merged as TERRAIN_SHADOW_WORD
@@ -123,6 +141,7 @@ export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols,
   const packedTerrain = terrainB64 ? base64ToBytes(terrainB64) : null;
   const outTerrain = outMasks ? outMasks.terrain : null;
   const outCanopy = outMasks ? outMasks.canopy : null;
+  const outCanopyShade = outMasks ? outMasks.canopyShade : null;
   const canopyShadeBytes = canopyShadeB64
     ? (typeof canopyShadeB64 === 'string' ? base64ToBytes(canopyShadeB64) : canopyShadeB64)
     : null;
@@ -147,26 +166,23 @@ export function decodeDualBitmasksToImageData(terrainB64, canopyB64, rows, cols,
       const isCanopySun = (cByte >> b) & 1;
       if (outTerrain) outTerrain[pixelIdx] = isTerrainSun;
       if (outCanopy) outCanopy[pixelIdx] = isCanopySun;
+      const shadeLevel = (canopyShadeBytes && (isNibblePacked || pixelIdx < canopyShadeBytes.length))
+        ? (isNibblePacked
+          ? (((pixelIdx & 1) === 0)
+            ? (canopyShadeBytes[pixelIdx >> 1] >> 4) & 0x0F
+            : canopyShadeBytes[pixelIdx >> 1] & 0x0F)
+          : canopyShadeBytes[pixelIdx])
+        : 0;
+      if (outCanopyShade) outCanopyShade[pixelIdx] = shadeLevel;
       const inPanelShadow = panelShadowBytes ? (panelShadowBytes[pixelIdx] !== 0) : false;
 
       if (!isTerrainSun || inPanelShadow) {
         // Geological terrain shadow and panel ground shadow take precedence over tree canopy shade
         data32[pixelIdx++] = TERRAIN_SHADOW_WORD;
-      } else if (canopyShadeBytes && (isNibblePacked || pixelIdx < canopyShadeBytes.length)) {
-        const shadeLevel = isNibblePacked
-          ? (((pixelIdx & 1) === 0)
-            ? (canopyShadeBytes[pixelIdx >> 1] >> 4) & 0x0F
-            : canopyShadeBytes[pixelIdx >> 1] & 0x0F)
-          : canopyShadeBytes[pixelIdx];
-        if (shadeLevel >= 7) {
-          data32[pixelIdx++] = TERRAIN_SHADOW_WORD;
-        } else if (shadeLevel >= 1) {
-          data32[pixelIdx++] = CANOPY_SHADE_WORDS[shadeLevel - 1];
-        } else if (!isCanopySun) {
-          data32[pixelIdx++] = CANOPY_SHADOW_WORD;
-        } else {
-          data32[pixelIdx++] = SUN_PIXEL_WORD;
-        }
+      } else if (shadeLevel >= 7) {
+        data32[pixelIdx++] = TERRAIN_SHADOW_WORD;
+      } else if (shadeLevel >= 1) {
+        data32[pixelIdx++] = CANOPY_SHADE_WORDS[shadeLevel - 1];
       } else if (!isCanopySun) {
         // Legacy binary tree canopy shadow
         data32[pixelIdx++] = CANOPY_SHADOW_WORD;

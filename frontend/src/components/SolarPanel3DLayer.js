@@ -18,7 +18,7 @@
  */
 
 import maplibregl from 'maplibre-gl';
-import { decodeBitmask } from '../utils/maskDecoder.js';
+import { decodeBitmask, decodeCanopyShadeLevels } from '../utils/maskDecoder.js';
 import { metersPerDegLon } from '../utils/geometry.js';
 
 const MercatorCoordinate = maplibregl.MercatorCoordinate || (maplibregl.default && maplibregl.default.MercatorCoordinate);
@@ -52,6 +52,15 @@ const COL_SUNLIT_TOP = [0.96, 0.98, 1.00, 0.98];      // Crisp sunlit white with
 const COL_SUNLIT_BOT = [0.90, 0.93, 0.96, 0.98];      // Crisp architectural white
 const COL_CANOPY_SHADE = [0.09, 0.24, 0.17, 0.95];    // Rich forest green tree canopy shade
 const COL_GEOLOGICAL_SHADE = [0.06, 0.09, 0.16, 0.96];// Deep dark slate geological/terrain/self shadow
+// Stepped green-to-dark-shadow canopy gradient (levels 1..6); level 7+ saturates to COL_GEOLOGICAL_SHADE
+const COL_CANOPY_SHADE_LEVELS = [
+  COL_CANOPY_SHADE,
+  [20 / 255, 54 / 255, 43 / 255, 0.95],
+  [19 / 255, 48 / 255, 42 / 255, 0.95],
+  [17 / 255, 42 / 255, 40 / 255, 0.95],
+  [16 / 255, 36 / 255, 39 / 255, 0.96],
+  [15 / 255, 30 / 255, 38 / 255, 0.96],
+];
 
 // Structural framing colors
 const COL_FRAME = [0.72, 0.78, 0.86, 0.95];          // Aluminum rack perimeter frame
@@ -246,7 +255,7 @@ export class SolarPanel3DLayer {
    * Updates sun angle and current raster shadow masks for dynamic per-panel face darkening
    * (canopy green vs geological dark slate vs direct sunlit white).
    */
-  updateSunPosition(azimuthDeg, elevationDeg, isDaylight, maskStr = null, canopyMaskStr = null, patchBounds = null, rows = 0, cols = 0, metric = null, canopyTransmittance = 0.15, predecodedMasks = null) {
+  updateSunPosition(azimuthDeg, elevationDeg, isDaylight, maskStr = null, canopyMaskStr = null, patchBounds = null, rows = 0, cols = 0, metric = null, canopyTransmittance = 0.15, predecodedMasks = null, canopyShadeStr = null) {
     this.latestMetric = metric;
     this.canopyTransmittance = canopyTransmittance;
     this.currentSun = {
@@ -259,6 +268,7 @@ export class SolarPanel3DLayer {
       this.currentMasks = {
         terrain: predecodedMasks.terrain,
         canopy: predecodedMasks.canopy || null,
+        canopyShade: predecodedMasks.canopyShade || (canopyShadeStr ? decodeCanopyShadeLevels(canopyShadeStr, rows * cols) : null),
         bounds: patchBounds,
         rows,
         cols
@@ -267,6 +277,7 @@ export class SolarPanel3DLayer {
       this.currentMasks = {
         terrain: decodeBitmask(maskStr, rows, cols),
         canopy: canopyMaskStr ? decodeBitmask(canopyMaskStr, rows, cols) : null,
+        canopyShade: canopyShadeStr ? decodeCanopyShadeLevels(canopyShadeStr, rows * cols) : null,
         bounds: patchBounds,
         rows,
         cols
@@ -324,7 +335,7 @@ export class SolarPanel3DLayer {
    */
   sampleShadowAtPoint(lon, lat, maskData) {
     if (!maskData || !maskData.terrain || !maskData.bounds) {
-      return { inTerrainShade: false, inCanopyShade: false };
+      return { inTerrainShade: false, inCanopyShade: false, canopyShadeLevel: 0 };
     }
 
     const [minLon, minLat, maxLon, maxLat] = maskData.bounds;
@@ -332,7 +343,7 @@ export class SolarPanel3DLayer {
     const latSpan = maxLat - minLat;
 
     if (lonSpan <= 0 || latSpan <= 0) {
-      return { inTerrainShade: false, inCanopyShade: false };
+      return { inTerrainShade: false, inCanopyShade: false, canopyShadeLevel: 0 };
     }
 
     const c = Math.min(maskData.cols - 1, Math.max(0, Math.floor(((lon - minLon) / lonSpan) * maskData.cols)));
@@ -341,10 +352,12 @@ export class SolarPanel3DLayer {
     const idx = r * maskData.cols + c;
     const isTerrainLit = maskData.terrain[idx] === 1;
     const isCanopyLit = maskData.canopy ? (maskData.canopy[idx] === 1) : true;
+    const canopyShadeLevel = maskData.canopyShade ? maskData.canopyShade[idx] : 0;
 
     return {
       inTerrainShade: !isTerrainLit,
-      inCanopyShade: isTerrainLit && !isCanopyLit
+      inCanopyShade: isTerrainLit && !isCanopyLit,
+      canopyShadeLevel
     };
   }
 
@@ -815,7 +828,8 @@ export class SolarPanel3DLayer {
         for (let cc = 0; cc < CELL_COLS; cc++) {
           const cellShade = this.sampleShadowAtPoint(spec.cellsLon[cellIdx], spec.cellsLat[cellIdx], maskData);
           const inTerrain = !isDaylight || cellShade.inTerrainShade;
-          const inCanopy = !inTerrain && !isRowSelfShaded && cellShade.inCanopyShade;
+          const canopyLevel = cellShade.canopyShadeLevel || 0;
+          const inCanopy = !inTerrain && !isRowSelfShaded && (cellShade.inCanopyShade || canopyLevel >= 1);
 
           cellLitTerrain[cellIdx] = inTerrain ? 0 : 1;
           cellSelfShade[cellIdx] = isRowSelfShaded ? 1 : 0;
@@ -827,8 +841,11 @@ export class SolarPanel3DLayer {
             colBot = COL_GEOLOGICAL_SHADE;
             colTop = COL_GEOLOGICAL_SHADE;
           } else if (inCanopy) {
-            colBot = COL_CANOPY_SHADE;
-            colTop = COL_CANOPY_SHADE;
+            const shadeColor = canopyLevel >= 7
+              ? COL_GEOLOGICAL_SHADE
+              : (canopyLevel >= 1 ? COL_CANOPY_SHADE_LEVELS[canopyLevel - 1] : COL_CANOPY_SHADE);
+            colBot = shadeColor;
+            colTop = shadeColor;
           } else {
             colBot = litBot;
             colTop = litTop;

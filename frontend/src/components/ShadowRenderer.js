@@ -49,9 +49,13 @@ export class ShadowRenderer {
     if (canopyBase64Str && (!this._decodedCanopy || this._decodedCanopy.length !== totalPixels)) {
       this._decodedCanopy = new Uint8Array(totalPixels);
     }
+    if (canopyShadeBase64Str && (!this._decodedCanopyShade || this._decodedCanopyShade.length !== totalPixels)) {
+      this._decodedCanopyShade = new Uint8Array(totalPixels);
+    }
     const outMasks = {
       terrain: this._decodedTerrain,
-      canopy: canopyBase64Str ? this._decodedCanopy : null
+      canopy: canopyBase64Str ? this._decodedCanopy : null,
+      canopyShade: (canopyBase64Str && canopyShadeBase64Str) ? this._decodedCanopyShade : null
     };
 
     const imgData = canopyBase64Str
@@ -66,6 +70,7 @@ export class ShadowRenderer {
     this.lastDecodedMasks = {
       terrain: outMasks.terrain,
       canopy: outMasks.canopy,
+      canopyShade: outMasks.canopyShade,
       rows,
       cols
     };

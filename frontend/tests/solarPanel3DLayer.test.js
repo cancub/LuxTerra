@@ -544,3 +544,63 @@ test('SolarPanel3DLayer: center-pivot self-shading and SVF match backend formula
   assert.ok(Math.abs(svfMixed - expectedSvf) < 1e-6);
 });
 
+test('SolarPanel3DLayer: canopy shade levels render green-to-dark gradient matching ground shadows', () => {
+  const layer = new SolarPanel3DLayer();
+  const layout = {
+    deployment_mode: 'ground_mount',
+    row_pitch_m: 10.0,
+    tables: [
+      {
+        id: 0,
+        row_index: 0,
+        col_index: 0,
+        tilt_deg: 20,
+        azimuth_deg: 180,
+        panel_count: 2,
+        width_m: 2.0,
+        depth_m: 4.0,
+        slant_height_m: 4.5,
+        elevation_m: 100.0,
+        corners_wgs84: [
+          [-73.500, 45.500],
+          [-73.499, 45.500],
+          [-73.499, 45.501],
+          [-73.500, 45.501],
+        ],
+      },
+    ],
+  };
+  layer.setLayout(layout);
+
+  const bounds = [-73.500, 45.500, -73.499, 45.501];
+  const terrain = new Uint8Array([1]);
+  const canopy = new Uint8Array([0]);
+
+  // Level 1: baseline forest green
+  layer.updateSunPosition(180, 45, true, null, null, bounds, 1, 1, null, 0.15, {
+    terrain, canopy, canopyShade: new Uint8Array([1]), rows: 1, cols: 1,
+  });
+  const c1 = [layer.faceVertices[3], layer.faceVertices[4], layer.faceVertices[5]];
+
+  // Level 4: darker intermediate green-slate
+  layer.updateSunPosition(180, 45, true, null, null, bounds, 1, 1, null, 0.15, {
+    terrain, canopy, canopyShade: new Uint8Array([4]), rows: 1, cols: 1,
+  });
+  const c4 = [layer.faceVertices[3], layer.faceVertices[4], layer.faceVertices[5]];
+
+  // Level 7: saturates to geological/self-shade dark slate
+  layer.updateSunPosition(180, 45, true, null, null, bounds, 1, 1, null, 0.15, {
+    terrain, canopy, canopyShade: new Uint8Array([7]), rows: 1, cols: 1,
+  });
+  const c7 = [layer.faceVertices[3], layer.faceVertices[4], layer.faceVertices[5]];
+
+  // Terrain shade reference
+  layer.updateSunPosition(180, 45, true, null, null, bounds, 1, 1, null, 0.15, {
+    terrain: new Uint8Array([0]), canopy: new Uint8Array([1]), canopyShade: new Uint8Array([0]), rows: 1, cols: 1,
+  });
+  const cGeo = [layer.faceVertices[3], layer.faceVertices[4], layer.faceVertices[5]];
+
+  assert.ok(c1[1] > c4[1] && c4[1] > c7[1], 'Green channel should step down from level 1 -> 4 -> 7');
+  assert.deepEqual(c7, cGeo, 'Level 7+ canopy shade must match geological/self-shade color');
+});
+
