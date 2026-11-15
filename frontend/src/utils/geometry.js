@@ -379,3 +379,70 @@ export function circleToPolygonAndBbox(centerLngLat, radiusM, steps = 32) {
     bbox: [lon - dLon, lat - dLat, lon + dLon, lat + dLat]
   };
 }
+
+/**
+ * Clamps a context (Shadow Box) bbox [minLon, minLat, maxLon, maxLat] to maxAreaM2
+ * while preserving full enclosure of innerBbox by scaling outer padding symmetrically.
+ */
+export function clampContextBboxToMaxArea(bbox, innerBbox = null, maxAreaM2 = MAX_PATCH_AREA_M2 * 0.998) {
+  let minLon = Math.min(bbox[0], bbox[2]);
+  let minLat = Math.min(bbox[1], bbox[3]);
+  let maxLon = Math.max(bbox[0], bbox[2]);
+  let maxLat = Math.max(bbox[1], bbox[3]);
+
+  if (innerBbox && innerBbox.length === 4) {
+    const [iw, is, ie, in_] = [
+      Math.min(innerBbox[0], innerBbox[2]),
+      Math.min(innerBbox[1], innerBbox[3]),
+      Math.max(innerBbox[0], innerBbox[2]),
+      Math.max(innerBbox[1], innerBbox[3])
+    ];
+    minLon = Math.min(minLon, iw);
+    minLat = Math.min(minLat, is);
+    maxLon = Math.max(maxLon, ie);
+    maxLat = Math.max(maxLat, in_);
+
+    if (computeBboxDimensions(minLon, minLat, maxLon, maxLat).areaM2 <= maxAreaM2) {
+      return [minLon, minLat, maxLon, maxLat];
+    }
+
+    if (computeBboxDimensions(iw, is, ie, in_).areaM2 >= maxAreaM2) {
+      return [iw, is, ie, in_];
+    }
+
+    const wPad = iw - minLon;
+    const sPad = is - minLat;
+    const ePad = maxLon - ie;
+    const nPad = maxLat - in_;
+
+    let lo = 0.0;
+    let hi = 1.0;
+    for (let iter = 0; iter < 28; iter++) {
+      const mid = (lo + hi) * 0.5;
+      const area = computeBboxDimensions(
+        iw - mid * wPad,
+        is - mid * sPad,
+        ie + mid * ePad,
+        in_ + mid * nPad
+      ).areaM2;
+      if (area <= maxAreaM2) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+
+    return [
+      iw - lo * wPad,
+      is - lo * sPad,
+      ie + lo * ePad,
+      in_ + lo * nPad
+    ];
+  }
+
+  if (computeBboxDimensions(minLon, minLat, maxLon, maxLat).areaM2 <= maxAreaM2) {
+    return [minLon, minLat, maxLon, maxLat];
+  }
+  const clamped = clampBboxToMaxArea(minLon, minLat, maxLon, maxLat, maxAreaM2);
+  return [minLon, minLat, clamped.curLon, clamped.curLat];
+}

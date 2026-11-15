@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   computeBboxDimensions,
   clampBboxToMaxArea,
+  clampContextBboxToMaxArea,
   normalizeBbox,
   bboxToGeoJSON,
   computePolygonDimensions,
@@ -162,4 +163,35 @@ test('computeScreenAlignedRect ignores tiny drags < 2px', () => {
   const unproject = ([x, y]) => ({ lng: x, lat: y });
   const rect = computeScreenAlignedRect({ x: 10, y: 10 }, { x: 11, y: 10 }, unproject);
   assert.equal(rect, null);
+});
+
+test('clampContextBboxToMaxArea symmetrically clamps large Shadow Box around near-limit innerBbox', () => {
+  // ~90,000 m² inner box (~300m x 300m) near 45.5°N
+  const innerBbox = [-73.618, 45.502, -73.61415, 45.5047];
+  const innerDims = computeBboxDimensions(...innerBbox);
+  assert.ok(innerDims.areaM2 > 80000 && innerDims.areaM2 < MAX_PATCH_AREA_M2);
+
+  // Add 40m margin on all 4 sides (which pushes total area well over 100,000 m²)
+  const dLat = 40.0 / 111320.0;
+  const dLon = 40.0 / (111320.0 * Math.cos(45.50335 * Math.PI / 180.0));
+  const rawContext = [
+    innerBbox[0] - dLon,
+    innerBbox[1] - dLat,
+    innerBbox[2] + dLon,
+    innerBbox[3] + dLat
+  ];
+  assert.ok(computeBboxDimensions(...rawContext).areaM2 > MAX_PATCH_AREA_M2);
+
+  const clamped = clampContextBboxToMaxArea(rawContext, innerBbox);
+  const clampedDims = computeBboxDimensions(...clamped);
+
+  assert.ok(clampedDims.areaM2 <= MAX_PATCH_AREA_M2, `Expected <= ${MAX_PATCH_AREA_M2}, got ${clampedDims.areaM2}`);
+  assert.ok(clamped[0] <= innerBbox[0]);
+  assert.ok(clamped[1] <= innerBbox[1]);
+  assert.ok(clamped[2] >= innerBbox[2]);
+  assert.ok(clamped[3] >= innerBbox[3]);
+  // Verify symmetric trimming: W and E margins remain balanced
+  const wMargin = innerBbox[0] - clamped[0];
+  const eMargin = clamped[2] - innerBbox[2];
+  assert.ok(Math.abs(wMargin - eMargin) < 1e-9);
 });

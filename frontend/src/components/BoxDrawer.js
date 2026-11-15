@@ -17,6 +17,7 @@
 
 import {
   clampBboxToMaxArea,
+  clampContextBboxToMaxArea,
   computeBboxDimensions,
   bboxToGeoJSON,
   computePolygonDimensions,
@@ -1875,26 +1876,10 @@ export class BoxDrawer {
 
   setContextBox(bbox, notify = true) {
     if (!bbox || bbox.length !== 4) return;
-    let [minLon, minLat, maxLon, maxLat] = bbox;
 
-    // Enclosure invariant: ensure context_bbox fully encloses the inner solar boundary
+    // Enclosure & area invariant: clamp context envelope symmetrically to MAX_PATCH_AREA_M2 without clipping innerBbox
     const innerBbox = this.currentBbox || (this.currentPolygon ? computePolygonDimensions(this.currentPolygon).bbox : null);
-    if (innerBbox) {
-      minLon = Math.min(minLon, innerBbox[0]);
-      minLat = Math.min(minLat, innerBbox[1]);
-      maxLon = Math.max(maxLon, innerBbox[2]);
-      maxLat = Math.max(maxLat, innerBbox[3]);
-    }
-
-    // Area clamping: clamp context envelope to MAX_PATCH_AREA_M2 without shrinking inside innerBbox
-    const dims = computeBboxDimensions(minLon, minLat, maxLon, maxLat);
-    if (dims.areaM2 > MAX_PATCH_AREA_M2) {
-      const clamped = clampBboxToMaxArea(minLon, minLat, maxLon, maxLat, MAX_PATCH_AREA_M2);
-      maxLon = innerBbox ? Math.max(clamped.curLon, innerBbox[2]) : clamped.curLon;
-      maxLat = innerBbox ? Math.max(clamped.curLat, innerBbox[3]) : clamped.curLat;
-    }
-
-    this.currentContextBbox = [minLon, minLat, maxLon, maxLat];
+    this.currentContextBbox = clampContextBboxToMaxArea(bbox, innerBbox);
     const [w, s, e, n] = this.currentContextBbox;
     this.currentContextPolygon = [
       [w, n],
