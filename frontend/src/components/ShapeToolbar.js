@@ -443,7 +443,7 @@ export class ShapeToolbar {
                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                 </svg>
               </button>
-              <button class="btn btn-sm btn-square-icon btn-mobile-edit-expand" type="button" aria-expanded="false" title="Expand edit tools &amp; array specs">▾</button>
+              <button class="btn btn-sm btn-square-icon btn-mobile-edit-expand" type="button" aria-expanded="false" title="Expand edit tools &amp; array specs"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
             </div>
             <div class="shape-context-row">
               <button class="btn btn-sm btn-context-toggle" title="Add or modify the extra shadow container box">
@@ -552,7 +552,6 @@ export class ShapeToolbar {
     this.shapeCard?.classList.remove('mobile-edit-expanded');
     if (this.btnMobileEditExpand) {
       this.btnMobileEditExpand.setAttribute('aria-expanded', 'false');
-      this.btnMobileEditExpand.textContent = '▾';
     }
   }
 
@@ -673,7 +672,6 @@ export class ShapeToolbar {
         const expanded = this.editPane?.classList.toggle('mobile-edit-expanded');
         this.shapeCard?.classList.toggle('mobile-edit-expanded', Boolean(expanded));
         this.btnMobileEditExpand.setAttribute('aria-expanded', String(Boolean(expanded)));
-        this.btnMobileEditExpand.textContent = expanded ? '▴' : '▾';
       });
     }
 
@@ -828,7 +826,6 @@ export class ShapeToolbar {
         const expanded = this.editPane?.classList.toggle('mobile-edit-expanded');
         this.shapeCard?.classList.toggle('mobile-edit-expanded', Boolean(expanded));
         this.btnMobileEditExpand.setAttribute('aria-expanded', String(Boolean(expanded)));
-        this.btnMobileEditExpand.textContent = expanded ? '▴' : '▾';
       });
     }
 

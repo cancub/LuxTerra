@@ -1650,6 +1650,7 @@ input:focus, select:focus {
     display: none;
   }
 
+  .top-command-bar .command-nav-btn,
   .top-command-bar .toolbar-btn {
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1929,12 +1930,13 @@ input:focus, select:focus {
     justify-content: flex-start !important;
   }
 
-  .bottom-dock:not(.mobile-expanded) .play-btn {
+  .bottom-dock:not(.mobile-expanded) .btn-play {
     background: transparent !important;
     border: none !important;
     width: 24px !important;
     height: 24px !important;
     padding: 0 !important;
+    color: var(--text-primary) !important;
   }
 
   .bottom-dock:not(.mobile-expanded) .speed-btn:not(.active) {
@@ -1997,6 +1999,14 @@ input:focus, select:focus {
     align-items: center;
     justify-content: center;
     font-size: 0.85rem;
+  }
+
+  .btn-mobile-edit-expand svg {
+    transition: transform 0.2s ease;
+  }
+
+  .btn-mobile-edit-expand[aria-expanded="true"] svg {
+    transform: rotate(180deg);
   }
 
   .shape-edit-pane:not(.mobile-edit-expanded) {
