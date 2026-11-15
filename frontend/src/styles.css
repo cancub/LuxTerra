@@ -1668,9 +1668,10 @@ input:focus, select:focus {
     color: var(--text-primary);
   }
 
-  .toast-container {
-    top: auto;
-    bottom: 136px;
+  .toast-container,
+  .sim-loading-pill {
+    top: auto !important;
+    bottom: 136px !important;
     width: min(360px, calc(100vw - 24px));
   }
 
@@ -1680,6 +1681,8 @@ input:focus, select:focus {
     border-radius: 8px;
     width: 30px;
     height: 28px;
+    padding: 0 !important;
+    flex: 0 0 30px !important;
   }
 
   .top-right-controls {
